@@ -16,8 +16,8 @@ NativeRateWrapper::~NativeRateWrapper() = default;
 
 void NativeRateWrapper::prepare(double hostRate, int maxBlock) {
   const double native = nativeRate_ > 0.0 ? nativeRate_ : hostRate;
-  inner_->prepare(native, nativeBlock_);
   bypass_ = std::fabs(hostRate - native) < 1e-6;
+  inner_->prepare(native, bypass_ ? std::max(maxBlock, nativeBlock_) : nativeBlock_);
   usesInput_ = inner_->info().usesInput;
   latency_ = 0;
   inputLatency_ = 0;
@@ -47,7 +47,8 @@ void NativeRateWrapper::prepare(double hostRate, int maxBlock) {
       const int withheld = inputResampler_[0]->getInLenBeforeOutPos(0);
       inputPrime_ = size_t(2 * nativeBlock_ + int(std::ceil(double(withheld) * native / hostRate)) + 1);
       const size_t capacity = inputPrime_ + size_t(inputResampler_[0]->getMaxOutLen(maxBlock)) +
-                              size_t(nativeBlock_);
+                              size_t(std::ceil(double(latency_) * native / hostRate)) +
+                              size_t(2 * nativeBlock_);
       for (int ch = 0; ch < 2; ++ch) inputFifo_[ch].assign(capacity, 0.0f);
       inputLatency_ = latency_ + int(std::lround(double(inputPrime_) * hostRate / native));
     }
@@ -80,6 +81,7 @@ void NativeRateWrapper::reset() {
   inputSize_ = inputPrime_;
   for (auto& ring : inputFifo_) std::fill(ring.begin(), ring.end(), 0.0f);
   underruns_ = 0;
+  overruns_ = 0;
   for (auto& line : delay_) std::fill(line.begin(), line.end(), 0.0f);
   delayPos_ = 0;
 }
@@ -119,15 +121,30 @@ void NativeRateWrapper::process(const float* const* in, float* const* out, const
 void NativeRateWrapper::pushInput(const float* const* in, int n) {
   const size_t capacity = inputFifo_[0].size();
   int produced = 0;
+  double* converted[2] = {nullptr, nullptr};
   for (int ch = 0; ch < 2; ++ch) {
     for (int i = 0; i < n; ++i) inputScratch_[size_t(i)] = in ? double(in[ch][i]) : 0.0;
-    double* converted = nullptr;
-    produced = inputResampler_[ch]->process(inputScratch_.data(), n, converted);
-    for (int j = 0; j < produced; ++j) {
-      inputFifo_[ch][(inputRead_ + inputSize_ + size_t(j)) % capacity] = float(converted[j]);
+    produced = inputResampler_[ch]->process(inputScratch_.data(), n, converted[ch]);
+  }
+  size_t count = size_t(produced);
+  size_t skip = 0;
+  if (count > capacity) {  // cannot happen with the capacity set in prepare()
+    skip = count - capacity;
+    count = capacity;
+    ++overruns_;
+  }
+  if (inputSize_ + count > capacity) {  // drop the oldest samples to fit
+    const size_t drop = inputSize_ + count - capacity;
+    inputRead_ = (inputRead_ + drop) % capacity;
+    inputSize_ -= drop;
+    ++overruns_;
+  }
+  for (int ch = 0; ch < 2; ++ch) {
+    for (size_t j = 0; j < count; ++j) {
+      inputFifo_[ch][(inputRead_ + inputSize_ + j) % capacity] = float(converted[ch][skip + j]);
     }
   }
-  inputSize_ = std::min(capacity, inputSize_ + size_t(produced));
+  inputSize_ += count;
 }
 
 void NativeRateWrapper::renderNativeBlock(const ParamValues& p) {

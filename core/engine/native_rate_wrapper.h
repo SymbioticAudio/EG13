@@ -25,7 +25,8 @@ class NativeRateWrapper final : public VoiceEngine {
   NativeRateWrapper(std::unique_ptr<VoiceEngine> inner, double nativeRate, int nativeBlock);
   ~NativeRateWrapper() override;
 
-  void prepare(double hostRate, int maxBlock) override;  // main thread
+  // Main thread. Resets the extra delay: call setExtraDelay after every prepare.
+  void prepare(double hostRate, int maxBlock) override;
   void reset() override;
   void noteOn(float note, float velocity) override;
   void noteOff() override;
@@ -43,6 +44,7 @@ class NativeRateWrapper final : public VoiceEngine {
   int latencySamples() const { return latency_ + extra_; }
   int inputPathLatencySamples() const { return inputLatency_ + extra_; }
   size_t inputUnderruns() const { return underruns_; }
+  size_t inputOverruns() const { return overruns_; }
 
  private:
   void pushInput(const float* const* in, int n);
@@ -75,6 +77,7 @@ class NativeRateWrapper final : public VoiceEngine {
   size_t inputPrime_ = 0;  // native samples of silence queued at reset()
   std::vector<float> nativeIn_[2];
   size_t underruns_ = 0;
+  size_t overruns_ = 0;
 
   // Alignment delay.
   int extra_ = 0;

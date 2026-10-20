@@ -120,4 +120,24 @@ class EchoEngine final : public VoiceEngine {
   }
 };
 
+// Records the maxBlock given to prepare() and the largest block given to process().
+class MaxBlockProbeEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int maxBlock) override { preparedMax = maxBlock; }
+  void reset() override {}
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  void process(const float* const*, float* const* out, const ParamValues&, int n) override {
+    if (n > largest) largest = n;
+    for (int i = 0; i < n; ++i) out[0][i] = out[1][i] = 0.0f;
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"probe", "Probe", 0, nullptr, false};
+    return kInfo;
+  }
+  int preparedMax = 0;
+  int largest = 0;
+};
+
 }  // namespace eg13::test

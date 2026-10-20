@@ -148,6 +148,7 @@ std::vector<float> renderWithInput(VoiceEngine& engine, const std::vector<float>
     engine.process(in, out, p, count);
     done += count;
   }
+  REQUIRE(right == left);
   return left;
 }
 
@@ -230,4 +231,49 @@ TEST_CASE("Input conversion does not allocate") {
     allocations = counter.count();
   }
   REQUIRE(allocations == 0);
+}
+
+TEST_CASE("Input path survives host rates below the native rate") {
+  struct Case { double native; double host; int block; };
+  for (const Case c : {Case{32000.0, 22050.0, 16}, Case{48000.0, 32000.0, 24},
+                       Case{48000.0, 16000.0, 24}}) {
+    INFO("native " << c.native << " host " << c.host);
+    const int n = int(3.0 * c.host), at = int(c.host);
+    std::vector<float> input(static_cast<size_t>(n), 0.0f);
+    input[size_t(at)] = 1.0f;
+    for (int mixed = 0; mixed < 2; ++mixed) {
+      NativeRateWrapper wrapped(std::make_unique<test::EchoEngine>(), c.native, c.block);
+      wrapped.prepare(c.host, 256);
+      const int latency = wrapped.inputLatencySamples();
+      std::vector<float> out(static_cast<size_t>(n));
+      const ParamValues p;
+      const int sizes[3] = {1, 129, 256};
+      int k = 0;
+      for (int done = 0; done < n; ++k) {
+        const int count = std::min(mixed ? sizes[k % 3] : 256, n - done);
+        const float* in[2] = {input.data() + done, input.data() + done};
+        float* o[2] = {out.data() + done, out.data() + done};
+        wrapped.process(in, o, p, count);
+        done += count;
+      }
+      REQUIRE(wrapped.inputOverruns() == 0);
+      REQUIRE(wrapped.inputUnderruns() == 0);
+      const int tolerance = int(std::ceil(double(c.block) * c.host / c.native)) + 2;
+      INFO("latency " << latency << " delay " << peakIndex(out) - at);
+      REQUIRE(std::abs(peakIndex(out) - at - latency) <= tolerance);
+    }
+  }
+}
+
+TEST_CASE("Host-rate engines are prepared for host-sized blocks") {
+  auto probe = std::make_unique<test::MaxBlockProbeEngine>();
+  test::MaxBlockProbeEngine* raw = probe.get();
+  NativeRateWrapper wrapped(std::move(probe), 0.0, 16);
+  wrapped.prepare(44100.0, 512);
+  REQUIRE(raw->preparedMax >= 512);
+  std::vector<float> l(512), r(512);
+  float* out[2] = {l.data(), r.data()};
+  wrapped.process(nullptr, out, ParamValues{}, 512);
+  REQUIRE(raw->largest == 512);
+  REQUIRE(raw->largest <= raw->preparedMax);
 }
