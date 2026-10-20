@@ -7,12 +7,20 @@ the open-source Eurorack firmware by Émilie Gillet
 EG13 is not affiliated with or endorsed by Mutable Instruments. "Mutable Instruments" is a
 registered trademark; EG13 uses its own names for each engine.
 
-**Status:** M1 (synth architecture): two parts with 8 voices each, Single/Layer/Split/Multi modes, sidechain/FX input with Dry level, and a second output bus on the instrument. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design.
+**Status:** M2 (sources): two parts × 8 voices with four source engines — Macro Oscillator, Digital Oscillator, Modal Synth, Resonator — plus Audio Input; either part can process the plugin input or the other part. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design.
 Pre-1.0: saved projects and presets may not load in later versions until the parameter layout is frozen.
 
 ## Formats
 
 CLAP and AU v2 (macOS 14+, universal), plus VST3 and Standalone.
+
+## Engines
+
+- **Macro Oscillator** — based on Plaits
+- **Digital Oscillator** — based on Braids
+- **Modal Synth** — based on Elements
+- **Resonator** — based on Rings
+- **Audio Input** — the plugin input through a per-voice gate
 
 ## Building (macOS)
 
@@ -34,7 +42,7 @@ After installing or rebuilding the AU, quit and reopen Logic so it rescans
 plugins; if EG13 is still missing, use Logic Pro → Settings → Plug-in Manager →
 Reset & Rescan Selection.
 
-EG13 reports about 2.3 ms of latency at every host rate (engines run at their native rate — Plaits at the module's 47872.34 Hz clock — and are resampled); hosts compensate automatically.
+EG13 reports about 2.3 ms of latency at every host rate. EG13 FX reports more (about 5–10 ms) so processed input lines up with Dry; hosts compensate automatically.
 
 Plugins are written to `build/mac/plugins`. The first configure downloads the VST3 and
 AudioUnit SDKs.
