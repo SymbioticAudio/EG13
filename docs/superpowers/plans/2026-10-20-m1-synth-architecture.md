@@ -3608,7 +3608,7 @@ git commit -m "Synth v2: two parts, mode routing, Bus 2, Dry and atomic snapshot
 - Modify: `plugin/src/eg13_plugin.cpp` (use a `StateStore` per plugin instance)
 
 **Interfaces:**
-- Consumes: `Synth::param`, `Synth::defaultSnapshot`, `Synth::loadParams`, `Synth::setProcessing` (Task 8); `paramSpec`, `paramIndex`, `kParamCount` (Task 6).
+- Consumes: `Synth::param`, `Synth::defaultSnapshot`, `Synth::loadParams`, `Synth::setActive` (Task 8; replaces the plan's setProcessing — see the ledger ruling); `paramSpec`, `paramIndex`, `kParamCount` (Task 6).
 - Produces:
   ```cpp
   namespace eg13::state {
@@ -3758,12 +3758,12 @@ TEST_CASE("Loaded values are clamped and stepped values rounded") {
 TEST_CASE("A load while processing is reflected immediately") {
   Synth s(PluginKind::Instrument);
   s.prepare(48000.0, 256);
-  s.setProcessing(true);
+  s.setActive(true);
   state::StateStore store;
   REQUIRE(store.load(s, R"({"schemaVersion":2,"params":{"16711680":0.25}})") ==
           state::LoadResult::Ok);
   REQUIRE(s.param(params::kMasterLevel) == 0.25);
-  s.setProcessing(false);
+  s.setActive(false);
 }
 ```
 
@@ -3925,7 +3925,7 @@ git commit -m "State v2: schema 2, atomic loads and preserved unknown data"
 - Modify: `plugin/src/eg13_plugin.cpp`, `plugin/CMakeLists.txt`, `README.md`
 
 **Interfaces:**
-- Consumes: `Synth::process(in, mainOut, bus2Out, n)`, `Synth::latencySamples()`, `Synth::setProcessing` (Task 8); `state::StateStore` (Task 9).
+- Consumes: `Synth::process(in, mainOut, bus2Out, n)`, `Synth::latencySamples()`, `Synth::setActive`, `Synth::beginBlock` (Task 8); `state::StateStore` (Task 9).
 - Produces (CLAP-visible; permanent once released):
   - **EG13 (instrument):** input port index 0, id 0, `"Sidechain"`, stereo, flags 0 (not main). Output port index 0, id 1, `"Output"`, stereo, main. Output port index 1, id 2, `"Bus 2"`, stereo, flags 0.
   - **EG13 FX:** input index 0, id 0, `"Input"`, stereo, main. Output index 0, id 1, `"Output"`, stereo, main.
