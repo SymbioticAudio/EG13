@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "engine/engine_registry.h"
 #include "engine/plaits_engine.h"
 #include "params/param_ids.h"
 
@@ -40,6 +41,7 @@ const PartParamDef kPartDefs[kPartParamCount] = {
     {PartParam::BendRange, "Bend Range", 0, 24, 2, true, ParamFormat::BendRange},
     {PartParam::Mono, "Mono", 0, 1, 0, true, ParamFormat::OnOff},
     {PartParam::Output, "Output", 0, 2, 0, true, ParamFormat::OutputBus},
+    {PartParam::InputSource, "Input Source", 0, 2, 0, true, ParamFormat::InputSource},
 };
 
 const std::array<ParamSpec, kParamCount>& table() {
@@ -47,6 +49,9 @@ const std::array<ParamSpec, kParamCount>& table() {
     std::array<ParamSpec, kParamCount> t{};
     const EngineInfo& info = PlaitsEngine::staticInfo();
     for (int part = 0; part < kNumParts; ++part) {
+      t[sourceEngineParamIndex(part)] = {params::id(uint32_t(part), params::Slot::Source, 0), "Engine",
+                                         kSourceModules[part], 0.0f, float(kSourceEngineSelectorMax),
+                                         0.0f, 0.0f, true, ParamFormat::SourceEngine};
       for (int p = 0; p < int(kSourceParamCount); ++p) {
         const float def = info.params[p].defaultValue;
         t[sourceParamIndex(part, p)] = {params::id(uint32_t(part), params::Slot::Source, uint32_t(p + 1)),
@@ -80,6 +85,13 @@ const char* pick(const char* const* names, int count, float value) {
   return names[i];
 }
 
+// Index of a Source P (0..7) for a table index, or -1.
+int sourceParamOf(size_t index) {
+  if (index >= size_t(kNumParts) * kParamsPerPart) return -1;
+  const int local = int(index % kParamsPerPart) - 1;
+  return local >= 0 && local < int(kSourceParamCount) ? local : -1;
+}
+
 }  // namespace
 
 const ParamSpec& paramSpec(size_t index) { return table()[index]; }
@@ -107,7 +119,7 @@ float clampParam(size_t index, double value) {
 
 float glideSeconds(float normalized) { return 2.0f * normalized * normalized; }
 
-void formatParam(size_t index, double value, char* buf, size_t size) {
+void formatParam(size_t index, double value, char* buf, size_t size, int sourceEngine) {
   static const char* const kNotes[12] = {"C", "C#", "D", "D#", "E", "F",
                                          "F#", "G", "G#", "A", "A#", "B"};
   static const char* const kVoiceModes[3] = {"Poly", "Mono", "Legato"};
@@ -115,12 +127,26 @@ void formatParam(size_t index, double value, char* buf, size_t size) {
   static const char* const kOnOff[2] = {"Off", "On"};
   static const char* const kOutputs[3] = {"Main", "Bus 2", "Other part"};
   static const char* const kModes[4] = {"Single", "Layer", "Split", "Multi"};
+  static const char* const kInputSources[3] = {"External", "Other part", "Both"};
 
   const ParamSpec& s = paramSpec(index);
   const float v = clampParam(index, value);
   switch (s.format) {
-    case ParamFormat::Engine:
-      PlaitsEngine::staticInfo().params[index % kParamsPerPart].format(v, buf, size);
+    case ParamFormat::Engine: {
+      const EngineInfo& info = sourceEngineInfo(sourceEngine);
+      const int p = sourceParamOf(index);
+      if (p >= 0 && p < info.paramCount) {
+        info.params[p].format(v, buf, size);
+      } else {
+        std::snprintf(buf, size, "-");
+      }
+      break;
+    }
+    case ParamFormat::SourceEngine:
+      std::snprintf(buf, size, "%s", sourceEngineInfo(sourceEngineFromSelector(v)).displayName);
+      break;
+    case ParamFormat::InputSource:
+      std::snprintf(buf, size, "%s", pick(kInputSources, 3, v));
       break;
     case ParamFormat::Percent:
       std::snprintf(buf, size, "%d%%", int(std::lround(v * 100.0f)));
@@ -182,6 +208,13 @@ void formatParam(size_t index, double value, char* buf, size_t size) {
       std::snprintf(buf, size, "%s", pick(kModes, 4, v));
       break;
   }
+}
+
+const char* paramName(size_t index, int sourceEngine) {
+  const int p = sourceParamOf(index);
+  if (p < 0) return paramSpec(index).name;
+  const EngineInfo& info = sourceEngineInfo(sourceEngine);
+  return p < info.paramCount ? info.params[p].name : "(unused)";
 }
 
 }  // namespace eg13

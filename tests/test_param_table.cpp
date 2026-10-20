@@ -20,8 +20,8 @@ std::string text(size_t index, double value) {
 
 }  // namespace
 
-TEST_CASE("The table has 48 parameters with unique IDs") {
-  REQUIRE(kParamCount == 48);
+TEST_CASE("The table has 52 parameters with unique IDs") {
+  REQUIRE(kParamCount == 52);
   std::set<uint32_t> ids;
   for (size_t i = 0; i < kParamCount; ++i) ids.insert(paramSpec(i).id);
   REQUIRE(ids.size() == kParamCount);
@@ -104,4 +104,38 @@ TEST_CASE("glideSeconds maps 0..1 to 0..2 s quadratically") {
   REQUIRE(glideSeconds(0.0f) == 0.0f);
   REQUIRE(glideSeconds(0.5f) == 0.5f);
   REQUIRE(glideSeconds(1.0f) == 2.0f);
+}
+
+TEST_CASE("Engine selectors and Input source have permanent IDs") {
+  REQUIRE(paramSpec(sourceEngineParamIndex(0)).id == params::id(0, params::Slot::Source, 0));
+  REQUIRE(paramSpec(sourceEngineParamIndex(1)).id == params::id(1, params::Slot::Source, 0));
+  REQUIRE(paramSpec(sourceEngineParamIndex(0)).maxValue == 31.0f);
+  REQUIRE(paramSpec(sourceEngineParamIndex(0)).stepped);
+  REQUIRE(std::string(paramSpec(sourceEngineParamIndex(0)).name) == "Engine");
+  REQUIRE(paramSpec(partParamIndex(1, PartParam::InputSource)).id ==
+          params::id(1, params::Slot::Part, 15));
+  REQUIRE(paramSpec(sourceParamIndex(0, 0)).id == params::id(0, params::Slot::Source, 1));
+  REQUIRE(paramSpec(partParamIndex(0, PartParam::Level)).id == params::id(0, params::Slot::Part, 1));
+}
+
+TEST_CASE("Engine selector and Input source format readable values") {
+  REQUIRE(text(sourceEngineParamIndex(0), 0) == "Macro Oscillator");
+  REQUIRE(text(sourceEngineParamIndex(0), 2) == "Modal Synth");
+  REQUIRE(text(sourceEngineParamIndex(0), 4) == "Audio Input");
+  REQUIRE(text(sourceEngineParamIndex(0), 20) == "Macro Oscillator");
+  REQUIRE(text(partParamIndex(0, PartParam::InputSource), 0) == "External");
+  REQUIRE(text(partParamIndex(0, PartParam::InputSource), 1) == "Other part");
+  REQUIRE(text(partParamIndex(0, PartParam::InputSource), 2) == "Both");
+}
+
+TEST_CASE("Source parameters format and name through the selected engine") {
+  char buf[64];
+  formatParam(sourceParamIndex(0, 0), 0.5 / 47.0, buf, sizeof(buf), 1);
+  REQUIRE(std::string(buf) == "CSAW");
+  REQUIRE(std::string(paramName(sourceParamIndex(0, 0), 1)) == "Shape");
+  REQUIRE(std::string(paramName(sourceParamIndex(0, 0), 0)) == "Model");
+  REQUIRE(std::string(paramName(sourceParamIndex(0, 7), 1)) == "(unused)");
+  formatParam(sourceParamIndex(0, 7), 0.5, buf, sizeof(buf), 1);
+  REQUIRE(std::string(buf) == "-");
+  REQUIRE(std::string(paramName(masterParamIndex(MasterParam::Dry), 3)) == "Dry");
 }
