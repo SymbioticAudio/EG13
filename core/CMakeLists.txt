@@ -1,2 +1,5 @@
-add_library(eg13_core INTERFACE)
-target_include_directories(eg13_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+add_library(eg13_core STATIC
+  engine/plaits_engine.cpp)
+target_include_directories(eg13_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eg13_core PRIVATE eg13_eurorack)
+target_compile_options(eg13_core PRIVATE -Wall -Wextra -Werror)
