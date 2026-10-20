@@ -1,11 +1,14 @@
 #include "state/state.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <utility>
 
 #include <nlohmann/json.hpp>
 
+#include "engine/engine_registry.h"
 #include "synth/param_table.h"
 #include "synth/synth.h"
 
@@ -38,6 +41,19 @@ std::string StateStore::save(const Synth& synth) const {
   }
   root["schemaVersion"] = kSchemaVersion;
   root["params"] = std::move(params);
+
+  const EngineStash stash = synth.engineStash();
+  nlohmann::json engines = nlohmann::json::object();
+  for (int part = 0; part < kNumParts; ++part) {
+    nlohmann::json perPart = nlohmann::json::object();
+    for (int e = 0; e < kNumSourceEngines; ++e) {
+      nlohmann::json values = nlohmann::json::array();
+      for (int p = 0; p < int(kSourceParamCount); ++p) values.push_back(stash[stashIndex(part, e, p)]);
+      perPart[std::to_string(e)] = std::move(values);
+    }
+    engines[std::to_string(part)] = std::move(perPart);
+  }
+  root["engineSettings"] = std::move(engines);
   return root.dump();
 }
 
@@ -72,9 +88,46 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
     values[size_t(index)] = clampParam(size_t(index), it.value().get<double>());
   }
 
+  if (schema < 3) {
+    // Schema 2 had no engine selector: its P values belong to the Macro Oscillator.
+    for (int part = 0; part < kNumParts; ++part) values[sourceEngineParamIndex(part)] = 0.0f;
+  }
+
+  EngineStash stash = Synth::defaultStash();
+  const auto engines = root.find("engineSettings");
+  if (engines != root.end()) {
+    if (!engines->is_object()) {
+      warnings = true;
+    } else {
+      for (auto partIt = engines->begin(); partIt != engines->end(); ++partIt) {
+        uint32_t part = 0;
+        if (!parseId(partIt.key(), &part) || part >= uint32_t(kNumParts) || !partIt.value().is_object()) {
+          warnings = true;
+          continue;
+        }
+        for (auto engineIt = partIt.value().begin(); engineIt != partIt.value().end(); ++engineIt) {
+          uint32_t engine = 0;
+          const auto& list = engineIt.value();
+          bool valid = parseId(engineIt.key(), &engine) && engine < uint32_t(kNumSourceEngines) &&
+                       list.is_array() && list.size() == kSourceParamCount;
+          for (size_t p = 0; valid && p < kSourceParamCount; ++p) valid = list[p].is_number();
+          if (!valid) {
+            warnings = true;
+            continue;
+          }
+          for (size_t p = 0; p < kSourceParamCount; ++p) {
+            const double v = list[p].get<double>();
+            stash[stashIndex(int(part), int(engine), int(p))] =
+                float(std::clamp(std::isnan(v) ? 0.0 : v, 0.0, 1.0));
+          }
+        }
+      }
+    }
+  }
+
   nlohmann::json extraTopLevel = nlohmann::json::object();
   for (auto it = root.begin(); it != root.end(); ++it) {
-    if (it.key() != "schemaVersion" && it.key() != "params") {
+    if (it.key() != "schemaVersion" && it.key() != "params" && it.key() != "engineSettings") {
       extraTopLevel[it.key()] = it.value();
       warnings = true;
     }
@@ -82,7 +135,7 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
 
   std::string topDump = extraTopLevel.dump();
   std::string paramsDump = extraParams.dump();
-  synth.loadParams(values);
+  synth.loadParams(values, &stash);
   extraTopLevel_ = std::move(topDump);
   extraParams_ = std::move(paramsDump);
   return warnings ? LoadResult::OkWithWarnings : LoadResult::Ok;
