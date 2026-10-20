@@ -10,6 +10,10 @@ file(GLOB EG13_PLAITS_SOURCES CONFIGURE_DEPENDS
 add_library(eg13_eurorack STATIC
   ${EG13_PLAITS_SOURCES}
   ${EURORACK_DIR}/plaits/resources.cc
+  ${EURORACK_DIR}/braids/macro_oscillator.cc
+  ${EURORACK_DIR}/braids/analog_oscillator.cc
+  ${EURORACK_DIR}/braids/digital_oscillator.cc
+  ${EURORACK_DIR}/braids/resources.cc
   ${EURORACK_DIR}/stmlib/dsp/units.cc
   ${EG13_EURORACK_PATCHES}/stmlib/utils/random.cc)
 target_include_directories(eg13_eurorack SYSTEM BEFORE PUBLIC ${EG13_EURORACK_PATCHES})
