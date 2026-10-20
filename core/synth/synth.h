@@ -72,9 +72,10 @@ class Synth {
   const char* paramName(size_t index) const;
   void formatParam(size_t index, double value, char* buf, size_t size) const;
 
-  // Audio thread: P values that engine switches changed, for the host. A
-  // selector change through setParam switches at once: the part's P1..P8 go to
-  // the old engine's stash entry and the new engine's entry is loaded.
+  // Audio thread: P values that engine switches changed, for the host. Copies
+  // up to max; the rest stay queued for the next call. A selector change
+  // through setParam switches at once: the part's P1..P8 go to the old engine's
+  // stash entry and the new engine's entry is loaded.
   int takeHostUpdates(HostUpdate* out, int max);
   // Main thread: true once after any engine switch (names and text changed).
   bool takeEngineChanged() { return engineChanged_.exchange(false, std::memory_order_acq_rel); }
@@ -95,7 +96,7 @@ class Synth {
   void applyPending();
   PartSettings readPartSettings(int part) const;
   static int clampChannel(int channel);
-  void switchEngine(int part);  // from setParam, on the selector
+  void switchEngine(int part, int next);  // from setParam, before storing the selector
   void queueHostUpdate(const HostUpdate& update);
   void routeInput(int part, const float* const* in, int n);
   static float softLimit(float x);
@@ -124,8 +125,9 @@ class Synth {
   int hostUpdateCount_ = 0;
   std::atomic<bool> engineChanged_{false};
   std::vector<float> partIn_[kNumParts][2];
-  std::vector<float> previousB_[2];
-  int previousBCount_ = 0;
+  std::vector<float> feedRing_[2];  // B's output for A, delayed by feedDelay_
+  size_t feedDelay_ = 0;            // maxBlock
+  size_t feedPos_ = 0;
 };
 
 }  // namespace eg13

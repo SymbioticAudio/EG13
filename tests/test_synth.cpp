@@ -661,3 +661,126 @@ TEST_CASE("P values sent after an engine change in the same block stay") {
   REQUIRE(updates[2].value == 0.66f);
   synth.setActive(false);
 }
+
+namespace {
+
+const int kVaryingSizes[] = {5, 507, 64, 256};
+
+// Feeds `in` through the synth in the cycling block sizes above (all <= 512).
+void runVarying(Synth& synth, Stereo& out, const Stereo& in, size_t total) {
+  size_t done = 0;
+  for (int k = 0; done < total; ++k) {
+    const int count = int(std::min<size_t>(size_t(kVaryingSizes[k % 4]), total - done));
+    const float* i[2] = {in.l.data() + done, in.r.data() + done};
+    float* o[2] = {out.l.data() + done, out.r.data() + done};
+    synth.process(i, o, nullptr, count);
+    done += size_t(count);
+  }
+}
+
+}  // namespace
+
+TEST_CASE("Part A hears Part B one block later, continuously, with varying block sizes") {
+  // B: Audio Input on the external input, other part only. A: Audio Input on
+  // Other part. Each Audio Input part delays by the latency L, so main out is
+  // the input delayed by 2L + maxBlock (the B -> A feed's fixed delay).
+  constexpr int kMaxBlock = 512;
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.setParam(partId(0, PartParam::InputSource), 1);
+  synth.setParam(engineId(1), 4);
+  synth.setParam(partId(1, PartParam::Trigger), 1);
+  synth.setParam(partId(1, PartParam::Output), 2);
+  synth.prepare(44100.0, kMaxBlock);
+  const size_t delay = 2 * size_t(synth.latencySamples()) + size_t(kMaxBlock);
+  const size_t total = 22050;
+  const Stereo in = sineInput(total, 44100.0);
+  Stereo out(total);
+  runVarying(synth, out, in, total);
+  INFO("latency " << synth.latencySamples() << " total delay " << delay);
+  for (size_t i = delay + 4410; i < total; ++i) {
+    REQUIRE(std::fabs(out.l[i] - in.l[i - delay]) < 1e-3f);
+    REQUIRE(std::fabs(out.r[i] - in.r[i - delay]) < 1e-3f);
+  }
+}
+
+TEST_CASE("The B -> A feed does not allocate with varying block sizes") {
+  constexpr int kMaxBlock = 512;
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.setParam(partId(0, PartParam::InputSource), 2);
+  synth.setParam(engineId(1), 4);
+  synth.setParam(partId(1, PartParam::Trigger), 1);
+  synth.setParam(partId(1, PartParam::InputSource), 1);
+  synth.prepare(44100.0, kMaxBlock);
+  synth.setActive(true);
+  const Stereo in = sineInput(44100, 44100.0);
+  Stereo out(44100);
+  runVarying(synth, out, in, 4410);
+  test::ScopedAllocationCounter counter;
+  runVarying(synth, out, in, 22050);
+  synth.reset();
+  runVarying(synth, out, in, 22050);
+  const size_t allocations = counter.count();
+  REQUIRE(allocations == 0);
+  synth.setActive(false);
+}
+
+TEST_CASE("reset clears the B -> A feed") {
+  constexpr int kMaxBlock = 512;
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.setParam(partId(0, PartParam::InputSource), 1);
+  synth.setParam(engineId(1), 4);
+  synth.setParam(partId(1, PartParam::Trigger), 1);
+  synth.setParam(partId(1, PartParam::Output), 2);
+  synth.prepare(44100.0, kMaxBlock);
+  const Stereo in = sineInput(8820, 44100.0);
+  Stereo out(8820);
+  run(synth, out, 0, 8820, &in);
+  synth.reset();
+  const Stereo silent(4410);
+  Stereo after(4410);
+  run(synth, after, 0, 4410, &silent);
+  for (float s : after.l) REQUIRE(s == 0.0f);
+}
+
+TEST_CASE("takeHostUpdates keeps what does not fit") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.setParam(engineId(0), 1);
+  HostUpdate updates[8];
+  REQUIRE(synth.takeHostUpdates(updates, 3) == 3);
+  REQUIRE(updates[0].id == sourceId(0, 0));
+  REQUIRE(synth.takeHostUpdates(updates, 8) == 5);
+  REQUIRE(updates[0].id == sourceId(0, 3));
+  REQUIRE(updates[4].id == sourceId(0, 7));
+  REQUIRE(synth.takeHostUpdates(updates, 8) == 0);
+  synth.setActive(false);
+}
+
+TEST_CASE("loadParams drops host updates from before the load") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.setParam(engineId(0), 2);
+  synth.loadParams(synth.defaultSnapshot());
+  runBlocks(synth, 1);
+  HostUpdate updates[16];
+  REQUIRE(synth.takeHostUpdates(updates, 16) == 0);
+  synth.setActive(false);
+  synth.setParam(engineId(0), 3);  // inactive load drops them too
+  synth.loadParams(synth.defaultSnapshot());
+  REQUIRE(synth.takeHostUpdates(updates, 16) == 0);
+}
+
+TEST_CASE("An engine switch never shows the new selector with the old engine's values") {
+  Synth synth(PluginKind::Instrument);
+  synth.setParam(sourceId(0, 1), 0.9);  // Macro Harmonics
+  synth.setParam(engineId(0), 1);
+  const ParamSnapshot s = synth.snapshot();
+  REQUIRE(s[sourceEngineParamIndex(0)] == 1.0f);
+  REQUIRE(s[sourceParamIndex(0, 1)] == sourceEngineInfo(1).params[1].defaultValue);
+  REQUIRE(synth.engineStash()[stashIndex(0, 0, 1)] == 0.9f);
+}

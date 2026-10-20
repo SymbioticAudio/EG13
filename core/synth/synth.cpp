@@ -33,8 +33,9 @@ void Synth::prepare(double sampleRate, int maxBlock) {
   for (auto& part : partIn_) {
     for (auto& buffer : part) buffer.assign(size_t(maxBlock), 0.0f);
   }
-  for (auto& buffer : previousB_) buffer.assign(size_t(maxBlock), 0.0f);
-  previousBCount_ = 0;
+  feedDelay_ = size_t(maxBlock);
+  for (auto& ring : feedRing_) ring.assign(2 * feedDelay_, 0.0f);
+  feedPos_ = 0;
   masterGain_.prepare(sampleRate, kGainSmoothingSeconds);
   dryGain_.prepare(sampleRate, kGainSmoothingSeconds);
   partBMute_.prepare(sampleRate, kGainSmoothingSeconds);
@@ -55,7 +56,8 @@ void Synth::reset() {
   }
   for (auto& line : dryDelay_) std::fill(line.begin(), line.end(), 0.0f);
   dryPos_ = 0;
-  previousBCount_ = 0;
+  for (auto& ring : feedRing_) std::fill(ring.begin(), ring.end(), 0.0f);
+  feedPos_ = 0;
   for (auto& channel : routed_) std::fill(std::begin(channel), std::end(channel), uint8_t{0});
   masterGain_.reset(load(masterParamIndex(MasterParam::Level)));
   dryGain_.reset(load(masterParamIndex(MasterParam::Dry)));
@@ -128,12 +130,18 @@ void Synth::allNotesOff() {
 bool Synth::setParam(uint32_t id, double value) {
   const int index = paramIndex(id);
   if (index < 0 || std::isnan(value)) return false;
-  values_[size_t(index)].store(clampParam(size_t(index), value), std::memory_order_relaxed);
+  const float clamped = clampParam(size_t(index), value);
   // Switch at the selector event, not at the next process: P1..P8 events after
-  // it in the same block (or flush) then land on the new engine.
+  // it in the same block (or flush) then land on the new engine. The P values
+  // are swapped before the selector is stored, so a main-thread snapshot() or
+  // engineStash() never sees the new selector with the old engine's values.
+  // While the 8 P stores are in flight it can still see the old selector with
+  // some new P values; that read is benign (display, or a state save the host
+  // repeats) and the next one is consistent.
   for (int part = 0; part < kNumParts; ++part) {
-    if (size_t(index) == sourceEngineParamIndex(part)) switchEngine(part);
+    if (size_t(index) == sourceEngineParamIndex(part)) switchEngine(part, sourceEngineFromSelector(clamped));
   }
+  values_[size_t(index)].store(clamped, std::memory_order_relaxed);
   return true;
 }
 
@@ -181,6 +189,7 @@ void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash) { 
   if (!active_.load(std::memory_order_acquire)) {  // no audio thread can run
     store(clamped);
     for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(s[i], std::memory_order_relaxed);
+    hostUpdateCount_ = 0;  // superseded by the load
     for (int part = 0; part < kNumParts; ++part) {
       currentEngine_[size_t(part)] = sourceEngineFromSelector(clamped[sourceEngineParamIndex(part)]);
     }
@@ -207,6 +216,7 @@ void Synth::applyPending() {  // audio thread, or main thread while inactive
   if (pendingHasStash_) {
     for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(pendingStash_[i], std::memory_order_relaxed);
   }
+  hostUpdateCount_ = 0;  // switches from before the load are superseded by it
   // The snapshot's P values belong to its engines: adopt them without swapping.
   for (int part = 0; part < kNumParts; ++part) {
     currentEngine_[size_t(part)] = sourceEngineFromSelector(pendingValues_[sourceEngineParamIndex(part)]);
@@ -244,16 +254,16 @@ void Synth::formatParam(size_t index, double value, char* buf, size_t size) cons
 }
 
 int Synth::takeHostUpdates(HostUpdate* out, int max) {  // audio thread
-  const int count = std::min(max, hostUpdateCount_);
+  const int count = std::clamp(max, 0, hostUpdateCount_);
   for (int i = 0; i < count; ++i) out[i] = hostUpdates_[i];
-  hostUpdateCount_ = 0;
+  for (int i = count; i < hostUpdateCount_; ++i) hostUpdates_[i - count] = hostUpdates_[i];
+  hostUpdateCount_ -= count;
   return count;
 }
 
 // Same threading as setParam. Saves the old engine's P1..P8, loads the new
 // engine's and queues them for the host.
-void Synth::switchEngine(int part) {
-  const int next = sourceEngineFromSelector(load(sourceEngineParamIndex(part)));
+void Synth::switchEngine(int part, int next) {
   const int previous = currentEngine_[size_t(part)];
   if (next == previous) return;
   for (int p = 0; p < int(kSourceParamCount); ++p) {
@@ -284,8 +294,9 @@ float Synth::softLimit(float x) {
   return std::copysign(1.0f + d / (1.0f + d), x);
 }
 
-// External = plugin input; Other part = A takes B's previous block, B takes A's
-// current block; Both = their sum. Other-part feeds pass the soft limiter.
+// External = plugin input; Other part = A takes B's output delayed by exactly
+// maxBlock samples (whatever the block sizes), B takes A's current block; Both =
+// their sum. Other-part feeds pass the soft limiter.
 void Synth::routeInput(int part, const float* const* in, int n) {
   const int source = std::clamp(parts_[size_t(part)]->settings().inputSource, 0, 2);
   const bool external = (source == 0 || source == 2) && in != nullptr;
@@ -295,7 +306,7 @@ void Synth::routeInput(int part, const float* const* in, int n) {
     for (int i = 0; i < n; ++i) {
       float v = external ? in[ch][i] : 0.0f;
       if (other) {
-        const float feed = part == 0 ? (i < previousBCount_ ? previousB_[ch][size_t(i)] : 0.0f)
+        const float feed = part == 0 ? feedRing_[ch][(feedPos_ + size_t(i)) % feedRing_[ch].size()]
                                      : partOut_[0][ch][size_t(i)];
         v += softLimit(feed);
       }
@@ -349,10 +360,15 @@ void Synth::process(const float* const* in, float* const* mainOut, float* const*
     heard[p] = output != 2;  // Other part only: feeds the other part, not heard
     toBus2[p] = bus2Out != nullptr && output == 1;
   }
+  // Append B's block to the feed ring. feedPos_ is where A reads next: the
+  // sample written feedDelay_ samples before it (ring size 2 * feedDelay_).
+  const size_t ringSize = feedRing_[0].size();
   for (int ch = 0; ch < 2; ++ch) {
-    std::copy(partOut_[1][ch].begin(), partOut_[1][ch].begin() + n, previousB_[ch].begin());
+    for (int i = 0; i < n; ++i) {
+      feedRing_[ch][(feedPos_ + feedDelay_ + size_t(i)) % ringSize] = partOut_[1][ch][size_t(i)];
+    }
   }
-  previousBCount_ = n;
+  feedPos_ = (feedPos_ + size_t(n)) % ringSize;
 
   for (int i = 0; i < n; ++i) {
     float main[2] = {0.0f, 0.0f};
