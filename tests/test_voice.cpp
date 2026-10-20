@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -71,6 +72,26 @@ TEST_CASE("Glide moves gradually to a new key while sounding") {
   REQUIRE(voice.currentNote() < 72.0f);
   run(voice, 96000);
   REQUIRE(voice.currentNote() == 72.0f);
+}
+
+TEST_CASE("Glide speed does not depend on the host block size") {
+  auto glideWith = [](int block) {
+    Voice voice(sine());
+    voice.prepare(48000.0, 256);
+    voice.setGlideSeconds(0.1f);
+    voice.trigger(60, 1.0f);
+    std::vector<float> l(256, 0.0f), r(256, 0.0f);
+    float* out[2] = {l.data(), r.data()};
+    const ParamValues p;
+    voice.process(out, p, 256);
+    voice.glideTo(72);
+    for (int done = 0; done < 4800; done += block) voice.process(out, p, std::min(block, 4800 - done));
+    return voice.currentNote();
+  };
+  const float reference = glideWith(16);
+  REQUIRE(std::fabs(glideWith(7) - reference) < 1e-3f);
+  REQUIRE(std::fabs(glideWith(1) - reference) < 1e-3f);
+  REQUIRE(std::fabs(glideWith(256) - reference) < 1e-3f);
 }
 
 TEST_CASE("A voice that was idle starts at its key even with glide on") {

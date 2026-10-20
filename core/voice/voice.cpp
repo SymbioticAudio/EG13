@@ -61,12 +61,12 @@ void Voice::release() {
 
 void Voice::process(float* const* out, const ParamValues& p, int n) {
   if (!active_) return;
-  const double coeff =
-      glideSeconds_ > 0.0f
-          ? std::exp(-double(kControlBlock) / (double(glideSeconds_) * hostRate_))
-          : 0.0;
   for (int done = 0; done < n;) {
     const int count = std::min(kControlBlock, n - done);
+    const double coeff =
+        glideSeconds_ > 0.0f
+            ? std::exp(-double(count) / (double(glideSeconds_) * hostRate_))
+            : 0.0;
     currentNote_ = double(targetNote_) + (currentNote_ - double(targetNote_)) * coeff;
     if (std::fabs(currentNote_ - double(targetNote_)) < 1e-4) currentNote_ = double(targetNote_);
     source_.setNote(float(currentNote_) + pitchOffset_);
