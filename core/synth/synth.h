@@ -6,11 +6,10 @@
 
 #include "engine/plaits_engine.h"
 #include "synth/param_table.h"
+#include "synth/plugin_kind.h"
 #include "voice/mono_note_stack.h"
 
 namespace eg13 {
-
-enum class PluginKind { Instrument, Effect };
 
 // M0 synth: one Macro Oscillator voice with last-note priority.
 // The Effect kind adds its audio input to the output.
@@ -28,7 +27,7 @@ class Synth {
   void noteOff(int key);
   void allNotesOff();
 
-  // Any thread. Clamps to [0, 1]; returns false for unknown IDs or NaN.
+  // Any thread. Clamps to the parameter range; returns false for unknown IDs or NaN.
   bool setParam(uint32_t id, double value);
   double param(uint32_t id) const;  // 0 for unknown IDs
   void resetParamsToDefaults();

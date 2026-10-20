@@ -41,7 +41,7 @@ void Synth::allNotesOff() {
 bool Synth::setParam(uint32_t id, double value) {
   const int index = paramIndex(id);
   if (index < 0 || std::isnan(value)) return false;
-  values_[size_t(index)].store(float(std::clamp(value, 0.0, 1.0)), std::memory_order_relaxed);
+  values_[size_t(index)].store(clampParam(size_t(index), value), std::memory_order_relaxed);
   return true;
 }
 
@@ -52,14 +52,14 @@ double Synth::param(uint32_t id) const {
 
 void Synth::resetParamsToDefaults() {
   for (size_t i = 0; i < kParamCount; ++i) {
-    values_[i].store(paramSpec(i).defaultValue, std::memory_order_relaxed);
+    values_[i].store(paramDefault(i, kind_), std::memory_order_relaxed);
   }
 }
 
 void Synth::process(const float* const* in, float* const* out, int n) {
   ParamValues p;
-  for (size_t i = 0; i < kSourceParamCount; ++i) p.p[i] = load(i);
-  const float gain = load(kMasterLevelIndex);
+  for (int i = 0; i < int(kSourceParamCount); ++i) p.p[i] = load(sourceParamIndex(0, i));
+  const float gain = load(masterParamIndex(MasterParam::Level));
   const bool addInput = kind_ == PluginKind::Effect && in != nullptr;
 
   for (int done = 0; done < n;) {

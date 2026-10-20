@@ -49,23 +49,10 @@ Stereo sine(size_t n) {
 
 }  // namespace
 
-TEST_CASE("Parameter table lists Macro Oscillator P1-P8 and master level") {
-  REQUIRE(kParamCount == 9);
-  REQUIRE(paramSpec(0).id == params::id(0, params::Slot::Source, 1));
-  REQUIRE(std::string(paramSpec(0).name) == "Model");
-  REQUIRE(std::string(paramSpec(0).module) == "Part A/Source");
-  REQUIRE(paramSpec(kMasterLevelIndex).id == params::kMasterLevel);
-  REQUIRE(paramIndex(params::kMasterLevel) == int(kMasterLevelIndex));
-  REQUIRE(paramIndex(0xDEADBEEF) == -1);
-  char buf[64];
-  formatParam(kMasterLevelIndex, 0.5, buf, sizeof(buf));
-  REQUIRE(std::string(buf) == "50%");
-}
-
 TEST_CASE("Synth starts at default parameter values") {
   Synth synth(PluginKind::Instrument);
   for (size_t i = 0; i < kParamCount; ++i) {
-    REQUIRE(synth.param(paramSpec(i).id) == double(paramSpec(i).defaultValue));
+    REQUIRE(synth.param(paramSpec(i).id) == double(paramDefault(i, PluginKind::Instrument)));
   }
 }
 

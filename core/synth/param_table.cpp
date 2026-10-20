@@ -1,5 +1,6 @@
 #include "synth/param_table.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -11,18 +12,72 @@ namespace eg13 {
 
 namespace {
 
+const char* const kSourceModules[kNumParts] = {"Part A/Source", "Part B/Source"};
+const char* const kPartModules[kNumParts] = {"Part A", "Part B"};
+
+struct PartParamDef {
+  PartParam param;
+  const char* name;
+  float minValue;
+  float maxValue;
+  float defaultValue;
+  bool stepped;
+  ParamFormat format;
+};
+
+const PartParamDef kPartDefs[kPartParamCount] = {
+    {PartParam::Level, "Level", 0, 1, 1, false, ParamFormat::Percent},
+    {PartParam::Pan, "Pan", -1, 1, 0, false, ParamFormat::Pan},
+    {PartParam::Glide, "Glide", 0, 1, 0, false, ParamFormat::GlideTime},
+    {PartParam::Transpose, "Transpose", -24, 24, 0, true, ParamFormat::Semitones},
+    {PartParam::BaseNote, "Base Note", 0, 127, 60, true, ParamFormat::Note},
+    {PartParam::MidiChannel, "MIDI Channel", 0, 16, 0, true, ParamFormat::Channel},
+    {PartParam::KeyLow, "Key Low", 0, 127, 0, true, ParamFormat::Note},
+    {PartParam::KeyHigh, "Key High", 0, 127, 127, true, ParamFormat::Note},
+    {PartParam::VoiceMode, "Voice Mode", 0, 2, 0, true, ParamFormat::VoiceMode},
+    {PartParam::VoiceCount, "Voices", 1, 8, 8, true, ParamFormat::VoiceCount},
+    {PartParam::Trigger, "Trigger", 0, 1, 0, true, ParamFormat::Trigger},
+    {PartParam::BendRange, "Bend Range", 0, 24, 2, true, ParamFormat::BendRange},
+    {PartParam::Mono, "Mono", 0, 1, 0, true, ParamFormat::OnOff},
+    {PartParam::Output, "Output", 0, 1, 0, true, ParamFormat::OutputBus},
+};
+
 const std::array<ParamSpec, kParamCount>& table() {
   static const std::array<ParamSpec, kParamCount> specs = [] {
     std::array<ParamSpec, kParamCount> t{};
     const EngineInfo& info = PlaitsEngine::staticInfo();
-    for (size_t i = 0; i < kSourceParamCount; ++i) {
-      t[i] = {params::id(0, params::Slot::Source, uint32_t(i + 1)), info.params[i].name,
-              "Part A/Source", info.params[i].defaultValue};
+    for (int part = 0; part < kNumParts; ++part) {
+      for (int p = 0; p < int(kSourceParamCount); ++p) {
+        const float def = info.params[p].defaultValue;
+        t[sourceParamIndex(part, p)] = {params::id(uint32_t(part), params::Slot::Source, uint32_t(p + 1)),
+                                        info.params[p].name, kSourceModules[part], 0.0f, 1.0f, def, def,
+                                        false, ParamFormat::Engine};
+      }
+      for (const PartParamDef& d : kPartDefs) {
+        t[partParamIndex(part, d.param)] = {params::id(uint32_t(part), params::Slot::Part, uint32_t(d.param)),
+                                            d.name, kPartModules[part], d.minValue, d.maxValue,
+                                            d.defaultValue, d.defaultValue, d.stepped, d.format};
+      }
     }
-    t[kMasterLevelIndex] = {params::kMasterLevel, "Level", "Master", 0.8f};
+    auto master = [](MasterParam m) {
+      return params::id(params::kMasterPart, params::Slot::Part, uint32_t(m));
+    };
+    t[masterParamIndex(MasterParam::Level)] = {master(MasterParam::Level), "Level", "Master", 0, 1,
+                                               0.8f, 0.8f, false, ParamFormat::Percent};
+    t[masterParamIndex(MasterParam::Dry)] = {master(MasterParam::Dry), "Dry", "Master", 0, 1, 0, 1,
+                                             false, ParamFormat::Percent};
+    t[masterParamIndex(MasterParam::Mode)] = {master(MasterParam::Mode), "Mode", "Master", 0, 3, 0, 0,
+                                              true, ParamFormat::PartMode};
+    t[masterParamIndex(MasterParam::SplitNote)] = {master(MasterParam::SplitNote), "Split Note",
+                                                   "Master", 0, 127, 60, 60, true, ParamFormat::Note};
     return t;
   }();
   return specs;
+}
+
+const char* pick(const char* const* names, int count, float value) {
+  const int i = std::clamp(int(std::lround(value)), 0, count - 1);
+  return names[i];
 }
 
 }  // namespace
@@ -37,12 +92,95 @@ int paramIndex(uint32_t id) {
   return -1;
 }
 
+float paramDefault(size_t index, PluginKind kind) {
+  const ParamSpec& s = paramSpec(index);
+  return kind == PluginKind::Effect ? s.effectDefault : s.defaultValue;
+}
+
+float clampParam(size_t index, double value) {
+  const ParamSpec& s = paramSpec(index);
+  if (std::isnan(value)) return s.minValue;
+  double v = std::clamp(value, double(s.minValue), double(s.maxValue));
+  if (s.stepped) v = std::round(v);
+  return float(v);
+}
+
+float glideSeconds(float normalized) { return 2.0f * normalized * normalized; }
+
 void formatParam(size_t index, double value, char* buf, size_t size) {
-  const float v = clamp01(float(value));
-  if (index < kSourceParamCount) {
-    PlaitsEngine::staticInfo().params[index].format(v, buf, size);
-  } else {
-    std::snprintf(buf, size, "%d%%", int(std::lround(v * 100.0f)));
+  static const char* const kNotes[12] = {"C", "C#", "D", "D#", "E", "F",
+                                         "F#", "G", "G#", "A", "A#", "B"};
+  static const char* const kVoiceModes[3] = {"Poly", "Mono", "Legato"};
+  static const char* const kTriggers[2] = {"MIDI", "Always on"};
+  static const char* const kOnOff[2] = {"Off", "On"};
+  static const char* const kOutputs[2] = {"Main", "Bus 2"};
+  static const char* const kModes[4] = {"Single", "Layer", "Split", "Multi"};
+
+  const ParamSpec& s = paramSpec(index);
+  const float v = clampParam(index, value);
+  switch (s.format) {
+    case ParamFormat::Engine:
+      PlaitsEngine::staticInfo().params[index % kParamsPerPart].format(v, buf, size);
+      break;
+    case ParamFormat::Percent:
+      std::snprintf(buf, size, "%d%%", int(std::lround(v * 100.0f)));
+      break;
+    case ParamFormat::Pan:
+      if (v < -0.005f) {
+        std::snprintf(buf, size, "L%d", int(std::lround(-v * 100.0f)));
+      } else if (v > 0.005f) {
+        std::snprintf(buf, size, "R%d", int(std::lround(v * 100.0f)));
+      } else {
+        std::snprintf(buf, size, "C");
+      }
+      break;
+    case ParamFormat::GlideTime: {
+      const float seconds = glideSeconds(v);
+      if (seconds <= 0.0f) {
+        std::snprintf(buf, size, "Off");
+      } else if (seconds < 1.0f) {
+        std::snprintf(buf, size, "%d ms", int(std::lround(seconds * 1000.0f)));
+      } else {
+        std::snprintf(buf, size, "%.2f s", double(seconds));
+      }
+      break;
+    }
+    case ParamFormat::Semitones:
+      std::snprintf(buf, size, "%+d st", int(v));
+      break;
+    case ParamFormat::BendRange:
+      std::snprintf(buf, size, "+/-%d st", int(v));
+      break;
+    case ParamFormat::Note: {
+      const int note = int(v);
+      std::snprintf(buf, size, "%s%d", kNotes[note % 12], note / 12 - 1);
+      break;
+    }
+    case ParamFormat::Channel:
+      if (int(v) == 0) {
+        std::snprintf(buf, size, "Omni");
+      } else {
+        std::snprintf(buf, size, "%d", int(v));
+      }
+      break;
+    case ParamFormat::VoiceMode:
+      std::snprintf(buf, size, "%s", pick(kVoiceModes, 3, v));
+      break;
+    case ParamFormat::VoiceCount:
+      std::snprintf(buf, size, "%d", int(v));
+      break;
+    case ParamFormat::Trigger:
+      std::snprintf(buf, size, "%s", pick(kTriggers, 2, v));
+      break;
+    case ParamFormat::OnOff:
+      std::snprintf(buf, size, "%s", pick(kOnOff, 2, v));
+      break;
+    case ParamFormat::OutputBus:
+      std::snprintf(buf, size, "%s", pick(kOutputs, 2, v));
+      break;
+    case ParamFormat::PartMode:
+      std::snprintf(buf, size, "%s", pick(kModes, 4, v));
+      break;
   }
 }
 

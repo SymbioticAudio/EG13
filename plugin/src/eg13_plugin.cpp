@@ -109,18 +109,18 @@ const clap_plugin_note_ports_t kNotePorts = {notePortsCount, notePortsGet};
 
 uint32_t paramsCount(const clap_plugin_t*) { return uint32_t(kParamCount); }
 
-bool paramsGetInfo(const clap_plugin_t*, uint32_t index, clap_param_info_t* info) {
+bool paramsGetInfo(const clap_plugin_t* p, uint32_t index, clap_param_info_t* info) {
   if (index >= kParamCount) return false;
   const ParamSpec& spec = paramSpec(index);
   std::memset(info, 0, sizeof(*info));
   info->id = spec.id;
-  info->flags = CLAP_PARAM_IS_AUTOMATABLE;
+  info->flags = CLAP_PARAM_IS_AUTOMATABLE | (spec.stepped ? CLAP_PARAM_IS_STEPPED : 0u);
   info->cookie = nullptr;
   std::snprintf(info->name, sizeof(info->name), "%s", spec.name);
   std::snprintf(info->module, sizeof(info->module), "%s", spec.module);
-  info->min_value = 0.0;
-  info->max_value = 1.0;
-  info->default_value = double(spec.defaultValue);
+  info->min_value = double(spec.minValue);
+  info->max_value = double(spec.maxValue);
+  info->default_value = double(paramDefault(index, self(p)->kind));
   return true;
 }
 
