@@ -1,0 +1,33 @@
+{
+  "originHash" : "ae82cc6fc2659b424b7c179b5db98811e4b04c7c8b0df7787683b21d95fce951",
+  "pins" : [
+    {
+      "identity" : "keyboard",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/AudioKit/Keyboard.git",
+      "state" : {
+        "revision" : "c0752677c602eec2f97ec50825581608bc56dac6",
+        "version" : "1.4.1"
+      }
+    },
+    {
+      "identity" : "symbiotic-design",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/SymbioticAudio/symbiotic-design.git",
+      "state" : {
+        "revision" : "cd779d0b518849d73f29cdba54606cbec8dd991d",
+        "version" : "0.1.0"
+      }
+    },
+    {
+      "identity" : "tonic",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/AudioKit/Tonic.git",
+      "state" : {
+        "revision" : "601eeb26b06ff6edfa391b2fd2d8815ec8231a9b",
+        "version" : "2.1.2"
+      }
+    }
+  ],
+  "version" : 3
+}
