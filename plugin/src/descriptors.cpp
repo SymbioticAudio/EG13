@@ -10,7 +10,6 @@ const char* const kInstrumentFeatures[] = {CLAP_PLUGIN_FEATURE_INSTRUMENT,
                                            CLAP_PLUGIN_FEATURE_STEREO, nullptr};
 
 const char* const kEffectFeatures[] = {CLAP_PLUGIN_FEATURE_AUDIO_EFFECT,
-                                       CLAP_PLUGIN_FEATURE_FILTER,
                                        CLAP_PLUGIN_FEATURE_STEREO, nullptr};
 
 constexpr const char* kUrl = "https://github.com/SymbioticAudio/EG13";

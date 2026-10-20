@@ -9,6 +9,7 @@ registered trademark; EG13 uses its own names for each engine.
 
 **Status:** M0 (skeleton): one monophonic Macro Oscillator voice, as the EG13 instrument and
 EG13 FX plugins. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design.
+Pre-1.0: saved projects and presets may not load in later versions until the parameter layout is frozen.
 
 ## Formats
 
@@ -26,6 +27,10 @@ ctest --preset mac
 scripts/validate.sh            # clap-validator, auval, pluginval
 ```
 
+A fresh Xcode install needs `sudo xcodebuild -runFirstLaunch` once. `scripts/validate.sh`
+installs EG13.component into `~/Library/Audio/Plug-Ins/Components`, restarts
+AudioComponentRegistrar and ad-hoc signs the built bundles.
+
 Plugins are written to `build/mac/plugins`. The first configure downloads the VST3 and
 AudioUnit SDKs.
 
@@ -41,3 +46,4 @@ cmake --preset linux && cmake --build --preset linux && ctest --preset linux
 - Eurorack DSP: © Émilie Gillet, MIT licence.
 - CLAP and clap-wrapper: free-audio, MIT licence.
 - Catch2: Boost Software License 1.0. nlohmann/json: MIT licence.
+- VST3 SDK (Steinberg, MIT), AudioUnitSDK (Apple, Apache-2.0), RtAudio/RtMidi (MIT-style, Standalone build).

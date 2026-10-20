@@ -14,3 +14,5 @@ add_library(eg13_eurorack STATIC
 target_include_directories(eg13_eurorack SYSTEM PUBLIC ${EURORACK_DIR})
 target_compile_definitions(eg13_eurorack PUBLIC TEST)
 target_compile_options(eg13_eurorack PRIVATE -w)
+# Upstream plaits/user_data.h uses printf under TEST without <cstdio> (GCC); keep upstream unmodified.
+target_compile_options(eg13_eurorack PRIVATE -include cstdio)

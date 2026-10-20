@@ -6,6 +6,7 @@
 #include <string>
 
 #include "state/state.h"
+#include "util/denormal_guard.h"
 #include "synth/param_table.h"
 
 namespace eg13 {
@@ -215,6 +216,7 @@ void pluginStopProcessing(const clap_plugin_t*) {}
 void pluginReset(const clap_plugin_t* p) { self(p)->synth.reset(); }
 
 clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* proc) {
+  eg13::ScopedFlushDenormals flushDenormals;
   Plugin* plugin = self(p);
   const uint32_t frames = proc->frames_count;
   const uint32_t numEvents = proc->in_events->size(proc->in_events);

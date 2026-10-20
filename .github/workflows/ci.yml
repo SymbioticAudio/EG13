@@ -38,8 +38,12 @@ jobs:
         run: ctest --preset mac
       - name: Validate plugins
         run: scripts/validate.sh build/mac
+      - name: Zip bundles
+        run: |
+          cd build/mac/plugins
+          for b in *.clap *.component *.vst3 *.app; do ditto -c -k --keepParent "$b" "$b.zip"; done
       - name: Upload plugins
         uses: actions/upload-artifact@v4
         with:
           name: EG13-macos
-          path: build/mac/plugins
+          path: build/mac/plugins/*.zip
