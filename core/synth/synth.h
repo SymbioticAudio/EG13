@@ -3,50 +3,72 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <memory>
+#include <vector>
 
-#include "engine/plaits_engine.h"
+#include "part/part.h"
 #include "synth/param_table.h"
 #include "synth/plugin_kind.h"
-#include "voice/mono_note_stack.h"
+#include "util/smoothed_value.h"
+#include "voice/source_factory.h"
 
 namespace eg13 {
 
-// M0 synth: one Macro Oscillator voice with last-note priority.
-// The Effect kind adds its audio input to the output.
+using ParamSnapshot = std::array<float, kParamCount>;
+
+// Two parts, MIDI routing by mode, main and Bus 2 outputs, Dry input and
+// atomic parameter snapshots.
 class Synth {
  public:
-  explicit Synth(PluginKind kind);
+  explicit Synth(PluginKind kind, SourceFactory factory = makePlaitsSource);
   Synth(const Synth&) = delete;
   Synth& operator=(const Synth&) = delete;
 
   PluginKind kind() const { return kind_; }
 
-  void prepare(double sampleRate, int maxBlock);  // main thread only
+  void prepare(double sampleRate, int maxBlock);  // main thread, not processing
+  void setProcessing(bool active);
   void reset();
-  void noteOn(int key, float velocity);
-  void noteOff(int key);
+
+  void noteOn(int channel, int key, float velocity);
+  void noteOff(int channel, int key);  // channel < 0: every channel
+  void pitchBend(int channel, float value);
+  void controlChange(int channel, int cc, int value);
   void allNotesOff();
 
-  // Any thread. Clamps to the parameter range; returns false for unknown IDs or NaN.
   bool setParam(uint32_t id, double value);
-  double param(uint32_t id) const;  // 0 for unknown IDs
-  void resetParamsToDefaults();
+  double param(uint32_t id) const;
+  ParamSnapshot defaultSnapshot() const;
+  ParamSnapshot snapshot() const;
+  void loadParams(const ParamSnapshot& values);
+  void resetParamsToDefaults() { loadParams(defaultSnapshot()); }
 
-  // out[0], out[1]: n samples each, may be the same buffer. in may be nullptr
-  // and may alias out.
-  void process(const float* const* in, float* const* out, int n);
+  // in: nullable, may alias mainOut. bus2Out: nullable. n <= maxBlock.
+  void process(const float* const* in, float* const* mainOut, float* const* bus2Out, int n);
+
+  int latencySamples() const { return latency_; }
+  int activeVoiceCount(int part) const { return parts_[size_t(part)]->activeVoiceCount(); }
 
  private:
-  static constexpr int kChunk = 64;
-
   float load(size_t index) const { return values_[index].load(std::memory_order_relaxed); }
+  void store(const ParamSnapshot& values);
+  void applyPending();
+  PartSettings readPartSettings(int part) const;
+  static int clampChannel(int channel);
 
   PluginKind kind_;
-  PlaitsEngine engine_;
-  MonoNoteStack notes_;
+  std::array<std::unique_ptr<Part>, kNumParts> parts_;
   std::array<std::atomic<float>, kParamCount> values_;
-  float render_[2][kChunk] = {};
-  float input_[2][kChunk] = {};
+  ParamSnapshot pendingValues_{};
+  std::atomic<bool> pending_{false};
+  std::atomic<bool> processing_{false};
+  SmoothedValue masterGain_;
+  SmoothedValue dryGain_;
+  int latency_ = 0;
+  std::vector<float> dryDelay_[2];
+  size_t dryPos_ = 0;
+  std::vector<float> partOut_[kNumParts][2];
+  uint8_t routed_[16][128] = {};
 };
 
 }  // namespace eg13

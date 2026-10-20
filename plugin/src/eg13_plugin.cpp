@@ -31,7 +31,9 @@ void handleEvent(Plugin* plugin, const clap_event_header_t* hdr) {
   switch (hdr->type) {
     case CLAP_EVENT_NOTE_ON: {
       const auto* ev = reinterpret_cast<const clap_event_note_t*>(hdr);
-      if (ev->key >= 0 && ev->key <= 127) plugin->synth.noteOn(ev->key, float(ev->velocity));
+      if (ev->key >= 0 && ev->key <= 127) {
+        plugin->synth.noteOn(ev->channel < 0 ? 0 : ev->channel, ev->key, float(ev->velocity));
+      }
       break;
     }
     case CLAP_EVENT_NOTE_OFF:
@@ -40,7 +42,7 @@ void handleEvent(Plugin* plugin, const clap_event_header_t* hdr) {
       if (ev->key < 0) {
         plugin->synth.allNotesOff();
       } else {
-        plugin->synth.noteOff(ev->key);
+        plugin->synth.noteOff(ev->channel, ev->key);
       }
       break;
     }
@@ -52,14 +54,17 @@ void handleEvent(Plugin* plugin, const clap_event_header_t* hdr) {
     case CLAP_EVENT_MIDI: {
       const auto* ev = reinterpret_cast<const clap_event_midi_t*>(hdr);
       const uint8_t status = ev->data[0] & 0xF0;
-      const int key = ev->data[1] & 0x7F;
-      const int velocity = ev->data[2] & 0x7F;
-      if (status == 0x90 && velocity > 0) {
-        plugin->synth.noteOn(key, float(velocity) / 127.0f);
+      const int channel = ev->data[0] & 0x0F;
+      const int d1 = ev->data[1] & 0x7F;
+      const int d2 = ev->data[2] & 0x7F;
+      if (status == 0x90 && d2 > 0) {
+        plugin->synth.noteOn(channel, d1, float(d2) / 127.0f);
       } else if (status == 0x80 || status == 0x90) {
-        plugin->synth.noteOff(key);
-      } else if (status == 0xB0 && (key == 120 || key == 123)) {
-        plugin->synth.allNotesOff();
+        plugin->synth.noteOff(channel, d1);
+      } else if (status == 0xB0) {
+        plugin->synth.controlChange(channel, d1, d2);
+      } else if (status == 0xE0) {
+        plugin->synth.pitchBend(channel, float(((d2 << 7) | d1) - 8192) / 8192.0f);
       }
       break;
     }
@@ -211,8 +216,11 @@ bool pluginActivate(const clap_plugin_t* p, double sampleRate, uint32_t, uint32_
 }
 
 void pluginDeactivate(const clap_plugin_t*) {}
-bool pluginStartProcessing(const clap_plugin_t*) { return true; }
-void pluginStopProcessing(const clap_plugin_t*) {}
+bool pluginStartProcessing(const clap_plugin_t* p) {
+  self(p)->synth.setProcessing(true);
+  return true;
+}
+void pluginStopProcessing(const clap_plugin_t* p) { self(p)->synth.setProcessing(false); }
 void pluginReset(const clap_plugin_t* p) { self(p)->synth.reset(); }
 
 clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* proc) {
@@ -259,9 +267,9 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
     float* outSlice[2] = {out[0] + frame, out[1] + frame};
     if (hasInput) {
       const float* inSlice[2] = {in[0] + frame, in[1] + frame};
-      plugin->synth.process(inSlice, outSlice, int(next - frame));
+      plugin->synth.process(inSlice, outSlice, nullptr, int(next - frame));
     } else {
-      plugin->synth.process(nullptr, outSlice, int(next - frame));
+      plugin->synth.process(nullptr, outSlice, nullptr, int(next - frame));
     }
     frame = next;
   }
