@@ -92,9 +92,9 @@ TEST_CASE("Master level at zero mutes the synth") {
   synth.prepare(kRate, kBlock);
   synth.setParam(params::kMasterLevel, 0.0);
   synth.noteOn(0, 60, 1.0f);
-  Stereo out(9600);
-  run(synth, out, 0, 9600);
-  for (size_t i = 4800; i < 9600; ++i) REQUIRE(out.l[i] == 0.0f);
+  Stereo out(19200);
+  run(synth, out, 0, 19200);
+  for (size_t i = 14400; i < 19200; ++i) REQUIRE(out.l[i] == 0.0f);
 }
 
 TEST_CASE("A chord plays polyphonically on Part A") {

@@ -7,7 +7,7 @@
 namespace eg13 {
 
 namespace {
-constexpr double kGainSmoothingSeconds = 0.005;
+constexpr double kGainSmoothingSeconds = 0.01;
 }  // namespace
 
 Synth::Synth(PluginKind kind, SourceFactory factory) : kind_(kind) {
