@@ -1582,7 +1582,9 @@ SourceSpec makePlaitsSource();
 
 namespace eg13 {
 
-SourceSpec makePlaitsSource() { return {std::make_unique<PlaitsEngine>(), 48000.0, 12}; }
+SourceSpec makePlaitsSource() {
+  return {std::make_unique<PlaitsEngine>(), PlaitsEngine::kNativeRate, 12};
+}
 
 }  // namespace eg13
 ```
@@ -3069,15 +3071,16 @@ TEST_CASE("FX passes its input through, delayed by the reported latency") {
 TEST_CASE("FX passthrough survives in-place buffers") {
   Synth synth(PluginKind::Effect);
   synth.prepare(kRate, kBlock);
+  const size_t latency = size_t(synth.latencySamples());
   const Stereo original = sineInput(4800, kRate);
   Stereo buffer = original;
   for (size_t done = 0; done < 4800; done += 240) {
     float* io[2] = {buffer.l.data() + done, buffer.r.data() + done};
     synth.process(io, io, nullptr, 240);
   }
-  for (size_t i = 0; i < 4800; ++i) {
-    REQUIRE(std::fabs(buffer.l[i] - original.l[i]) < 1e-4f);
-    REQUIRE(std::fabs(buffer.r[i] - original.r[i]) < 1e-4f);
+  for (size_t i = latency; i < 4800; ++i) {
+    REQUIRE(std::fabs(buffer.l[i] - original.l[i - latency]) < 1e-4f);
+    REQUIRE(std::fabs(buffer.r[i] - original.r[i - latency]) < 1e-4f);
   }
 }
 
