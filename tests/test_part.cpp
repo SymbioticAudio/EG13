@@ -212,14 +212,26 @@ TEST_CASE("The default Plaits part makes sound") {
 TEST_CASE("Part processing does not allocate") {
   Part part;
   part.prepare(44100.0, kBlock);
-  std::vector<float> l(kBlock), r(kBlock);
+  std::vector<float> l(kBlock), r(kBlock), input(kBlock, 0.1f);
   float* out[2] = {l.data(), r.data()};
+  const float* in[2] = {input.data(), input.data()};
   const ParamValues p;
-  part.process(out, p, kBlock);
+  part.process(in, out, p, kBlock);
   PartSettings s;
+  constexpr int kEngines[] = {2, 3, 4, 1, 0};
   test::ScopedAllocationCounter counter;
   for (int block = 0; block < 200; ++block) {
     if (block == 10) for (int key : {60, 64, 67, 71}) part.noteOn(key, 0.8f);
+    if (block == 40) for (int key : {60, 64, 67, 71}) part.noteOff(key);
+    // Engines 0 -> 2 -> 3 -> 4 -> 1 -> 0 with the notes held (from block 15), then again on
+    // the release tails (from block 42).
+    for (int first : {15, 42}) {
+      const int step = block - first;
+      if (step >= 0 && step < 25 && step % 5 == 0) {
+        s.engine = kEngines[step / 5];
+        part.applySettings(s);
+      }
+    }
     if (block == 50) part.pitchBend(0.5f);
     if (block == 60) {
       s.voiceCount = 3;
@@ -229,7 +241,7 @@ TEST_CASE("Part processing does not allocate") {
       s.alwaysOn = true;
       part.applySettings(s);
     }
-    part.process(out, p, kBlock);
+    part.process(in, out, p, kBlock);
   }
   const size_t allocations = counter.count();
   REQUIRE(allocations == 0);

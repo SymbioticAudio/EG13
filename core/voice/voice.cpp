@@ -1,6 +1,7 @@
 #include "voice/voice.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <utility>
 
@@ -21,6 +22,7 @@ Voice::Voice(std::vector<SourceSpec> sources) {
     sources_.push_back(
         std::make_unique<NativeRateWrapper>(std::move(s.engine), s.nativeRate, s.nativeBlock));
   }
+  assert(!sources_.empty() && "a voice needs at least one source engine");
 }
 
 void Voice::prepare(double hostRate, int maxBlock, Alignment alignment) {
@@ -50,7 +52,8 @@ void Voice::reset() {
 void Voice::setEngine(int engine) {
   engine = std::clamp(engine, 0, int(sources_.size()) - 1);
   if (engine == current_) return;
-  source().reset();
+  // Hard cut: the old engine is left as is (it is reset when selected again or by
+  // reset()), and a held note restarts after latencySamples() of silence.
   current_ = engine;
   source().reset();
   retrigger_ = false;

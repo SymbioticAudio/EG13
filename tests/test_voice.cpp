@@ -209,6 +209,25 @@ TEST_CASE("Voice processing does not allocate") {
   REQUIRE(allocations == 0);
 }
 
+TEST_CASE("Switching engines does not allocate") {
+  Voice voice(makeAllSources());
+  voice.prepare(44100.0, 256);
+  std::vector<float> left(256), right(256), input(256, 0.1f);
+  float* out[2] = {left.data(), right.data()};
+  const float* in[2] = {input.data(), input.data()};
+  const ParamValues p;
+  voice.trigger(60, 1.0f);
+  voice.process(in, out, p, 256);
+  test::ScopedAllocationCounter counter;
+  for (int block = 0; block < 240; ++block) {
+    if (block % 20 == 0) voice.setEngine((block / 20) % 5);  // held, then released
+    if (block == 120) voice.release();
+    voice.process(in, out, p, 256);
+  }
+  const size_t allocations = counter.count();
+  REQUIRE(allocations == 0);
+}
+
 namespace {
 
 std::vector<SourceSpec> impulseAndEcho() {
@@ -217,6 +236,31 @@ std::vector<SourceSpec> impulseAndEcho() {
   sources.push_back({std::make_unique<test::EchoEngine>(), 96000.0, 24});
   return sources;
 }
+
+// SineEngine scaled by the note-on velocity.
+class VelocitySineEngine final : public VoiceEngine {
+ public:
+  void prepare(double rate, int block) override { sine_.prepare(rate, block); }
+  void reset() override { sine_.reset(); }
+  void noteOn(float note, float velocity) override {
+    velocity_ = velocity;
+    sine_.noteOn(note, velocity);
+  }
+  void noteOff() override { sine_.noteOff(); }
+  void setNote(float note) override { sine_.setNote(note); }
+  void process(const float* const* in, float* const* out, const ParamValues& p, int n) override {
+    sine_.process(in, out, p, n);
+    for (int i = 0; i < n; ++i) {
+      out[0][i] *= velocity_;
+      out[1][i] *= velocity_;
+    }
+  }
+  const EngineInfo& info() const override { return sine_.info(); }
+
+ private:
+  test::SineEngine sine_;
+  float velocity_ = 1.0f;
+};
 
 int peakOf(const std::vector<float>& x) {
   return int(std::max_element(x.begin(), x.end(), [](float a, float b) {
@@ -258,11 +302,11 @@ TEST_CASE("Input alignment lines up input-using engines with the rest") {
 
 TEST_CASE("Switching engines restarts a held note on the new engine") {
   std::vector<SourceSpec> sources;
-  sources.push_back({std::make_unique<test::SineEngine>(), 48000.0, 12});
-  sources.push_back({std::make_unique<test::SineEngine>(), 48000.0, 12});
+  sources.push_back({std::make_unique<VelocitySineEngine>(), 48000.0, 12});
+  sources.push_back({std::make_unique<VelocitySineEngine>(), 48000.0, 12});
   Voice voice(std::move(sources));
   voice.prepare(48000.0, 256);
-  voice.trigger(69, 1.0f);
+  voice.trigger(69, 0.5f);
   std::vector<float> l(4800, 0.0f), r(4800, 0.0f);
   float* out[2] = {l.data(), r.data()};
   voice.process(nullptr, out, ParamValues{}, 4800);
@@ -272,6 +316,10 @@ TEST_CASE("Switching engines restarts a held note on the new engine") {
   std::fill(l.begin(), l.end(), 0.0f);
   voice.process(nullptr, out, ParamValues{}, 4800);
   REQUIRE(test::rms(l, 480, 4800) > 0.1);
+  // Same pitch and velocity as before the switch: 440 Hz, 0.5 * 0.5 amplitude.
+  REQUIRE_THAT(test::estimateFrequency(l, 48000.0, 480, 4800),
+               Catch::Matchers::WithinRel(440.0, 0.001));
+  REQUIRE_THAT(test::rms(l, 480, 4800), Catch::Matchers::WithinRel(0.25 / std::sqrt(2.0), 0.02));
   voice.release();
   voice.setEngine(0);
   REQUIRE_FALSE(voice.active());  // not held: the switch ends the note
@@ -282,6 +330,14 @@ TEST_CASE("setEngine clamps to the available engines") {
   voice.prepare(48000.0, 256);
   voice.setEngine(3);
   REQUIRE(voice.engine() == 0);
+  voice.setEngine(-1);
+  REQUIRE(voice.engine() == 0);
+  Voice two(impulseAndEcho());
+  two.prepare(48000.0, 256);
+  two.setEngine(-5);
+  REQUIRE(two.engine() == 0);
+  two.setEngine(7);
+  REQUIRE(two.engine() == 1);
 }
 
 TEST_CASE("A voice with every engine plays each of them") {
