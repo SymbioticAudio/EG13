@@ -24,6 +24,7 @@ struct EngineInfo {
   const char* displayName;  // shown in the UI
   int paramCount;
   const EngineParamInfo* params;
+  bool usesInput;  // the engine reads the `in` argument of process()
 };
 
 // Per-voice sound generator or processor (Source, Filter, Shaper slots).

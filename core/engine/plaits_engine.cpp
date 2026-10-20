@@ -43,7 +43,7 @@ const EngineParamInfo kParams[8] = {
     {"Aux Mix", 0.0f, formatPercent},
 };
 
-const EngineInfo kInfo = {"plaits", "Macro Oscillator", 8, kParams};
+const EngineInfo kInfo = {"plaits", "Macro Oscillator", 8, kParams, false};
 
 }  // namespace
 

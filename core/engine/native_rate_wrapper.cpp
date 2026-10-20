@@ -1,5 +1,6 @@
 #include "engine/native_rate_wrapper.h"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -13,26 +14,53 @@ NativeRateWrapper::NativeRateWrapper(std::unique_ptr<VoiceEngine> inner, double 
 
 NativeRateWrapper::~NativeRateWrapper() = default;
 
-void NativeRateWrapper::prepare(double hostRate, int) {
-  inner_->prepare(nativeRate_, nativeBlock_);
-  bypass_ = std::fabs(hostRate - nativeRate_) < 1e-6;
+void NativeRateWrapper::prepare(double hostRate, int maxBlock) {
+  const double native = nativeRate_ > 0.0 ? nativeRate_ : hostRate;
+  inner_->prepare(native, nativeBlock_);
+  bypass_ = std::fabs(hostRate - native) < 1e-6;
+  usesInput_ = inner_->info().usesInput;
   latency_ = 0;
+  inputLatency_ = 0;
+  inputPrime_ = 0;
   scratch_.assign(size_t(nativeBlock_), 0.0);
+  inputScratch_.assign(size_t(maxBlock), 0.0);
   for (int ch = 0; ch < 2; ++ch) {
     resampler_[ch].reset();
+    inputResampler_[ch].reset();
     native_[ch].assign(size_t(nativeBlock_), 0.0f);
+    nativeIn_[ch].assign(size_t(nativeBlock_), 0.0f);
     fifo_[ch].clear();
+    inputFifo_[ch].clear();
   }
   if (!bypass_) {
     for (int ch = 0; ch < 2; ++ch) {
-      resampler_[ch] = std::make_unique<r8b::CDSPResampler24>(nativeRate_, hostRate, nativeBlock_,
+      resampler_[ch] = std::make_unique<r8b::CDSPResampler24>(native, hostRate, nativeBlock_,
                                                               kTransitionBandPercent);
       fifo_[ch].assign(size_t(resampler_[ch]->getMaxOutLen(nativeBlock_)), 0.0f);
     }
-    latency_ = int(std::lround(double(resampler_[0]->getInLenBeforeOutPos(0)) * hostRate /
-                               nativeRate_));
+    latency_ = int(std::lround(double(resampler_[0]->getInLenBeforeOutPos(0)) * hostRate / native));
+    if (usesInput_) {
+      for (int ch = 0; ch < 2; ++ch) {
+        inputResampler_[ch] = std::make_unique<r8b::CDSPResampler24>(hostRate, native, maxBlock,
+                                                                     kTransitionBandPercent);
+      }
+      const int withheld = inputResampler_[0]->getInLenBeforeOutPos(0);
+      inputPrime_ = size_t(2 * nativeBlock_ + int(std::ceil(double(withheld) * native / hostRate)) + 1);
+      const size_t capacity = inputPrime_ + size_t(inputResampler_[0]->getMaxOutLen(maxBlock)) +
+                              size_t(nativeBlock_);
+      for (int ch = 0; ch < 2; ++ch) inputFifo_[ch].assign(capacity, 0.0f);
+      inputLatency_ = latency_ + int(std::lround(double(inputPrime_) * hostRate / native));
+    }
   }
+  extra_ = 0;
+  for (auto& line : delay_) line.clear();
   reset();
+}
+
+void NativeRateWrapper::setExtraDelay(int samples) {
+  extra_ = std::max(0, samples);
+  for (auto& line : delay_) line.assign(size_t(extra_), 0.0f);
+  delayPos_ = 0;
 }
 
 void NativeRateWrapper::reset() {
@@ -40,11 +68,20 @@ void NativeRateWrapper::reset() {
   for (auto& resampler : resampler_) {
     if (resampler) resampler->clear();
   }
+  for (auto& resampler : inputResampler_) {
+    if (resampler) resampler->clear();
+  }
   fifoRead_ = 0;
   fifoSize_ = 0;
   // r8brain skips its own latency after clear(); pad so the onset lands at
   // latencySamples() like it does in steady state.
   zeroPad_ = bypass_ ? 0 : size_t(latency_);
+  inputRead_ = 0;
+  inputSize_ = inputPrime_;
+  for (auto& ring : inputFifo_) std::fill(ring.begin(), ring.end(), 0.0f);
+  underruns_ = 0;
+  for (auto& line : delay_) std::fill(line.begin(), line.end(), 0.0f);
+  delayPos_ = 0;
 }
 
 void NativeRateWrapper::noteOn(float note, float velocity) { inner_->noteOn(note, velocity); }
@@ -58,28 +95,59 @@ const EngineInfo& NativeRateWrapper::info() const { return inner_->info(); }
 void NativeRateWrapper::process(const float* const* in, float* const* out, const ParamValues& p,
                                 int n) {
   if (bypass_) {
-    inner_->process(in, out, p, n);
-    return;
-  }
-  for (int i = 0; i < n; ++i) {
-    if (zeroPad_ > 0) {
-      out[0][i] = 0.0f;
-      out[1][i] = 0.0f;
-      --zeroPad_;
-      continue;
+    inner_->process(usesInput_ ? in : nullptr, out, p, n);
+  } else {
+    if (usesInput_) pushInput(in, n);
+    for (int i = 0; i < n; ++i) {
+      if (zeroPad_ > 0) {
+        out[0][i] = 0.0f;
+        out[1][i] = 0.0f;
+        --zeroPad_;
+        continue;
+      }
+      // The converter withholds its first outputs, so a block can yield nothing.
+      while (fifoSize_ == 0) renderNativeBlock(p);
+      out[0][i] = fifo_[0][fifoRead_];
+      out[1][i] = fifo_[1][fifoRead_];
+      ++fifoRead_;
+      --fifoSize_;
     }
-    // The converter withholds its first outputs, so a block can yield nothing.
-    while (fifoSize_ == 0) renderNativeBlock(p);
-    out[0][i] = fifo_[0][fifoRead_];
-    out[1][i] = fifo_[1][fifoRead_];
-    ++fifoRead_;
-    --fifoSize_;
   }
+  if (extra_ > 0) applyExtraDelay(out, n);
+}
+
+void NativeRateWrapper::pushInput(const float* const* in, int n) {
+  const size_t capacity = inputFifo_[0].size();
+  int produced = 0;
+  for (int ch = 0; ch < 2; ++ch) {
+    for (int i = 0; i < n; ++i) inputScratch_[size_t(i)] = in ? double(in[ch][i]) : 0.0;
+    double* converted = nullptr;
+    produced = inputResampler_[ch]->process(inputScratch_.data(), n, converted);
+    for (int j = 0; j < produced; ++j) {
+      inputFifo_[ch][(inputRead_ + inputSize_ + size_t(j)) % capacity] = float(converted[j]);
+    }
+  }
+  inputSize_ = std::min(capacity, inputSize_ + size_t(produced));
 }
 
 void NativeRateWrapper::renderNativeBlock(const ParamValues& p) {
+  const float* nativeIn[2] = {nullptr, nullptr};
+  if (usesInput_) {
+    const size_t capacity = inputFifo_[0].size();
+    const size_t take = std::min(inputSize_, size_t(nativeBlock_));
+    if (take < size_t(nativeBlock_)) ++underruns_;
+    for (int ch = 0; ch < 2; ++ch) {
+      for (size_t j = 0; j < size_t(nativeBlock_); ++j) {
+        nativeIn_[ch][j] = j < take ? inputFifo_[ch][(inputRead_ + j) % capacity] : 0.0f;
+      }
+    }
+    inputRead_ = (inputRead_ + take) % capacity;
+    inputSize_ -= take;
+    nativeIn[0] = nativeIn_[0].data();
+    nativeIn[1] = nativeIn_[1].data();
+  }
   float* native[2] = {native_[0].data(), native_[1].data()};
-  inner_->process(nullptr, native, p, nativeBlock_);
+  inner_->process(usesInput_ ? nativeIn : nullptr, native, p, nativeBlock_);
   int produced = 0;
   for (int ch = 0; ch < 2; ++ch) {
     for (int j = 0; j < nativeBlock_; ++j) scratch_[size_t(j)] = double(native_[ch][size_t(j)]);
@@ -90,6 +158,17 @@ void NativeRateWrapper::renderNativeBlock(const ParamValues& p) {
   }
   fifoRead_ = 0;
   fifoSize_ = size_t(produced);
+}
+
+void NativeRateWrapper::applyExtraDelay(float* const* out, int n) {
+  for (int i = 0; i < n; ++i) {
+    for (int ch = 0; ch < 2; ++ch) {
+      const float delayed = delay_[ch][delayPos_];
+      delay_[ch][delayPos_] = out[ch][i];
+      out[ch][i] = delayed;
+    }
+    delayPos_ = (delayPos_ + 1) % size_t(extra_);
+  }
 }
 
 }  // namespace eg13

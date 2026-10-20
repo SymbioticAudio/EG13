@@ -126,7 +126,7 @@ TEST_CASE("A voice whose engine outputs NaN is muted and freed") {
       for (int i = 0; i < n; ++i) out[0][i] = out[1][i] = std::numeric_limits<float>::quiet_NaN();
     }
     const EngineInfo& info() const override {
-      static const EngineInfo kInfo = {"nan", "NaN", 0, nullptr};
+      static const EngineInfo kInfo = {"nan", "NaN", 0, nullptr, false};
       return kInfo;
     }
   };
