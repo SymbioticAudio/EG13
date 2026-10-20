@@ -59,12 +59,13 @@ bool Voice::blockIsFinite(int count) const {
 
 void Voice::release() {
   gate_ = false;
+  retrigger_ = false;  // a pending NaN re-gate must not outlive the key release
   source_.noteOff();
 }
 
 void Voice::process(float* const* out, const ParamValues& p, int n) {
   if (!active_) return;
-  if (retrigger_) {
+  if (retrigger_ && gate_) {
     source_.noteOn(float(currentNote_) + pitchOffset_, velocity_);
     retrigger_ = false;
   }

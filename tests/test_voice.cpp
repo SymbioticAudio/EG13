@@ -150,6 +150,17 @@ TEST_CASE("A voice recovers after a one-off NaN") {
   REQUIRE(voice.active());
 }
 
+TEST_CASE("Releasing right after a NaN block does not leave a stuck note") {
+  Voice voice({std::make_unique<test::NanOnceEngine>(), 48000.0, 12});
+  voice.prepare(48000.0, 256);
+  voice.trigger(60, 1.0f);
+  for (float s : run(voice, 256)) REQUIRE(s == 0.0f);  // NaN block: muted, retrigger pending
+  REQUIRE(voice.active());
+  voice.release();  // before the next process() call re-sends the note
+  run(voice, 9600);  // 200 ms at 48 kHz: well past the 50 ms silence limit
+  REQUIRE_FALSE(voice.active());
+}
+
 TEST_CASE("Idle and active voices start notes with the same delay") {
   Voice voice({std::make_unique<test::ImpulseEngine>(), PlaitsEngine::kNativeRate, 12});
   voice.prepare(48000.0, 256);
