@@ -19,6 +19,8 @@ struct Plugin {
   const clap_host_t* host;
   const clap_host_params_t* hostParams = nullptr;
   PluginKind kind;
+  const clap_host_latency_t* hostLatency = nullptr;
+  uint32_t reportedLatency = 0;
   Synth synth;
   state::StateStore store;
 };
@@ -77,16 +79,30 @@ void handleEvent(Plugin* plugin, const clap_event_header_t* hdr) {
 // ---- audio ports --------------------------------------------------------------
 
 uint32_t audioPortsCount(const clap_plugin_t* p, bool isInput) {
-  if (isInput) return self(p)->kind == PluginKind::Effect ? 1 : 0;
-  return 1;
+  const bool instrument = self(p)->kind == PluginKind::Instrument;
+  if (isInput) return 1;                 // instrument: sidechain; FX: main input
+  return instrument ? 2 : 1;             // instrument: main + Bus 2
 }
 
 bool audioPortsGet(const clap_plugin_t* p, uint32_t index, bool isInput,
                    clap_audio_port_info_t* info) {
   if (index >= audioPortsCount(p, isInput)) return false;
-  info->id = isInput ? 0 : 1;
-  std::snprintf(info->name, sizeof(info->name), "%s", isInput ? "Input" : "Output");
-  info->flags = CLAP_AUDIO_PORT_IS_MAIN;
+  const bool instrument = self(p)->kind == PluginKind::Instrument;
+  const char* name = "Output";
+  uint32_t flags = CLAP_AUDIO_PORT_IS_MAIN;
+  clap_id id = 1;
+  if (isInput) {
+    id = 0;
+    name = instrument ? "Sidechain" : "Input";
+    flags = instrument ? 0u : uint32_t(CLAP_AUDIO_PORT_IS_MAIN);
+  } else if (index == 1) {
+    id = 2;
+    name = "Bus 2";
+    flags = 0;
+  }
+  info->id = id;
+  std::snprintf(info->name, sizeof(info->name), "%s", name);
+  info->flags = flags;
   info->channel_count = 2;
   info->port_type = CLAP_PORT_STEREO;
   info->in_place_pair = CLAP_INVALID_ID;
@@ -201,20 +217,34 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
 
 const clap_plugin_state_t kState = {stateSave, stateLoad};
 
+// ---- latency ----------------------------------------------------------------------
+
+uint32_t latencyGet(const clap_plugin_t* p) { return uint32_t(self(p)->synth.latencySamples()); }
+
+const clap_plugin_latency_t kLatency = {latencyGet};
+
 // ---- plugin -------------------------------------------------------------------------
 
 bool pluginInit(const clap_plugin_t* p) {
   Plugin* plugin = self(p);
   plugin->hostParams = static_cast<const clap_host_params_t*>(
       plugin->host->get_extension(plugin->host, CLAP_EXT_PARAMS));
+  plugin->hostLatency = static_cast<const clap_host_latency_t*>(
+      plugin->host->get_extension(plugin->host, CLAP_EXT_LATENCY));
   return true;
 }
 
 void pluginDestroy(const clap_plugin_t* p) { delete self(p); }
 
 bool pluginActivate(const clap_plugin_t* p, double sampleRate, uint32_t, uint32_t maxFrames) {
-  self(p)->synth.prepare(sampleRate, int(maxFrames));
-  self(p)->synth.setActive(true);
+  Plugin* plugin = self(p);
+  plugin->synth.prepare(sampleRate, int(maxFrames));
+  const uint32_t latency = uint32_t(plugin->synth.latencySamples());
+  if (latency != plugin->reportedLatency) {
+    plugin->reportedLatency = latency;
+    if (plugin->hostLatency) plugin->hostLatency->changed(plugin->host);
+  }
+  plugin->synth.setActive(true);
   return true;
 }
 
@@ -242,9 +272,20 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
   float* out[2] = {outBuf.data32[0],
                    outBuf.channel_count > 1 ? outBuf.data32[1] : outBuf.data32[0]};
 
+  // Bus 2 (instrument only); absent or unconnected buses fall back to main.
+  float* bus2[2] = {nullptr, nullptr};
+  const bool hasBus2 = plugin->kind == PluginKind::Instrument && proc->audio_outputs_count > 1 &&
+                       proc->audio_outputs[1].data32 != nullptr &&
+                       proc->audio_outputs[1].channel_count > 0;
+  if (hasBus2) {
+    const clap_audio_buffer_t& b = proc->audio_outputs[1];
+    bus2[0] = b.data32[0];
+    bus2[1] = b.channel_count > 1 ? b.data32[1] : b.data32[0];
+  }
+
+  // Input: the FX's main input or the instrument's sidechain (port 0 for both).
   const float* in[2] = {nullptr, nullptr};
-  const bool hasInput = plugin->kind == PluginKind::Effect && proc->audio_inputs_count > 0 &&
-                        proc->audio_inputs[0].data32 != nullptr &&
+  const bool hasInput = proc->audio_inputs_count > 0 && proc->audio_inputs[0].data32 != nullptr &&
                         proc->audio_inputs[0].channel_count > 0;
   if (hasInput) {
     const clap_audio_buffer_t& inBuf = proc->audio_inputs[0];
@@ -265,13 +306,12 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
       handleEvent(plugin, hdr);
       ++eventIndex;
     }
+    const int count = int(next - frame);
     float* outSlice[2] = {out[0] + frame, out[1] + frame};
-    if (hasInput) {
-      const float* inSlice[2] = {in[0] + frame, in[1] + frame};
-      plugin->synth.process(inSlice, outSlice, nullptr, int(next - frame));
-    } else {
-      plugin->synth.process(nullptr, outSlice, nullptr, int(next - frame));
-    }
+    float* bus2Slice[2] = {hasBus2 ? bus2[0] + frame : nullptr, hasBus2 ? bus2[1] + frame : nullptr};
+    const float* inSlice[2] = {hasInput ? in[0] + frame : nullptr, hasInput ? in[1] + frame : nullptr};
+    plugin->synth.process(hasInput ? inSlice : nullptr, outSlice, hasBus2 ? bus2Slice : nullptr,
+                          count);
     frame = next;
   }
   while (eventIndex < numEvents) {
@@ -285,6 +325,7 @@ const void* pluginGetExtension(const clap_plugin_t*, const char* id) {
   if (std::strcmp(id, CLAP_EXT_NOTE_PORTS) == 0) return &kNotePorts;
   if (std::strcmp(id, CLAP_EXT_PARAMS) == 0) return &kParams;
   if (std::strcmp(id, CLAP_EXT_STATE) == 0) return &kState;
+  if (std::strcmp(id, CLAP_EXT_LATENCY) == 0) return &kLatency;
   return nullptr;
 }
 

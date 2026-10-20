@@ -22,3 +22,10 @@ make_clapfirst_plugins(
   STANDALONE_CONFIGURATIONS
     standalone "${EG13_DISPLAY_NAME}" "com.symbioticaudio.eg13"
 )
+
+# clap-wrapper generates the AU Info.plist by loading the built .clap, but its
+# helper target only has an order-only dependency on it. Relink the helper
+# whenever the .clap changes so the plist never goes stale.
+if(TARGET EG13_auv2-build-helper)
+  set_property(TARGET EG13_auv2-build-helper APPEND PROPERTY LINK_DEPENDS $<TARGET_FILE:EG13_clap>)
+endif()
