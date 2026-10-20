@@ -171,7 +171,8 @@ void sendHostUpdates(Plugin* plugin, const clap_output_events_t* out, uint32_t t
     ev.header.time = time;
     ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
     ev.header.type = CLAP_EVENT_PARAM_VALUE;
-    ev.header.flags = 0;
+    // Derived from the selector change, not a user edit: recording it would fight the stash.
+    ev.header.flags = CLAP_EVENT_DONT_RECORD;
     ev.param_id = updates[i].id;
     ev.cookie = nullptr;
     ev.note_id = -1;
@@ -361,7 +362,9 @@ const void* pluginGetExtension(const clap_plugin_t*, const char* id) {
 void pluginOnMainThread(const clap_plugin_t* p) {
   Plugin* plugin = self(p);
   if (plugin->synth.takeEngineChanged() && plugin->hostParams) {
-    plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO);
+    // VALUES too: recovers any swapped value whose try_push failed.
+    plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT |
+                                                 CLAP_PARAM_RESCAN_INFO);
   }
 }
 
