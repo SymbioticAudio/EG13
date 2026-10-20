@@ -23,6 +23,12 @@ add_library(eg13_eurorack STATIC
   ${EURORACK_DIR}/elements/dsp/tube.cc
   ${EURORACK_DIR}/elements/dsp/multistage_envelope.cc
   ${EURORACK_DIR}/elements/resources.cc
+  ${EURORACK_DIR}/rings/dsp/part.cc
+  ${EURORACK_DIR}/rings/dsp/resonator.cc
+  ${EURORACK_DIR}/rings/dsp/string.cc
+  ${EURORACK_DIR}/rings/dsp/fm_voice.cc
+  ${EURORACK_DIR}/rings/dsp/string_synth_part.cc
+  ${EURORACK_DIR}/rings/resources.cc
   ${EURORACK_DIR}/stmlib/dsp/units.cc
   ${EG13_EURORACK_PATCHES}/stmlib/utils/random.cc)
 target_include_directories(eg13_eurorack SYSTEM BEFORE PUBLIC ${EG13_EURORACK_PATCHES})
