@@ -422,7 +422,7 @@ TEST_CASE("Dry drops stale input after a gap") {
   Synth synth(PluginKind::Effect);
   synth.prepare(44100.0, kBlock);
   const Stereo in = sineInput(4410, 44100.0);
-  const Stereo silent(4410);
+  const Stereo silent(13230);
   Stereo out(3 * 4410);
   run(synth, out, 0, 4410, &in);
   run(synth, out, 4410, 8820);
