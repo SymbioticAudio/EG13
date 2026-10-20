@@ -24,12 +24,15 @@ void Voice::prepare(double hostRate, int maxBlock) {
 void Voice::reset() {
   source_.reset();
   gate_ = false;
+  retrigger_ = false;
   active_ = false;
   silentSamples_ = 0;
 }
 
 void Voice::trigger(int key, float velocity) {
   targetNote_ = float(key);
+  velocity_ = velocity;
+  retrigger_ = false;
   if (!active_) {
     source_.reset();  // drop stale converter samples from the previous note
     currentNote_ = double(targetNote_);
@@ -61,6 +64,10 @@ void Voice::release() {
 
 void Voice::process(float* const* out, const ParamValues& p, int n) {
   if (!active_) return;
+  if (retrigger_) {
+    source_.noteOn(float(currentNote_) + pitchOffset_, velocity_);
+    retrigger_ = false;
+  }
   for (int done = 0; done < n;) {
     const int count = std::min(kControlBlock, n - done);
     const double coeff =
@@ -74,10 +81,11 @@ void Voice::process(float* const* out, const ParamValues& p, int n) {
     float* block[2] = {buffer_[0], buffer_[1]};
     source_.process(nullptr, block, p, count);
     if (!blockIsFinite(count)) {
-      // Spec §9: a NaN/Inf from an engine resets it and mutes the voice.
+      // Spec §9: a NaN/Inf from an engine resets it and mutes this block; a
+      // held note starts again on the next call.
       source_.reset();
-      gate_ = false;
-      active_ = false;
+      retrigger_ = gate_;
+      active_ = gate_;
       return;
     }
     float peak = 0.0f;

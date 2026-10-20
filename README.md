@@ -34,8 +34,7 @@ After installing or rebuilding the AU, quit and reopen Logic so it rescans
 plugins; if EG13 is still missing, use Logic Pro → Settings → Plug-in Manager →
 Reset & Rescan Selection.
 
-EG13 reports about 2–3 ms of latency at host rates other than 48 kHz (engines
-run at their native rate and are resampled); hosts compensate automatically.
+EG13 reports about 2.3 ms of latency at every host rate (engines run at their native rate — Plaits at the module's 47872.34 Hz clock — and are resampled); hosts compensate automatically.
 
 Plugins are written to `build/mac/plugins`. The first configure downloads the VST3 and
 AudioUnit SDKs.

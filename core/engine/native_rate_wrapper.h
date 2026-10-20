@@ -51,6 +51,7 @@ class NativeRateWrapper final : public VoiceEngine {
   std::vector<float> fifo_[2];
   size_t fifoRead_ = 0;
   size_t fifoSize_ = 0;
+  size_t zeroPad_ = 0;  // host samples of silence owed after reset()
 };
 
 }  // namespace eg13

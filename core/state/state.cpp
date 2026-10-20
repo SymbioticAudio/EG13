@@ -69,7 +69,7 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
       warnings = true;
       continue;
     }
-    values[size_t(index)] = float(it.value().get<double>());
+    values[size_t(index)] = clampParam(size_t(index), it.value().get<double>());
   }
 
   nlohmann::json extraTopLevel = nlohmann::json::object();
@@ -80,9 +80,11 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
     }
   }
 
+  std::string topDump = extraTopLevel.dump();
+  std::string paramsDump = extraParams.dump();
   synth.loadParams(values);
-  extraTopLevel_ = extraTopLevel.dump();
-  extraParams_ = extraParams.dump();
+  extraTopLevel_ = std::move(topDump);
+  extraParams_ = std::move(paramsDump);
   return warnings ? LoadResult::OkWithWarnings : LoadResult::Ok;
 }
 

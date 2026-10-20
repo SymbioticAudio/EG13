@@ -39,7 +39,7 @@ const PartParamDef kPartDefs[kPartParamCount] = {
     {PartParam::Trigger, "Trigger", 0, 1, 0, true, ParamFormat::Trigger},
     {PartParam::BendRange, "Bend Range", 0, 24, 2, true, ParamFormat::BendRange},
     {PartParam::Mono, "Mono", 0, 1, 0, true, ParamFormat::OnOff},
-    {PartParam::Output, "Output", 0, 1, 0, true, ParamFormat::OutputBus},
+    {PartParam::Output, "Output", 0, 2, 0, true, ParamFormat::OutputBus},
 };
 
 const std::array<ParamSpec, kParamCount>& table() {
@@ -113,7 +113,7 @@ void formatParam(size_t index, double value, char* buf, size_t size) {
   static const char* const kVoiceModes[3] = {"Poly", "Mono", "Legato"};
   static const char* const kTriggers[2] = {"MIDI", "Always on"};
   static const char* const kOnOff[2] = {"Off", "On"};
-  static const char* const kOutputs[2] = {"Main", "Bus 2"};
+  static const char* const kOutputs[3] = {"Main", "Bus 2", "Other part"};
   static const char* const kModes[4] = {"Single", "Layer", "Split", "Multi"};
 
   const ParamSpec& s = paramSpec(index);
@@ -176,7 +176,7 @@ void formatParam(size_t index, double value, char* buf, size_t size) {
       std::snprintf(buf, size, "%s", pick(kOnOff, 2, v));
       break;
     case ParamFormat::OutputBus:
-      std::snprintf(buf, size, "%s", pick(kOutputs, 2, v));
+      std::snprintf(buf, size, "%s", pick(kOutputs, 3, v));
       break;
     case ParamFormat::PartMode:
       std::snprintf(buf, size, "%s", pick(kModes, 4, v));

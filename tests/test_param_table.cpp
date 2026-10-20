@@ -93,6 +93,8 @@ TEST_CASE("Parameters format readable values") {
   REQUIRE(text(partParamIndex(0, PartParam::Trigger), 1) == "Always on");
   REQUIRE(text(partParamIndex(0, PartParam::Mono), 1) == "On");
   REQUIRE(text(partParamIndex(0, PartParam::Output), 1) == "Bus 2");
+  REQUIRE(text(partParamIndex(0, PartParam::Output), 2) == "Other part");
+  REQUIRE(clampParam(partParamIndex(0, PartParam::Output), 5) == 2.0f);
   REQUIRE(text(masterParamIndex(MasterParam::Mode), 2) == "Split");
   REQUIRE(text(masterParamIndex(MasterParam::Dry), 0.25) == "25%");
   REQUIRE(text(sourceParamIndex(1, 0), (8.0 + 0.5) / 24.0) == "Virtual analog");

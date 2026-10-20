@@ -42,6 +42,9 @@ void NativeRateWrapper::reset() {
   }
   fifoRead_ = 0;
   fifoSize_ = 0;
+  // r8brain skips its own latency after clear(); pad so the onset lands at
+  // latencySamples() like it does in steady state.
+  zeroPad_ = bypass_ ? 0 : size_t(latency_);
 }
 
 void NativeRateWrapper::noteOn(float note, float velocity) { inner_->noteOn(note, velocity); }
@@ -59,6 +62,12 @@ void NativeRateWrapper::process(const float* const* in, float* const* out, const
     return;
   }
   for (int i = 0; i < n; ++i) {
+    if (zeroPad_ > 0) {
+      out[0][i] = 0.0f;
+      out[1][i] = 0.0f;
+      --zeroPad_;
+      continue;
+    }
     // The converter withholds its first outputs, so a block can yield nothing.
     while (fifoSize_ == 0) renderNativeBlock(p);
     out[0][i] = fifo_[0][fifoRead_];

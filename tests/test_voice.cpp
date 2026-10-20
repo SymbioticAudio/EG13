@@ -134,7 +134,41 @@ TEST_CASE("A voice whose engine outputs NaN is muted and freed") {
   voice.prepare(48000.0, 256);
   voice.trigger(60, 1.0f);
   for (float s : run(voice, 512)) REQUIRE(s == 0.0f);
+  REQUIRE(voice.active());  // the gate is still on, so the voice retriggers
+  voice.release();
+  run(voice, 256);
   REQUIRE_FALSE(voice.active());
+}
+
+TEST_CASE("A voice recovers after a one-off NaN") {
+  Voice voice({std::make_unique<test::NanOnceEngine>(), 48000.0, 12});
+  voice.prepare(48000.0, 256);
+  voice.trigger(60, 1.0f);
+  for (float s : run(voice, 256)) REQUIRE(s == 0.0f);
+  const auto out = run(voice, 4800);
+  REQUIRE(test::rms(out, 0, out.size()) > 0.1);
+  REQUIRE(voice.active());
+}
+
+TEST_CASE("Idle and active voices start notes with the same delay") {
+  Voice voice({std::make_unique<test::ImpulseEngine>(), PlaitsEngine::kNativeRate, 12});
+  voice.prepare(48000.0, 256);
+  auto peakIndex = [](const std::vector<float>& x) {
+    size_t peak = 0;
+    for (size_t i = 0; i < x.size(); ++i) {
+      if (std::fabs(x[i]) > std::fabs(x[peak])) peak = i;
+    }
+    return double(peak);
+  };
+  voice.trigger(60, 1.0f);
+  const double d1 = peakIndex(run(voice, 4000));
+  REQUIRE(voice.active());
+  voice.trigger(60, 1.0f);
+  const double d2 = peakIndex(run(voice, 4000));
+  const double tolerance = std::ceil(12.0 * 48000.0 / PlaitsEngine::kNativeRate) + 2.0;
+  INFO("idle " << d1 << " active " << d2 << " latency " << voice.latencySamples());
+  REQUIRE(std::fabs(d1 - d2) <= tolerance);
+  REQUIRE(std::fabs(d1 - double(voice.latencySamples())) <= tolerance);
 }
 
 TEST_CASE("The default Plaits source makes sound") {

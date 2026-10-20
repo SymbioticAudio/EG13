@@ -203,6 +203,7 @@ void Synth::process(const float* const* in, float* const* mainOut, float* const*
     for (int i = 0; i < int(kSourceParamCount); ++i) source.p[i] = load(sourceParamIndex(p, i));
     float* out[2] = {partOut_[p][0].data(), partOut_[p][1].data()};
     parts_[size_t(p)]->process(out, source, n);
+    // Other part only arrives in M2; until then it plays on main (output 2).
     toBus2[p] = bus2Out != nullptr && parts_[size_t(p)]->settings().output == 1;
   }
 

@@ -119,6 +119,13 @@ TEST_CASE("Loaded values are clamped and stepped values rounded") {
   REQUIRE(s.param(partId(0, PartParam::VoiceCount)) == 6.0);
 }
 
+TEST_CASE("Huge loaded values clamp instead of overflowing") {
+  Synth s(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.load(s, R"({"schemaVersion":2,"params":{"259":1e300}})") == state::LoadResult::Ok);
+  REQUIRE(s.param(kTimbre) == 1.0);
+}
+
 TEST_CASE("A load while processing is reflected immediately") {
   Synth s(PluginKind::Instrument);
   s.prepare(48000.0, 256);

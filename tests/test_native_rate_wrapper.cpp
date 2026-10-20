@@ -117,3 +117,20 @@ TEST_CASE("NativeRateWrapper process does not allocate") {
   }
   REQUIRE(allocations == 0);
 }
+
+TEST_CASE("Onset after reset lands at the reported latency") {
+  for (double rate : {44100.0, 48000.0, 96000.0}) {
+    NativeRateWrapper w(std::make_unique<test::ImpulseEngine>(), PlaitsEngine::kNativeRate, 12);
+    w.prepare(rate, 512);
+    w.reset();
+    w.noteOn(60.0f, 1.0f);
+    const auto out = render(w, ParamValues{}, 4000, 512);
+    size_t peak = 0;
+    for (size_t i = 0; i < out.size(); ++i) {
+      if (std::fabs(out[i]) > std::fabs(out[peak])) peak = i;
+    }
+    const double tolerance = std::ceil(12.0 * rate / PlaitsEngine::kNativeRate) + 2.0;
+    INFO("rate " << rate << " peak " << peak << " latency " << w.latencySamples());
+    REQUIRE(std::fabs(double(peak) - double(w.latencySamples())) <= tolerance);
+  }
+}

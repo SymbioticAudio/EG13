@@ -183,6 +183,17 @@ TEST_CASE("Bus 2 carries parts routed to it, and falls back to main when not con
   REQUIRE(test::rms(fallback.l, 480, 4800) > 0.1);
 }
 
+TEST_CASE("A part set to Other part is heard on main until M2") {
+  Synth synth(PluginKind::Instrument, sine);
+  synth.setParam(partId(0, PartParam::Output), 2);
+  synth.prepare(kRate, kBlock);
+  synth.noteOn(0, 60, 1.0f);
+  Stereo main(4800), bus2(4800);
+  run(synth, main, 0, 4800, nullptr, &bus2);
+  REQUIRE(test::rms(main.l, 480, 4800) > 0.1);
+  REQUIRE(test::rms(bus2.l, 0, 4800) == 0.0);
+}
+
 TEST_CASE("FX passes its input through, delayed by the reported latency") {
   for (double rate : {44100.0, 48000.0}) {
     Synth synth(PluginKind::Effect);

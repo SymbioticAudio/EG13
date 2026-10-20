@@ -39,6 +39,8 @@ class Voice {
   float pitchOffset_ = 0.0f;
   float glideSeconds_ = 0.0f;
   bool gate_ = false;
+  bool retrigger_ = false;  // re-send the note after a NaN reset
+  float velocity_ = 1.0f;
   bool active_ = false;
   int silentSamples_ = 0;
   int silenceLimit_ = 2400;

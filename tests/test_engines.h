@@ -68,4 +68,36 @@ class SineEngine final : public VoiceEngine {
   bool gate_ = false;
 };
 
+// Outputs NaN for its first rendered block after its first noteOn (a one-off
+// glitch that survives reset()), then behaves as a 0.5 sine.
+class NanOnceEngine final : public VoiceEngine {
+ public:
+  void prepare(double rate, int block) override { sine_.prepare(rate, block); }
+  void reset() override { sine_.reset(); }
+  void noteOn(float note, float velocity) override {
+    sine_.noteOn(note, velocity);
+    if (!fired_) pending_ = true;
+  }
+  void noteOff() override { sine_.noteOff(); }
+  void setNote(float note) override { sine_.setNote(note); }
+  void process(const float* const* in, float* const* out, const ParamValues& p, int n) override {
+    if (pending_) {
+      pending_ = false;
+      fired_ = true;
+      for (int i = 0; i < n; ++i) out[0][i] = out[1][i] = std::nanf("");
+      return;
+    }
+    sine_.process(in, out, p, n);
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"nanonce", "NaN once", 0, nullptr};
+    return kInfo;
+  }
+
+ private:
+  SineEngine sine_;
+  bool pending_ = false;
+  bool fired_ = false;
+};
+
 }  // namespace eg13::test

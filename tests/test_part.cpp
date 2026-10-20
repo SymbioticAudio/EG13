@@ -130,6 +130,17 @@ TEST_CASE("Level zero silences the part") {
   for (size_t i = 14400; i < 19200; ++i) REQUIRE(out.l[i] == 0.0f);
 }
 
+TEST_CASE("An Always-on part recovers after a NaN") {
+  Part part([] { return SourceSpec{std::make_unique<test::NanOnceEngine>(), 48000.0, 12}; });
+  part.prepare(kRate, kBlock);
+  PartSettings s;
+  s.alwaysOn = true;
+  part.applySettings(s);
+  const auto out = run(part, 9600);
+  REQUIRE(part.activeVoiceCount() == 1);
+  REQUIRE(test::rms(out.l, 4800, 9600) > 0.1);
+}
+
 TEST_CASE("Always-on plays the base note with no MIDI and follows held keys") {
   Part part = preparedSinePart();
   PartSettings s;
