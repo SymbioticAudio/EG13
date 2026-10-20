@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "alloc_counter.h"
+#include "engine/engine_registry.h"
 #include "part/part.h"
 #include "test_engines.h"
 #include "test_helpers.h"
@@ -232,4 +233,33 @@ TEST_CASE("Part processing does not allocate") {
   }
   const size_t allocations = counter.count();
   REQUIRE(allocations == 0);
+}
+
+TEST_CASE("A part with every engine switches engines from its settings") {
+  Part part;
+  part.prepare(48000.0, kBlock);
+  PartSettings s;
+  s.engine = int(SourceEngine::Digital);
+  part.applySettings(s);
+  part.noteOn(69, 1.0f);
+  const auto out = run(part, 48000, test::defaultParams(sourceEngineInfo(1)));
+  REQUIRE_THAT(test::estimateFrequency(out.l, kRate, 9600, 48000),
+               Catch::Matchers::WithinRel(440.0, 0.001));
+}
+
+TEST_CASE("A part passes its input to the voices") {
+  Part part;
+  part.prepare(48000.0, kBlock);
+  PartSettings s;
+  s.engine = int(SourceEngine::AudioInput);
+  s.alwaysOn = true;
+  part.applySettings(s);
+  std::vector<float> input(19200, 0.25f), l(19200), r(19200);
+  const ParamValues p = test::defaultParams(sourceEngineInfo(4));
+  for (int done = 0; done < 19200; done += kBlock) {
+    const float* in[2] = {input.data() + done, input.data() + done};
+    float* out[2] = {l.data() + done, r.data() + done};
+    part.process(in, out, p, kBlock);
+  }
+  REQUIRE(std::fabs(l[19199] - 0.25f) < 1e-4f);
 }

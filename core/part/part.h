@@ -25,7 +25,9 @@ struct PartSettings {
   bool alwaysOn = false;
   int bendRange = 2;
   bool mono = false;
-  int output = 0;  // 0 = main, 1 = Bus 2
+  int output = 0;  // 0 = main, 1 = Bus 2, 2 = other part only
+  int engine = 0;  // SourceEngine
+  int inputSource = 0;  // 0 external, 1 other part, 2 both (routed by the Synth)
 };
 
 // One part: 8 voices, their allocator and the part's settings.
@@ -33,9 +35,11 @@ class Part {
  public:
   static constexpr int kVoices = VoiceAllocator::kMaxVoices;
 
-  explicit Part(SourceFactory factory = makePlaitsSource);
+  Part();                                // every source engine
+  explicit Part(SourceFactory factory);  // one engine per voice (tests)
 
-  void prepare(double hostRate, int maxBlock);  // main thread
+  void prepare(double hostRate, int maxBlock,
+               Voice::Alignment alignment = Voice::Alignment::Notes);  // main thread
   void reset();
   void applySettings(const PartSettings& settings);  // once per block
   const PartSettings& settings() const { return settings_; }
@@ -49,8 +53,11 @@ class Part {
   void sustain(bool down);
   void allNotesOff();
 
-  // Overwrites out[0], out[1] with n samples (n <= maxBlock).
-  void process(float* const* out, const ParamValues& source, int n);
+  // Overwrites out[0], out[1] with n samples (n <= maxBlock). in: nullable.
+  void process(const float* const* in, float* const* out, const ParamValues& source, int n);
+  void process(float* const* out, const ParamValues& source, int n) {
+    process(nullptr, out, source, n);
+  }
 
   int activeVoiceCount() const;
   int latencySamples() const { return voices_[0]->latencySamples(); }

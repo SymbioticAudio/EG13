@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "alloc_counter.h"
+#include "engine/engine_registry.h"
 #include "engine/plaits_engine.h"
 #include "test_engines.h"
 #include "test_helpers.h"
@@ -206,4 +207,102 @@ TEST_CASE("Voice processing does not allocate") {
   }
   const size_t allocations = counter.count();
   REQUIRE(allocations == 0);
+}
+
+namespace {
+
+std::vector<SourceSpec> impulseAndEcho() {
+  std::vector<SourceSpec> sources;
+  sources.push_back({std::make_unique<test::ImpulseEngine>(), 32000.0, 16});
+  sources.push_back({std::make_unique<test::EchoEngine>(), 96000.0, 24});
+  return sources;
+}
+
+int peakOf(const std::vector<float>& x) {
+  return int(std::max_element(x.begin(), x.end(), [](float a, float b) {
+               return std::fabs(a) < std::fabs(b);
+             }) - x.begin());
+}
+
+}  // namespace
+
+TEST_CASE("Every engine in a voice has the same note latency") {
+  Voice voice(impulseAndEcho());
+  voice.prepare(44100.0, 256);
+  REQUIRE(voice.engineCount() == 2);
+  const int latency = voice.latencySamples();
+  voice.setEngine(0);
+  voice.trigger(60, 1.0f);
+  std::vector<float> l(4000, 0.0f), r(4000, 0.0f);
+  float* out[2] = {l.data(), r.data()};
+  voice.process(nullptr, out, ParamValues{}, 4000);
+  REQUIRE(std::abs(peakOf(l) - latency) <= int(std::ceil(16.0 * 44100.0 / 32000.0)) + 2);
+}
+
+TEST_CASE("Input alignment lines up input-using engines with the rest") {
+  Voice voice(impulseAndEcho());
+  voice.prepare(44100.0, 256, Voice::Alignment::Input);
+  const int latency = voice.latencySamples();
+  voice.setEngine(1);  // echo: input path
+  voice.trigger(60, 1.0f);
+  std::vector<float> input(6000, 0.0f), l(6000, 0.0f), r(6000, 0.0f);
+  input[1000] = 1.0f;
+  for (int done = 0; done < 6000; done += 256) {
+    const int count = std::min(256, 6000 - done);
+    const float* in[2] = {input.data() + done, input.data() + done};
+    float* out[2] = {l.data() + done, r.data() + done};
+    voice.process(in, out, ParamValues{}, count);
+  }
+  REQUIRE(std::abs(peakOf(l) - 1000 - latency) <= int(std::ceil(24.0 * 44100.0 / 96000.0)) + 2);
+}
+
+TEST_CASE("Switching engines restarts a held note on the new engine") {
+  std::vector<SourceSpec> sources;
+  sources.push_back({std::make_unique<test::SineEngine>(), 48000.0, 12});
+  sources.push_back({std::make_unique<test::SineEngine>(), 48000.0, 12});
+  Voice voice(std::move(sources));
+  voice.prepare(48000.0, 256);
+  voice.trigger(69, 1.0f);
+  std::vector<float> l(4800, 0.0f), r(4800, 0.0f);
+  float* out[2] = {l.data(), r.data()};
+  voice.process(nullptr, out, ParamValues{}, 4800);
+  voice.setEngine(1);
+  REQUIRE(voice.engine() == 1);
+  REQUIRE(voice.active());
+  std::fill(l.begin(), l.end(), 0.0f);
+  voice.process(nullptr, out, ParamValues{}, 4800);
+  REQUIRE(test::rms(l, 480, 4800) > 0.1);
+  voice.release();
+  voice.setEngine(0);
+  REQUIRE_FALSE(voice.active());  // not held: the switch ends the note
+}
+
+TEST_CASE("setEngine clamps to the available engines") {
+  Voice voice(makePlaitsSource());
+  voice.prepare(48000.0, 256);
+  voice.setEngine(3);
+  REQUIRE(voice.engine() == 0);
+}
+
+TEST_CASE("A voice with every engine plays each of them") {
+  Voice voice(makeAllSources());
+  voice.prepare(44100.0, 256);
+  std::vector<float> input(22050, 0.0f);
+  for (size_t i = 0; i < 400; ++i) input[i] = (i % 2) ? 0.5f : -0.5f;
+  for (int e = 0; e < kNumSourceEngines; ++e) {
+    INFO("engine " << e);
+    voice.reset();
+    voice.setEngine(e);
+    ParamValues p = test::defaultParams(sourceEngineInfo(e));
+    voice.trigger(60, 1.0f);
+    std::vector<float> l(22050, 0.0f), r(22050, 0.0f);
+    for (int done = 0; done < 22050; done += 256) {
+      const int count = std::min(256, 22050 - done);
+      const float* in[2] = {input.data() + done, input.data() + done};
+      float* out[2] = {l.data() + done, r.data() + done};
+      voice.process(in, out, p, count);
+    }
+    REQUIRE(test::rms(l, 0, 22050) > 1e-4);
+    voice.release();
+  }
 }

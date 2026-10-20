@@ -11,22 +11,55 @@ constexpr float kSilenceThreshold = 3.1623e-5f;  // -90 dBFS
 constexpr double kSilenceSeconds = 0.05;
 }  // namespace
 
-Voice::Voice(SourceSpec source)
-    : source_(std::move(source.engine), source.nativeRate, source.nativeBlock) {}
+Voice::Voice(SourceSpec source) {
+  sources_.push_back(std::make_unique<NativeRateWrapper>(std::move(source.engine),
+                                                         source.nativeRate, source.nativeBlock));
+}
 
-void Voice::prepare(double hostRate, int maxBlock) {
+Voice::Voice(std::vector<SourceSpec> sources) {
+  for (auto& s : sources) {
+    sources_.push_back(
+        std::make_unique<NativeRateWrapper>(std::move(s.engine), s.nativeRate, s.nativeBlock));
+  }
+}
+
+void Voice::prepare(double hostRate, int maxBlock, Alignment alignment) {
   hostRate_ = hostRate;
   silenceLimit_ = int(hostRate * kSilenceSeconds);
-  source_.prepare(hostRate, maxBlock);
+  auto path = [alignment](const NativeRateWrapper& s) {
+    return alignment == Alignment::Input && s.info().usesInput ? s.inputLatencySamples()
+                                                               : s.outputLatencySamples();
+  };
+  latency_ = 0;
+  for (auto& s : sources_) {
+    s->prepare(hostRate, maxBlock);
+    latency_ = std::max(latency_, path(*s));
+  }
+  for (auto& s : sources_) s->setExtraDelay(latency_ - path(*s));
   reset();
 }
 
 void Voice::reset() {
-  source_.reset();
+  for (auto& s : sources_) s->reset();
   gate_ = false;
   retrigger_ = false;
   active_ = false;
   silentSamples_ = 0;
+}
+
+void Voice::setEngine(int engine) {
+  engine = std::clamp(engine, 0, int(sources_.size()) - 1);
+  if (engine == current_) return;
+  source().reset();
+  current_ = engine;
+  source().reset();
+  retrigger_ = false;
+  silentSamples_ = 0;
+  if (gate_) {
+    source().noteOn(float(currentNote_) + pitchOffset_, velocity_);
+  } else {
+    active_ = false;
+  }
 }
 
 void Voice::trigger(int key, float velocity) {
@@ -34,7 +67,7 @@ void Voice::trigger(int key, float velocity) {
   velocity_ = velocity;
   retrigger_ = false;
   if (!active_) {
-    source_.reset();  // drop stale converter samples from the previous note
+    source().reset();  // drop stale converter samples from the previous note
     currentNote_ = double(targetNote_);
   } else if (glideSeconds_ <= 0.0f) {
     currentNote_ = double(targetNote_);
@@ -42,7 +75,7 @@ void Voice::trigger(int key, float velocity) {
   gate_ = true;
   active_ = true;
   silentSamples_ = 0;
-  source_.noteOn(float(currentNote_) + pitchOffset_, velocity);
+  source().noteOn(float(currentNote_) + pitchOffset_, velocity);
 }
 
 void Voice::glideTo(int key) {
@@ -60,13 +93,13 @@ bool Voice::blockIsFinite(int count) const {
 void Voice::release() {
   gate_ = false;
   retrigger_ = false;  // a pending NaN re-gate must not outlive the key release
-  source_.noteOff();
+  source().noteOff();
 }
 
-void Voice::process(float* const* out, const ParamValues& p, int n) {
+void Voice::process(const float* const* in, float* const* out, const ParamValues& p, int n) {
   if (!active_) return;
   if (retrigger_ && gate_) {
-    source_.noteOn(float(currentNote_) + pitchOffset_, velocity_);
+    source().noteOn(float(currentNote_) + pitchOffset_, velocity_);
     retrigger_ = false;
   }
   for (int done = 0; done < n;) {
@@ -77,14 +110,15 @@ void Voice::process(float* const* out, const ParamValues& p, int n) {
             : 0.0;
     currentNote_ = double(targetNote_) + (currentNote_ - double(targetNote_)) * coeff;
     if (std::fabs(currentNote_ - double(targetNote_)) < 1e-4) currentNote_ = double(targetNote_);
-    source_.setNote(float(currentNote_) + pitchOffset_);
+    source().setNote(float(currentNote_) + pitchOffset_);
 
     float* block[2] = {buffer_[0], buffer_[1]};
-    source_.process(nullptr, block, p, count);
+    const float* inBlock[2] = {in ? in[0] + done : nullptr, in ? in[1] + done : nullptr};
+    source().process(in ? inBlock : nullptr, block, p, count);
     if (!blockIsFinite(count)) {
       // Spec §9: a NaN/Inf from an engine resets it and mutes this block; a
       // held note starts again on the next call.
-      source_.reset();
+      source().reset();
       retrigger_ = gate_;
       active_ = gate_;
       return;
