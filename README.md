@@ -13,7 +13,7 @@ Pre-1.0: saved projects and presets may not load in later versions until the par
 
 ## Formats
 
-CLAP and AU v2 (macOS 13+, universal), plus VST3 and Standalone.
+CLAP and AU v2 (macOS 14+, universal), plus VST3 and Standalone.
 
 ## Building (macOS)
 
