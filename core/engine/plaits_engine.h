@@ -13,6 +13,7 @@ namespace eg13 {
 class PlaitsEngine final : public VoiceEngine {
  public:
   static constexpr int kNumModels = 24;
+  static constexpr double kNativeRate = 47872.34;  // plaits::kCorrectedSampleRate: the module's real clock, which Plaits' DSP is tuned for
 
   PlaitsEngine();
   ~PlaitsEngine() override;
@@ -21,6 +22,7 @@ class PlaitsEngine final : public VoiceEngine {
   void reset() override;
   void noteOn(float note, float velocity) override;
   void noteOff() override;
+  void setNote(float note) override { note_ = note; }
   void process(const float* const* in, float* const* out, const ParamValues& p,
                int n) override;
   const EngineInfo& info() const override;

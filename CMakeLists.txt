@@ -13,6 +13,7 @@ option(EG13_BUILD_PLUGIN "Build CLAP/AU/VST3/Standalone (macOS)" ${APPLE})
 option(EG13_BUILD_TESTS "Build the test suite" ON)
 
 include(cmake/eurorack.cmake)
+include(cmake/r8brain.cmake)
 
 add_library(eg13_nlohmann INTERFACE)
 target_include_directories(eg13_nlohmann SYSTEM INTERFACE ${CMAKE_SOURCE_DIR}/third_party/nlohmann)

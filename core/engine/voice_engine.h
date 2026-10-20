@@ -35,6 +35,7 @@ class VoiceEngine {
   virtual void reset() = 0;
   virtual void noteOn(float note, float velocity) = 0;  // note: float MIDI note
   virtual void noteOff() = 0;
+  virtual void setNote(float note) = 0;  // pitch change without a new note (glide, bend)
   // out[0], out[1]: n samples each. in may be nullptr.
   virtual void process(const float* const* in, float* const* out,
                        const ParamValues& p, int n) = 0;

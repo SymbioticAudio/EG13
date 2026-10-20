@@ -10,7 +10,6 @@ namespace eg13 {
 namespace {
 
 constexpr size_t kRamSize = 16384;
-constexpr float kNativeRate = 48000.0f;
 
 const char* const kModelNames[PlaitsEngine::kNumModels] = {
     "Filtered waveforms", "Phase distortion", "6-op FM 1",        "6-op FM 2",
@@ -72,7 +71,7 @@ float PlaitsEngine::frequencyOffset(float normalized) {
 }
 
 void PlaitsEngine::prepare(double hostRate, int) {
-  pitchOffset_ = float(12.0 * std::log2(double(kNativeRate) / hostRate));
+  pitchOffset_ = float(12.0 * std::log2(kNativeRate / hostRate));
   reset();
 }
 

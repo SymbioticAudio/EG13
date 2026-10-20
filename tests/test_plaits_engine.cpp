@@ -43,9 +43,9 @@ TEST_CASE("Macro Oscillator describes itself") {
   REQUIRE(std::string(buf) == "Virtual analog");
 }
 
-TEST_CASE("Macro Oscillator matches upstream Plaits bit for bit at 48 kHz") {
+TEST_CASE("Macro Oscillator matches upstream Plaits bit for bit at its native rate") {
   PlaitsEngine engine;
-  engine.prepare(48000.0, 512);
+  engine.prepare(PlaitsEngine::kNativeRate, 512);
   engine.noteOn(69.0f, 0.8f);
   const int blocks = 400;
   const std::vector<float> actual =
@@ -86,7 +86,7 @@ TEST_CASE("Macro Oscillator tracks pitch at other host rates") {
     const auto out = render(engine, defaultParams(PlaitsEngine::staticInfo()), n, 512);
     const double f = eg13::test::estimateFrequency(out, rate, size_t(rate * 0.5), size_t(n));
     INFO("rate " << rate << " measured " << f);
-    REQUIRE_THAT(f, Catch::Matchers::WithinRel(440.0, 0.01));
+    REQUIRE_THAT(f, Catch::Matchers::WithinRel(440.0, 0.001));
   }
 }
 
@@ -142,4 +142,16 @@ TEST_CASE("Macro Oscillator goes quiet after note-off") {
   engine.noteOff();
   const auto tail = render(engine, p, 48000, 512);
   REQUIRE(eg13::test::rms(tail, 43200, 48000) < 1e-3);
+}
+
+TEST_CASE("Macro Oscillator setNote changes pitch without a new note") {
+  PlaitsEngine engine;
+  engine.prepare(48000.0, 512);
+  const auto p = defaultParams(PlaitsEngine::staticInfo());
+  engine.noteOn(60.0f, 1.0f);
+  render(engine, p, 24000, 512);
+  engine.setNote(72.0f);
+  const auto out = render(engine, p, 48000, 512);
+  const double f = eg13::test::estimateFrequency(out, 48000.0, 12000, 48000);
+  REQUIRE_THAT(f, Catch::Matchers::WithinRel(523.25, 0.01));
 }

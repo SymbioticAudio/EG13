@@ -1,0 +1,119 @@
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <memory>
+#include <vector>
+
+#include "alloc_counter.h"
+#include "engine/native_rate_wrapper.h"
+#include "engine/plaits_engine.h"
+#include "test_engines.h"
+#include "test_helpers.h"
+
+using namespace eg13;
+
+namespace {
+
+std::vector<float> render(VoiceEngine& engine, const ParamValues& p, int n, int chunk) {
+  std::vector<float> left(static_cast<size_t>(n)), right(static_cast<size_t>(n));
+  for (int done = 0; done < n;) {
+    const int count = std::min(chunk, n - done);
+    float* out[2] = {left.data() + done, right.data() + done};
+    engine.process(nullptr, out, p, count);
+    done += count;
+  }
+  return left;
+}
+
+std::unique_ptr<NativeRateWrapper> wrappedPlaits() {
+  return std::make_unique<NativeRateWrapper>(std::make_unique<PlaitsEngine>(), PlaitsEngine::kNativeRate, 12);
+}
+
+}  // namespace
+
+TEST_CASE("NativeRateWrapper is a bit-exact pass-through at the native rate") {
+  auto wrapped = wrappedPlaits();
+  PlaitsEngine direct;
+  wrapped->prepare(PlaitsEngine::kNativeRate, 512);
+  direct.prepare(PlaitsEngine::kNativeRate, 512);
+  REQUIRE(wrapped->latencySamples() == 0);
+  const auto p = test::defaultParams(PlaitsEngine::staticInfo());
+  wrapped->noteOn(60.0f, 1.0f);
+  direct.noteOn(60.0f, 1.0f);
+  REQUIRE(render(*wrapped, p, 4800, 256) == render(direct, p, 4800, 256));
+}
+
+TEST_CASE("NativeRateWrapper keeps Plaits in tune at common host rates") {
+  const auto p = test::defaultParams(PlaitsEngine::staticInfo());
+  for (double rate : {44100.0, 48000.0, 88200.0, 96000.0, 192000.0}) {
+    auto wrapped = wrappedPlaits();
+    wrapped->prepare(rate, 512);
+    wrapped->noteOn(69.0f, 1.0f);
+    const int n = int(rate * 1.5);
+    const auto out = render(*wrapped, p, n, 512);
+    const double f = test::estimateFrequency(out, rate, size_t(rate * 0.5), size_t(n));
+    INFO("rate " << rate << " measured " << f);
+    REQUIRE_THAT(f, Catch::Matchers::WithinRel(440.0, 0.001));
+  }
+}
+
+TEST_CASE("NativeRateWrapper latency is reported and at most 3 ms") {
+  for (double rate : {44100.0, 96000.0, 192000.0}) {
+    NativeRateWrapper wrapped(std::make_unique<test::ImpulseEngine>(), 48000.0, 12);
+    wrapped.prepare(rate, 512);
+    const int latency = wrapped.latencySamples();
+    INFO("rate " << rate << " latency " << latency);
+    REQUIRE(latency > 0);
+    REQUIRE(double(latency) / rate <= 0.003);
+
+    const ParamValues p;
+    render(wrapped, p, 4000, 512);  // run past the converter's start-up
+    wrapped.noteOn(60.0f, 1.0f);
+    const auto out = render(wrapped, p, 4000, 512);
+    const auto peak = std::max_element(out.begin(), out.end(), [](float a, float b) {
+      return std::fabs(a) < std::fabs(b);
+    });
+    const int delay = int(peak - out.begin());
+    const int tolerance = int(std::ceil(12.0 * rate / 48000.0)) + 2;  // one native block
+    INFO("delay " << delay);
+    REQUIRE(std::abs(delay - latency) <= tolerance);
+  }
+}
+
+TEST_CASE("NativeRateWrapper output is independent of host block size") {
+  const auto p = test::defaultParams(PlaitsEngine::staticInfo());
+  auto a = wrappedPlaits();
+  auto b = wrappedPlaits();
+  auto c = wrappedPlaits();
+  for (auto* w : {a.get(), b.get(), c.get()}) {
+    w->prepare(44100.0, 4096);
+    w->noteOn(60.0f, 1.0f);
+  }
+  const auto ra = render(*a, p, 9000, 4096);
+  REQUIRE(ra == render(*b, p, 9000, 1));
+  REQUIRE(ra == render(*c, p, 9000, 7));
+}
+
+TEST_CASE("NativeRateWrapper process does not allocate") {
+  auto wrapped = wrappedPlaits();
+  wrapped->prepare(44100.0, 512);
+  const auto p = test::defaultParams(PlaitsEngine::staticInfo());
+  std::vector<float> left(512), right(512);
+  float* out[2] = {left.data(), right.data()};
+  wrapped->noteOn(60.0f, 1.0f);
+  wrapped->process(nullptr, out, p, 512);  // warm up
+
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int block = 0; block < 100; ++block) {
+      if (block == 50) wrapped->noteOn(67.0f, 1.0f);
+      wrapped->process(nullptr, out, p, 512);
+    }
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
+}
