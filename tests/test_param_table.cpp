@@ -5,6 +5,7 @@
 #include <set>
 #include <string>
 
+#include "engine/audio_input_engine.h"
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 
@@ -53,13 +54,18 @@ TEST_CASE("Index helpers agree with parameter IDs") {
   REQUIRE(std::string(paramSpec(sourceParamIndex(1, 0)).module) == "Part B/Source");
 }
 
-TEST_CASE("Dry defaults differ between the instrument and the FX") {
-  const size_t dry = masterParamIndex(MasterParam::Dry);
-  REQUIRE(paramDefault(dry, PluginKind::Instrument) == 0.0f);
-  REQUIRE(paramDefault(dry, PluginKind::Effect) == 1.0f);
-  const size_t voices = partParamIndex(0, PartParam::VoiceCount);
-  REQUIRE(paramDefault(voices, PluginKind::Instrument) == 8.0f);
-  REQUIRE(paramDefault(voices, PluginKind::Effect) == 8.0f);
+TEST_CASE("EG13 FX defaults form its init patch") {
+  REQUIRE(paramDefault(masterParamIndex(MasterParam::Dry), PluginKind::Effect) == 0.0f);
+  REQUIRE(paramDefault(masterParamIndex(MasterParam::Level), PluginKind::Effect) == 1.0f);
+  REQUIRE(paramDefault(masterParamIndex(MasterParam::Level), PluginKind::Instrument) == 0.8f);
+  REQUIRE(paramDefault(sourceEngineParamIndex(0), PluginKind::Effect) == 4.0f);
+  REQUIRE(paramDefault(sourceEngineParamIndex(1), PluginKind::Effect) == 0.0f);
+  REQUIRE(paramDefault(sourceEngineParamIndex(0), PluginKind::Instrument) == 0.0f);
+  REQUIRE(paramDefault(partParamIndex(0, PartParam::Trigger), PluginKind::Effect) == 1.0f);
+  REQUIRE(paramDefault(partParamIndex(1, PartParam::Trigger), PluginKind::Effect) == 0.0f);
+  REQUIRE(paramDefault(sourceParamIndex(0, 0), PluginKind::Effect) ==
+          AudioInputEngine::staticInfo().params[0].defaultValue);
+  REQUIRE(paramDefault(partParamIndex(0, PartParam::VoiceCount), PluginKind::Effect) == 8.0f);
 }
 
 TEST_CASE("clampParam clamps, rounds stepped values and maps NaN to the minimum") {

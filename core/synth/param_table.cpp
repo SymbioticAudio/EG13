@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "engine/audio_input_engine.h"
 #include "engine/engine_registry.h"
 #include "engine/plaits_engine.h"
 #include "params/param_ids.h"
@@ -48,15 +49,21 @@ const std::array<ParamSpec, kParamCount>& table() {
   static const std::array<ParamSpec, kParamCount> specs = [] {
     std::array<ParamSpec, kParamCount> t{};
     const EngineInfo& info = PlaitsEngine::staticInfo();
+    const EngineInfo& fxInfo = AudioInputEngine::staticInfo();
     for (int part = 0; part < kNumParts; ++part) {
       t[sourceEngineParamIndex(part)] = {params::id(uint32_t(part), params::Slot::Source, 0), "Engine",
                                          kSourceModules[part], 0.0f, float(kSourceEngineSelectorMax),
-                                         0.0f, 0.0f, true, ParamFormat::SourceEngine};
+                                         0.0f, part == 0 ? 4.0f : 0.0f, true,
+                                         ParamFormat::SourceEngine};
       for (int p = 0; p < int(kSourceParamCount); ++p) {
         const float def = info.params[p].defaultValue;
+        float effectDef = def;
+        if (part == 0) {  // EG13 FX: Part A plays the Audio Input engine
+          effectDef = p < fxInfo.paramCount ? fxInfo.params[p].defaultValue : 0.0f;
+        }
         t[sourceParamIndex(part, p)] = {params::id(uint32_t(part), params::Slot::Source, uint32_t(p + 1)),
-                                        info.params[p].name, kSourceModules[part], 0.0f, 1.0f, def, def,
-                                        false, ParamFormat::Engine};
+                                        info.params[p].name, kSourceModules[part], 0.0f, 1.0f, def,
+                                        effectDef, false, ParamFormat::Engine};
       }
       for (const PartParamDef& d : kPartDefs) {
         t[partParamIndex(part, d.param)] = {params::id(uint32_t(part), params::Slot::Part, uint32_t(d.param)),
@@ -64,12 +71,13 @@ const std::array<ParamSpec, kParamCount>& table() {
                                             d.defaultValue, d.defaultValue, d.stepped, d.format};
       }
     }
+    t[partParamIndex(0, PartParam::Trigger)].effectDefault = 1.0f;  // EG13 FX: Part A always on
     auto master = [](MasterParam m) {
       return params::id(params::kMasterPart, params::Slot::Part, uint32_t(m));
     };
     t[masterParamIndex(MasterParam::Level)] = {master(MasterParam::Level), "Level", "Master", 0, 1,
-                                               0.8f, 0.8f, false, ParamFormat::Percent};
-    t[masterParamIndex(MasterParam::Dry)] = {master(MasterParam::Dry), "Dry", "Master", 0, 1, 0, 1,
+                                               0.8f, 1.0f, false, ParamFormat::Percent};
+    t[masterParamIndex(MasterParam::Dry)] = {master(MasterParam::Dry), "Dry", "Master", 0, 1, 0, 0,
                                              false, ParamFormat::Percent};
     t[masterParamIndex(MasterParam::Mode)] = {master(MasterParam::Mode), "Mode", "Master", 0, 3, 0, 0,
                                               true, ParamFormat::PartMode};

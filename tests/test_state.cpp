@@ -71,7 +71,8 @@ TEST_CASE("Missing parameters fall back to the defaults for the synth's kind") {
   fx.setParam(masterId(MasterParam::Dry), 0.2);
   state::StateStore store;
   REQUIRE(store.load(fx, R"({"schemaVersion":2,"params":{"257":0.9}})") == state::LoadResult::Ok);
-  REQUIRE(fx.param(masterId(MasterParam::Dry)) == 1.0);
+  REQUIRE(fx.param(masterId(MasterParam::Dry)) ==
+          double(paramDefault(masterParamIndex(MasterParam::Dry), PluginKind::Effect)));
   REQUIRE(fx.param(kTimbre) == double(paramDefault(sourceParamIndex(0, 2), PluginKind::Effect)));
 }
 
