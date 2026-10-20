@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <utility>
-#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -25,21 +24,24 @@ bool parseId(const std::string& key, uint32_t* id) {
   return true;
 }
 
+// Schema 1 (M0) -> 2: the nine M0 parameters kept their IDs and ranges, so no
+// transformation is needed. Later schema changes add their migrations here.
+
 }  // namespace
 
-std::string save(const Synth& synth) {
-  nlohmann::json params = nlohmann::json::object();
+std::string StateStore::save(const Synth& synth) const {
+  nlohmann::json root = nlohmann::json::parse(extraTopLevel_);
+  nlohmann::json params = nlohmann::json::parse(extraParams_);
   for (size_t i = 0; i < kParamCount; ++i) {
     const uint32_t id = paramSpec(i).id;
     params[std::to_string(id)] = synth.param(id);
   }
-  nlohmann::json root = nlohmann::json::object();
   root["schemaVersion"] = kSchemaVersion;
   root["params"] = std::move(params);
   return root.dump();
 }
 
-LoadResult load(Synth& synth, const std::string& json) {
+LoadResult StateStore::load(Synth& synth, const std::string& json) {
   const nlohmann::json root = nlohmann::json::parse(json, nullptr, false);
   if (root.is_discarded() || !root.is_object()) return LoadResult::Invalid;
 
@@ -53,20 +55,34 @@ LoadResult load(Synth& synth, const std::string& json) {
   if (schema < 1) return LoadResult::Invalid;
   bool warnings = schema > kSchemaVersion;
 
-  std::vector<std::pair<uint32_t, double>> values;
+  ParamSnapshot values = synth.defaultSnapshot();
+  nlohmann::json extraParams = nlohmann::json::object();
   for (auto it = params->begin(); it != params->end(); ++it) {
     uint32_t id = 0;
-    if (!parseId(it.key(), &id) || !it.value().is_number() || paramIndex(id) < 0) {
+    if (!parseId(it.key(), &id) || !it.value().is_number()) {
       warnings = true;
       continue;
     }
-    values.emplace_back(id, it.value().get<double>());
+    const int index = paramIndex(id);
+    if (index < 0) {
+      extraParams[it.key()] = it.value();
+      warnings = true;
+      continue;
+    }
+    values[size_t(index)] = float(it.value().get<double>());
   }
 
-  synth.resetParamsToDefaults();
-  for (const auto& [id, value] : values) {
-    if (!synth.setParam(id, value)) warnings = true;
+  nlohmann::json extraTopLevel = nlohmann::json::object();
+  for (auto it = root.begin(); it != root.end(); ++it) {
+    if (it.key() != "schemaVersion" && it.key() != "params") {
+      extraTopLevel[it.key()] = it.value();
+      warnings = true;
+    }
   }
+
+  synth.loadParams(values);
+  extraTopLevel_ = extraTopLevel.dump();
+  extraParams_ = extraParams.dump();
   return warnings ? LoadResult::OkWithWarnings : LoadResult::Ok;
 }
 

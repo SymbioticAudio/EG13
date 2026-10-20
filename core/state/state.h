@@ -8,14 +8,22 @@ class Synth;
 
 namespace eg13::state {
 
-constexpr int kSchemaVersion = 1;
+constexpr int kSchemaVersion = 2;
 
 enum class LoadResult { Ok, OkWithWarnings, Invalid };
 
-std::string save(const Synth& synth);
+// Saves and loads a synth's state as JSON. Keeps data it does not understand
+// (unknown parameters and top-level keys) and writes it back on save.
+// Main thread only; one store per plugin instance.
+class StateStore {
+ public:
+  std::string save(const Synth& synth) const;
+  // Invalid leaves the synth and the preserved data unchanged.
+  LoadResult load(Synth& synth, const std::string& json);
 
-// Invalid leaves the synth unchanged. Otherwise parameters missing from the
-// document are reset to their defaults.
-LoadResult load(Synth& synth, const std::string& json);
+ private:
+  std::string extraTopLevel_ = "{}";
+  std::string extraParams_ = "{}";
+};
 
 }  // namespace eg13::state

@@ -20,6 +20,7 @@ struct Plugin {
   const clap_host_params_t* hostParams = nullptr;
   PluginKind kind;
   Synth synth;
+  state::StateStore store;
 };
 
 Plugin* self(const clap_plugin_t* p) { return static_cast<Plugin*>(p->plugin_data); }
@@ -164,16 +165,16 @@ const clap_plugin_params_t kParams = {paramsCount,       paramsGetInfo, paramsGe
 
 bool stateSave(const clap_plugin_t* p, const clap_ostream_t* stream) {
   try {
-  const std::string data = state::save(self(p)->synth);
-  const char* ptr = data.data();
-  int64_t remaining = int64_t(data.size());
-  while (remaining > 0) {
-    const int64_t written = stream->write(stream, ptr, uint64_t(remaining));
-    if (written <= 0) return false;
-    ptr += written;
-    remaining -= written;
-  }
-  return true;
+    const std::string data = self(p)->store.save(self(p)->synth);
+    const char* ptr = data.data();
+    int64_t remaining = int64_t(data.size());
+    while (remaining > 0) {
+      const int64_t written = stream->write(stream, ptr, uint64_t(remaining));
+      if (written <= 0) return false;
+      ptr += written;
+      remaining -= written;
+    }
+    return true;
   } catch (...) {
     return false;
   }
@@ -181,18 +182,18 @@ bool stateSave(const clap_plugin_t* p, const clap_ostream_t* stream) {
 
 bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
   try {
-  std::string data;
-  char buffer[4096];
-  for (;;) {
-    const int64_t read = stream->read(stream, buffer, sizeof(buffer));
-    if (read < 0) return false;
-    if (read == 0) break;
-    data.append(buffer, size_t(read));
-  }
-  Plugin* plugin = self(p);
-  if (state::load(plugin->synth, data) == state::LoadResult::Invalid) return false;
-  if (plugin->hostParams) plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_VALUES);
-  return true;
+    std::string data;
+    char buffer[4096];
+    for (;;) {
+      const int64_t read = stream->read(stream, buffer, sizeof(buffer));
+      if (read < 0) return false;
+      if (read == 0) break;
+      data.append(buffer, size_t(read));
+    }
+    Plugin* plugin = self(p);
+    if (plugin->store.load(plugin->synth, data) == state::LoadResult::Invalid) return false;
+    if (plugin->hostParams) plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_VALUES);
+    return true;
   } catch (...) {
     return false;
   }
