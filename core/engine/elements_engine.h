@@ -38,6 +38,8 @@ class ElementsEngine final : public VoiceEngine {
   float note_ = 60.0f;
   float velocity_ = 0.0f;
   bool gate_ = false;
+  bool deliveredGate_ = false;  // gate level last given to Part
+  bool pendingStrike_ = false;  // a note-on not yet delivered as a rising edge
   int model_ = -1;
 };
 

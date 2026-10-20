@@ -77,7 +77,12 @@ TEST_CASE("Modal Synth is stereo and decays after note-off") {
   REQUIRE(held.l != held.r);
   engine.noteOff();
   const auto tail = render(engine, p, 96000);
-  REQUIRE(test::rms(tail.l, 80000, 96000) < 1e-3);
+  const double early = test::rms(tail.l, 0, 16000);
+  const double late = test::rms(tail.l, 80000, 96000);
+  INFO("early " << early << " late " << late);
+  REQUIRE(late < 1e-3);
+  REQUIRE(early > 100.0 * late);
+  REQUIRE(test::rms(tail.r, 80000, 96000) < 1e-3);
 }
 
 TEST_CASE("Input excites the Modal Synth through its strike input") {
@@ -124,4 +129,42 @@ TEST_CASE("Modal Synth processing does not allocate") {
     allocations = counter.count();
   }
   REQUIRE(allocations == 0);
+}
+
+TEST_CASE("A repeated note-on re-excites the Modal Synth") {
+  const ParamValues p = defaults();
+  ElementsEngine engine;
+  engine.prepare(ElementsEngine::kNativeRate, 256);
+  engine.noteOn(60.0f, 1.0f);
+  const auto first = render(engine, p, 32000);
+  const double low = test::rms(first.l, 32000 - 3200, 32000);
+  engine.noteOn(60.0f, 1.0f);
+  const auto second = render(engine, p, 3200);
+  const double high = test::rms(second.l, 0, 3200);
+  INFO("tail " << low << " retrigger " << high);
+  REQUIRE(high > 5.0 * low);
+}
+
+TEST_CASE("A note shorter than a block still sounds") {
+  ElementsEngine engine;
+  engine.prepare(ElementsEngine::kNativeRate, 256);
+  engine.noteOn(60.0f, 1.0f);
+  engine.noteOff();
+  const auto out = render(engine, defaults(), 16000);
+  REQUIRE(test::rms(out.l, 0, 16000) > 0.001);
+}
+
+TEST_CASE("Note-off then note-on before the next block re-excites") {
+  const ParamValues p = defaults();
+  ElementsEngine engine;
+  engine.prepare(ElementsEngine::kNativeRate, 256);
+  engine.noteOn(60.0f, 1.0f);
+  const auto first = render(engine, p, 32000);
+  const double low = test::rms(first.l, 32000 - 3200, 32000);
+  engine.noteOff();
+  engine.noteOn(60.0f, 1.0f);
+  const auto second = render(engine, p, 3200);
+  const double high = test::rms(second.l, 0, 3200);
+  INFO("tail " << low << " retrigger " << high);
+  REQUIRE(high > 5.0 * low);
 }

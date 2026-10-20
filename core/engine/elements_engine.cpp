@@ -65,6 +65,8 @@ void ElementsEngine::prepare(double hostRate, int) {
   reset();
 }
 
+// Audio-thread safe by design: memset (~114 KB) + reverb fill (64 KB), no allocation, ~3 us.
+// Keep it that way.
 void ElementsEngine::reset() {
   // Part::Init() leaves panic_ and easter_egg_ unset.
   std::memset(static_cast<void*>(&impl_->part), 0, sizeof(impl_->part));
@@ -73,6 +75,8 @@ void ElementsEngine::reset() {
   impl_->part.Seed(seed, 3);
   std::memset(impl_->blow, 0, sizeof(impl_->blow));
   gate_ = false;
+  deliveredGate_ = false;
+  pendingStrike_ = false;
   model_ = -1;
 }
 
@@ -80,6 +84,7 @@ void ElementsEngine::noteOn(float note, float velocity) {
   note_ = note;
   velocity_ = clamp01(velocity);
   gate_ = true;
+  pendingStrike_ = true;
 }
 
 void ElementsEngine::noteOff() { gate_ = false; }
@@ -119,7 +124,16 @@ void ElementsEngine::renderBlock(const float* const* in, const ParamValues& p, f
   patch->space = 0.5f;
 
   elements::PerformanceState state;
-  state.gate = gate_;
+  // Elements only re-excites on a gate rising edge: retriggers get one low block first.
+  bool level = gate_;
+  if (pendingStrike_ && deliveredGate_) {
+    level = false;
+  } else if (pendingStrike_) {
+    level = true;
+    pendingStrike_ = false;
+  }
+  deliveredGate_ = level;
+  state.gate = level;
   state.note = note_ + pitchOffset_;
   state.modulation = 0.0f;
   state.strength = velocity_;
