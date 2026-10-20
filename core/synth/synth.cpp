@@ -25,10 +25,16 @@ void Synth::prepare(double sampleRate, int maxBlock) {
   }
   masterGain_.prepare(sampleRate, kGainSmoothingSeconds);
   dryGain_.prepare(sampleRate, kGainSmoothingSeconds);
+  partBMute_.prepare(sampleRate, kGainSmoothingSeconds);
   reset();
 }
 
-void Synth::setProcessing(bool active) { processing_.store(active, std::memory_order_release); }
+void Synth::setActive(bool active) {
+  if (!active) applyPending();  // the audio thread has stopped
+  active_.store(active, std::memory_order_release);
+}
+
+void Synth::beginBlock() { applyPending(); }
 
 void Synth::reset() {
   for (int p = 0; p < kNumParts; ++p) {
@@ -40,6 +46,7 @@ void Synth::reset() {
   for (auto& channel : routed_) std::fill(std::begin(channel), std::end(channel), uint8_t{0});
   masterGain_.reset(load(masterParamIndex(MasterParam::Level)));
   dryGain_.reset(load(masterParamIndex(MasterParam::Dry)));
+  partBMute_.reset(PartMode(int(load(masterParamIndex(MasterParam::Mode)))) == PartMode::Single ? 0.0f : 1.0f);
 }
 
 int Synth::clampChannel(int channel) { return std::clamp(channel, 0, 15); }
@@ -115,7 +122,7 @@ bool Synth::setParam(uint32_t id, double value) {
 double Synth::param(uint32_t id) const {
   const int index = paramIndex(id);
   if (index < 0) return 0.0;
-  if (pending_.load(std::memory_order_acquire)) return double(pendingValues_[size_t(index)]);
+  if (hasPending()) return double(pendingValues_[size_t(index)]);
   return double(load(size_t(index)));
 }
 
@@ -127,7 +134,7 @@ ParamSnapshot Synth::defaultSnapshot() const {
 
 ParamSnapshot Synth::snapshot() const {
   ParamSnapshot values{};
-  const bool pending = pending_.load(std::memory_order_acquire);
+  const bool pending = hasPending();
   for (size_t i = 0; i < kParamCount; ++i) values[i] = pending ? pendingValues_[i] : load(i);
   return values;
 }
@@ -136,27 +143,30 @@ void Synth::store(const ParamSnapshot& values) {
   for (size_t i = 0; i < kParamCount; ++i) values_[i].store(values[i], std::memory_order_relaxed);
 }
 
-void Synth::loadParams(const ParamSnapshot& values) {
+void Synth::loadParams(const ParamSnapshot& values) {  // main thread
   ParamSnapshot clamped{};
   for (size_t i = 0; i < kParamCount; ++i) clamped[i] = clampParam(i, double(values[i]));
-
-  // Wait for the audio thread to take a previous snapshot.
-  while (pending_.load(std::memory_order_acquire) && processing_.load(std::memory_order_acquire)) {
-    std::this_thread::yield();
-  }
-  if (!processing_.load(std::memory_order_acquire)) {
+  if (!active_.load(std::memory_order_acquire)) {  // no audio thread can run
     store(clamped);
-    pending_.store(false, std::memory_order_release);
+    pendingState_.store(kIdle, std::memory_order_release);
     return;
   }
+  for (;;) {
+    int expected = kReady;  // replace a snapshot the audio thread has not taken yet
+    if (pendingState_.compare_exchange_strong(expected, kWriting, std::memory_order_acq_rel)) break;
+    expected = kIdle;
+    if (pendingState_.compare_exchange_strong(expected, kWriting, std::memory_order_acq_rel)) break;
+    std::this_thread::yield();  // kApplying: the audio thread is copying the values
+  }
   pendingValues_ = clamped;
-  pending_.store(true, std::memory_order_release);
+  pendingState_.store(kReady, std::memory_order_release);
 }
 
-void Synth::applyPending() {
-  if (!pending_.load(std::memory_order_acquire)) return;
+void Synth::applyPending() {  // audio thread, or main thread while inactive
+  int expected = kReady;
+  if (!pendingState_.compare_exchange_strong(expected, kApplying, std::memory_order_acq_rel)) return;
   store(pendingValues_);
-  pending_.store(false, std::memory_order_release);
+  pendingState_.store(kIdle, std::memory_order_release);
 }
 
 PartSettings Synth::readPartSettings(int part) const {
@@ -185,6 +195,7 @@ void Synth::process(const float* const* in, float* const* mainOut, float* const*
   masterGain_.setTarget(load(masterParamIndex(MasterParam::Level)));
   dryGain_.setTarget(load(masterParamIndex(MasterParam::Dry)));
   const auto mode = PartMode(int(load(masterParamIndex(MasterParam::Mode))));
+  partBMute_.setTarget(mode == PartMode::Single ? 0.0f : 1.0f);
 
   bool toBus2[kNumParts];
   for (int p = 0; p < kNumParts; ++p) {
@@ -198,29 +209,33 @@ void Synth::process(const float* const* in, float* const* mainOut, float* const*
   for (int i = 0; i < n; ++i) {
     float main[2] = {0.0f, 0.0f};
     float bus[2] = {0.0f, 0.0f};
+    const float bMute = partBMute_.next();
     for (int p = 0; p < kNumParts; ++p) {
-      if (mode == PartMode::Single && p != 0) continue;
+      const float mute = p == 0 ? 1.0f : bMute;
       float* target = toBus2[p] ? bus : main;
-      target[0] += partOut_[p][0][size_t(i)];
-      target[1] += partOut_[p][1][size_t(i)];
+      target[0] += partOut_[p][0][size_t(i)] * mute;
+      target[1] += partOut_[p][1][size_t(i)] * mute;
     }
     const float gain = masterGain_.next();
     const float dry = dryGain_.next();
-    for (int ch = 0; ch < 2; ++ch) {
-      float delayed = 0.0f;
-      if (in != nullptr) {
-        const float input = in[ch][i];  // read before mainOut is written (may alias)
-        if (latency_ == 0) {
-          delayed = input;
-        } else {
-          delayed = dryDelay_[ch][dryPos_];
-          dryDelay_[ch][dryPos_] = input;
-        }
+    // Read both input channels before writing either output (all may alias).
+    float input[2] = {0.0f, 0.0f};
+    if (in != nullptr) {
+      input[0] = in[0][i];
+      input[1] = in[1][i];
+    }
+    float delayed[2] = {input[0], input[1]};
+    if (latency_ > 0) {
+      for (int ch = 0; ch < 2; ++ch) {
+        delayed[ch] = dryDelay_[ch][dryPos_];
+        dryDelay_[ch][dryPos_] = input[ch];  // zeros when there is no input
       }
-      mainOut[ch][i] = main[ch] * gain + delayed * dry;
+      dryPos_ = (dryPos_ + 1) % size_t(latency_);
+    }
+    for (int ch = 0; ch < 2; ++ch) {
+      mainOut[ch][i] = main[ch] * gain + delayed[ch] * dry;
       if (bus2Out != nullptr) bus2Out[ch][i] = bus[ch] * gain;
     }
-    if (in != nullptr && latency_ > 0) dryPos_ = (dryPos_ + 1) % size_t(latency_);
   }
 }
 

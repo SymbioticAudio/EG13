@@ -147,6 +147,7 @@ bool paramsTextToValue(const clap_plugin_t*, clap_id, const char*, double*) { re
 
 void paramsFlush(const clap_plugin_t* p, const clap_input_events_t* in,
                  const clap_output_events_t*) {
+  self(p)->synth.beginBlock();
   const uint32_t count = in->size(in);
   for (uint32_t i = 0; i < count; ++i) {
     const clap_event_header_t* hdr = in->get(in, i);
@@ -212,20 +213,19 @@ void pluginDestroy(const clap_plugin_t* p) { delete self(p); }
 
 bool pluginActivate(const clap_plugin_t* p, double sampleRate, uint32_t, uint32_t maxFrames) {
   self(p)->synth.prepare(sampleRate, int(maxFrames));
+  self(p)->synth.setActive(true);
   return true;
 }
 
-void pluginDeactivate(const clap_plugin_t*) {}
-bool pluginStartProcessing(const clap_plugin_t* p) {
-  self(p)->synth.setProcessing(true);
-  return true;
-}
-void pluginStopProcessing(const clap_plugin_t* p) { self(p)->synth.setProcessing(false); }
+void pluginDeactivate(const clap_plugin_t* p) { self(p)->synth.setActive(false); }
+bool pluginStartProcessing(const clap_plugin_t*) { return true; }
+void pluginStopProcessing(const clap_plugin_t*) {}
 void pluginReset(const clap_plugin_t* p) { self(p)->synth.reset(); }
 
 clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* proc) {
   eg13::ScopedFlushDenormals flushDenormals;
   Plugin* plugin = self(p);
+  plugin->synth.beginBlock();
   const uint32_t frames = proc->frames_count;
   const uint32_t numEvents = proc->in_events->size(proc->in_events);
 

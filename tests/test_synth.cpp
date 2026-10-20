@@ -227,7 +227,7 @@ TEST_CASE("Instrument ignores input when Dry is 0") {
 TEST_CASE("loadParams while processing is applied whole at the next block") {
   Synth synth(PluginKind::Instrument, sine);
   synth.prepare(kRate, kBlock);
-  synth.setProcessing(true);
+  synth.setActive(true);
   ParamSnapshot values = synth.defaultSnapshot();
   values[masterParamIndex(MasterParam::Level)] = 0.5f;
   values[partParamIndex(0, PartParam::VoiceCount)] = 2.0f;
@@ -240,7 +240,7 @@ TEST_CASE("loadParams while processing is applied whole at the next block") {
   run(synth, out, 0, kBlock);
   REQUIRE(synth.activeVoiceCount(0) == 2);
   REQUIRE(synth.param(params::kMasterLevel) == 0.5);
-  synth.setProcessing(false);
+  synth.setActive(false);
 }
 
 TEST_CASE("loadParams when not processing applies immediately") {
@@ -332,7 +332,7 @@ TEST_CASE("Synth processing does not allocate") {
   Synth synth(PluginKind::Effect);
   synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
   synth.prepare(44100.0, kBlock);
-  synth.setProcessing(true);
+  synth.setActive(true);
   Stereo in = sineInput(kBlock, 44100.0), out(kBlock), bus2(kBlock);
   run(synth, out, 0, kBlock, &in, &bus2);
   test::ScopedAllocationCounter counter;
@@ -344,9 +344,105 @@ TEST_CASE("Synth processing does not allocate") {
     if (block == 90) synth.noteOff(0, 64);
     if (block == 120) synth.controlChange(0, 64, 0);
     if (block == 150) synth.setParam(masterId(MasterParam::Mode), double(PartMode::Split));
+    if (block == 170) synth.reset();
     run(synth, out, 0, kBlock, &in, &bus2);
   }
   const size_t allocations = counter.count();
   REQUIRE(allocations == 0);
-  synth.setProcessing(false);
+  synth.setActive(false);
+}
+
+TEST_CASE("A pending snapshot is applied before same-block automation") {
+  Synth synth(PluginKind::Instrument, sine);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  ParamSnapshot values = synth.defaultSnapshot();
+  values[masterParamIndex(MasterParam::Level)] = 0.5f;
+  synth.loadParams(values);
+  synth.beginBlock();
+  synth.setParam(params::kMasterLevel, 0.2);
+  Stereo out(kBlock);
+  run(synth, out, 0, kBlock);
+  REQUIRE(synth.param(params::kMasterLevel) == double(0.2f));
+  synth.setActive(false);
+}
+
+TEST_CASE("Deactivating applies a pending snapshot") {
+  Synth synth(PluginKind::Instrument, sine);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  ParamSnapshot values = synth.defaultSnapshot();
+  values[masterParamIndex(MasterParam::Level)] = 0.4f;
+  synth.loadParams(values);
+  synth.setActive(false);
+  REQUIRE(synth.param(params::kMasterLevel) == double(0.4f));
+  values[masterParamIndex(MasterParam::Level)] = 0.6f;
+  synth.loadParams(values);
+  REQUIRE(synth.param(params::kMasterLevel) == double(0.6f));
+}
+
+TEST_CASE("Two loads in a row while active never block") {
+  Synth synth(PluginKind::Instrument, sine);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  ParamSnapshot values = synth.defaultSnapshot();
+  values[masterParamIndex(MasterParam::Level)] = 0.3f;
+  synth.loadParams(values);
+  values[masterParamIndex(MasterParam::Level)] = 0.7f;
+  synth.loadParams(values);
+  REQUIRE(synth.param(params::kMasterLevel) == double(0.7f));
+  synth.setActive(false);
+}
+
+TEST_CASE("Master level does not scale Dry") {
+  Synth synth(PluginKind::Effect);
+  synth.setParam(params::kMasterLevel, 0.0);
+  synth.prepare(kRate, kBlock);
+  const size_t latency = size_t(synth.latencySamples());
+  const Stereo in = sineInput(4800, kRate);
+  Stereo out(4800);
+  run(synth, out, 0, 4800, &in);
+  for (size_t i = latency; i < 4800; ++i) {
+    REQUIRE(std::fabs(out.l[i] - in.l[i - latency]) < 1e-4f);
+  }
+}
+
+TEST_CASE("Dry drops stale input after a gap") {
+  Synth synth(PluginKind::Effect);
+  synth.prepare(44100.0, kBlock);
+  const Stereo in = sineInput(4410, 44100.0);
+  const Stereo silent(4410);
+  Stereo out(3 * 4410);
+  run(synth, out, 0, 4410, &in);
+  run(synth, out, 4410, 8820);
+  run(synth, out, 8820, 13230, &silent);
+  for (size_t i = 8820; i < 13230; ++i) REQUIRE(std::fabs(out.l[i]) < 1e-6f);
+}
+
+TEST_CASE("Single mode mutes Part B audio") {
+  Synth synth(PluginKind::Effect, sine);
+  synth.setParam(masterId(MasterParam::Dry), 0.0);
+  synth.setParam(partId(1, PartParam::Trigger), 1);
+  synth.prepare(kRate, kBlock);
+  Stereo out(38400);
+  run(synth, out, 0, 19200);
+  REQUIRE(test::rms(out.l, 14400, 19200) == 0.0);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  run(synth, out, 19200, 38400);
+  REQUIRE(test::rms(out.l, 33600, 38400) > 0.1);
+}
+
+TEST_CASE("Mono in-place input is delayed once") {
+  Synth synth(PluginKind::Effect);
+  synth.prepare(kRate, kBlock);
+  const size_t latency = size_t(synth.latencySamples());
+  const Stereo original = sineInput(4800, kRate);
+  std::vector<float> buffer = original.l;
+  for (size_t done = 0; done < 4800; done += 240) {
+    float* io[2] = {buffer.data() + done, buffer.data() + done};
+    synth.process(io, io, nullptr, 240);
+  }
+  for (size_t i = latency; i < 4800; ++i) {
+    REQUIRE(std::fabs(buffer[i] - original.l[i - latency]) < 1e-4f);
+  }
 }

@@ -27,7 +27,12 @@ class Synth {
   PluginKind kind() const { return kind_; }
 
   void prepare(double sampleRate, int maxBlock);  // main thread, not processing
-  void setProcessing(bool active);
+  // Main thread, from activate (true, after prepare) and deactivate (false).
+  // While inactive no audio thread runs and loadParams applies at once.
+  void setActive(bool active);
+  // Audio thread: first thing in every process call and params flush. Takes any
+  // pending snapshot so later same-block automation is not overwritten.
+  void beginBlock();
   void reset();
 
   void noteOn(int channel, int key, float velocity);
@@ -36,10 +41,13 @@ class Synth {
   void controlChange(int channel, int cc, int value);
   void allNotesOff();
 
+  // Audio thread while active, main thread while inactive. Never from both at once.
   bool setParam(uint32_t id, double value);
+  // Main thread. Reflects a pending snapshot.
   double param(uint32_t id) const;
   ParamSnapshot defaultSnapshot() const;
   ParamSnapshot snapshot() const;
+  // Main thread. Applied whole at the next beginBlock/process when active.
   void loadParams(const ParamSnapshot& values);
   void resetParamsToDefaults() { loadParams(defaultSnapshot()); }
 
@@ -51,6 +59,10 @@ class Synth {
 
  private:
   float load(size_t index) const { return values_[index].load(std::memory_order_relaxed); }
+  bool hasPending() const {
+    const int state = pendingState_.load(std::memory_order_acquire);
+    return state == kReady || state == kApplying;
+  }
   void store(const ParamSnapshot& values);
   void applyPending();
   PartSettings readPartSettings(int part) const;
@@ -60,10 +72,12 @@ class Synth {
   std::array<std::unique_ptr<Part>, kNumParts> parts_;
   std::array<std::atomic<float>, kParamCount> values_;
   ParamSnapshot pendingValues_{};
-  std::atomic<bool> pending_{false};
-  std::atomic<bool> processing_{false};
+  enum : int { kIdle = 0, kWriting = 1, kReady = 2, kApplying = 3 };
+  std::atomic<bool> active_{false};
+  std::atomic<int> pendingState_{kIdle};
   SmoothedValue masterGain_;
   SmoothedValue dryGain_;
+  SmoothedValue partBMute_;
   int latency_ = 0;
   std::vector<float> dryDelay_[2];
   size_t dryPos_ = 0;
