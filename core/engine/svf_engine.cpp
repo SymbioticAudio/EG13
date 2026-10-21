@@ -2,10 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <type_traits>
-#include <cstddef>
 #include <vector>
 
 #include "engine/param_format.h"
@@ -17,9 +17,6 @@ namespace {
 
 const char* const kModeNames[3] = {"LP", "BP", "HP"};
 
-void formatQ(float v, char* buf, size_t size) {
-  std::snprintf(buf, size, "Q %.2f", double(SvfEngine::resonanceQ(v)));
-}
 void formatMode(float v, char* buf, size_t size) {
   std::snprintf(buf, size, "%s", kModeNames[SvfEngine::modeIndex(v)]);
 }
@@ -32,7 +29,7 @@ const float kDefaultResonance = float(std::log(2.0 * 0.70710678118654752) / std:
 // stmlib's normalized band-pass, unity at the cutoff (filter.h:243-244).
 const EngineParamInfo kParams[3] = {
     {"Cutoff", 1.0f, formatKnobHz},
-    {"Resonance", kDefaultResonance, formatQ},
+    {"Resonance", kDefaultResonance, formatKnobQ},
     {"Mode", 0.5f / 3.0f, formatMode},
 };
 

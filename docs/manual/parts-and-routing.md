@@ -6,7 +6,7 @@ EG13 has two parts, A and B. Each plays up to eight voices. Each voice runs Sour
 
 The master **Mode** decides which notes reach which part: *Single* (only A plays), *Layer* (both play every note), *Split* (A below the split note, B from it up) or *Multi* (each part on its own MIDI channel). In Single mode Part B is silent but still runs, so it can feed Part A (see below).
 
-A voice stops (and becomes free for a new note) when its note is released and the sound reaching its Shaper has been silent (below −90 dBFS) for 50 ms, plus the Shaper's latency. Silence is measured before the Shaper, because the Ring Mod / Vocoder's internal oscillator keeps sounding after the note has died. A Shaper's own ringing (for example a high-Q EQ band) is therefore cut when the voice stops. The amplitude envelopes coming in the next milestone (M4) will close the output itself.
+A voice stops (and becomes free for a new note) when its note is released and the sound reaching its Shaper has been silent (below −90 dBFS) for 50 ms, plus the Shaper's latency. Silence is measured before the Shaper, because the Ring Mod / Vocoder's internal oscillator keeps sounding after the note has died. A Shaper's own ringing (for example a high-Q EQ band) is therefore cut when the voice stops. The amplitude envelopes coming in the next version will close the output itself.
 
 If an engine ever produces an invalid signal (a numerical blow-up), the voice is muted for a moment and only the slots whose output went invalid (Source, Filter or Shaper) start their engine afresh; the others carry on. A held note continues; if the Source itself was restarted, the note starts again from its attack.
 
@@ -38,7 +38,7 @@ The plugin's audio input (the instrument's sidechain, or EG13 FX's main input) i
 
 Part A runs before Part B. B therefore hears A with no extra delay, while A hears B 64 samples later (or one host block, if the host's blocks are shorter). Every signal fed from one part to the other passes through a soft limiter: it is untouched up to full scale and never exceeds twice full scale, so a loop between the parts cannot run away.
 
-The Ring Mod / Vocoder can also take the part's Input or the other part's output as its carrier or modulator, with the same delays and limiter. Its *Other part* signal is the other part's output whether or not that part is heard: in *Single* mode Part B is muted but still runs, so a Part B set to *Always on* still reaches Part A's Ring Mod, while a Part B playing nothing gives silence.
+The Ring Mod / Vocoder can also take the part's Input or the other part's output as its carrier or modulator: the other part's output comes with the same 64-sample feed delay (Part B to Part A) and the same limiter, and the Input is delayed to line up with the voice (see Engines). Its *Other part* signal is the other part's output whether or not that part is heard: in *Single* mode Part B is muted but still runs, so a Part B set to *Always on* still reaches Part A's Ring Mod, while a Part B playing nothing gives silence.
 
 Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second output) or to *Other part only*. With *Other part only* the part is not heard; it only feeds the other part.
 
@@ -46,7 +46,7 @@ Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second outpu
 
 ## Default patches
 
-- **EG13:** both parts with the Macro Oscillator, Filter *Off* and Shaper *Off*. (The full init patch, with envelopes and a filter, comes with modulation in M4.)
+- **EG13:** both parts with the Macro Oscillator, Filter *Off* and Shaper *Off*. (The full init patch, with envelopes and a filter, comes with modulation in a later version.)
 - **EG13 FX:**
   - Part A plays the Input through **Audio Input** → **Analog Filter** (fully open) → Shaper *Off*, with Trigger set to *Always on*, so it processes audio with no MIDI.
   - Part B starts with Filter *Off* and Shaper *Off*.
@@ -54,4 +54,4 @@ Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second outpu
 
 ## Projects from earlier versions
 
-Projects saved before Filters and Shapers existed open with Filter and Shaper *Off*, so they sound as they did. This applies even in EG13 FX, whose new default is the Analog Filter on Part A. A brand-new EG13 FX instance starts with the Analog Filter; a project saved with the current version keeps whatever Filter and Shaper it was saved with. Each engine's remembered settings are saved with the project.
+Projects saved before Filters and Shapers existed open with Filter and Shaper *Off*, so they sound as they did. They do report a higher latency than before (about 10.9 ms instead of 4.6 ms for EG13 at 48 kHz), because every voice now keeps room for the Shaper's latency even when it is *Off* (see Latency). This applies even in EG13 FX, whose new default is the Analog Filter on Part A. A brand-new EG13 FX instance starts with the Analog Filter; a project saved with the current version keeps whatever Filter and Shaper it was saved with. Each engine's remembered settings are saved with the project.

@@ -7,7 +7,7 @@ the open-source Eurorack firmware by Émilie Gillet
 EG13 is not affiliated with or endorsed by Mutable Instruments. "Mutable Instruments" is a
 registered trademark; EG13 uses its own names for each engine.
 
-**Status:** M3 (filter and shaper): two parts × 8 voices, each Source → Filter → Shaper. Sources: Macro Oscillator, Digital Oscillator, Modal Synth, Resonator, Audio Input. Filters: Analog Filter, Classic Filters (205 types), State Variable Filter. Shapers: Ring Mod / Vocoder (every algorithm, a frequency shifter, and a modulator from an internal oscillator, the Source's AUX, the input or the other part) and EQ. Filters and shapers run a second, right-channel instance only while their input is stereo. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design.
+**Status:** M3 (filter and shaper): two parts × 8 voices, each Source → Filter → Shaper. Sources: Macro Oscillator, Digital Oscillator, Modal Synth, Resonator, Audio Input. Filters: Analog Filter, Classic Filters (205 types), State Variable Filter. Shapers: Ring Mod / Vocoder (every algorithm and a frequency shifter; the carrier is an internal oscillator, the voice, the Source's AUX, the input or the other part, and the modulator the voice, the Source's AUX, the input or the other part) and EQ. Filters and shapers run a second, right-channel instance only while their input is stereo. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design.
 Pre-1.0: saved projects and presets may not load in later versions until the parameter layout is frozen.
 
 ## Formats

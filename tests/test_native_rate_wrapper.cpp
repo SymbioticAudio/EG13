@@ -303,11 +303,11 @@ Channels runAll(NativeRateWrapper& w, const Channels& in, bool sides, int chunk)
 }  // namespace
 
 TEST_CASE("sideSourceOf steps in quarters") {
-  REQUIRE(sideSourceOf(0.0f) == SideSource::Voice);
-  REQUIRE(sideSourceOf(0.26f) == SideSource::SourceAux);
-  REQUIRE(sideSourceOf(0.5f) == SideSource::Input);
-  REQUIRE(sideSourceOf(1.0f) == SideSource::OtherPart);
-  REQUIRE(sideSourceOf(std::nanf("")) == SideSource::Voice);
+  REQUIRE(test::sideSourceOf(0.0f) == SideSource::Voice);
+  REQUIRE(test::sideSourceOf(0.26f) == SideSource::SourceAux);
+  REQUIRE(test::sideSourceOf(0.5f) == SideSource::Input);
+  REQUIRE(test::sideSourceOf(1.0f) == SideSource::OtherPart);
+  REQUIRE(test::sideSourceOf(std::nanf("")) == SideSource::Voice);
 }
 
 TEST_CASE("Side inputs are converted with the input path's latency") {

@@ -1,5 +1,9 @@
 #pragma once
 
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of EG13. Written for EG13 after the VCV Rack SDK (GPL-3.0-or-later) and released under the
+// same licence.
+//
 // The parts of the VCV Rack SDK that AudibleInstruments' Ripples and Shelves models use
 // (src/Ripples/ripples.hpp, src/Shelves/shelves.hpp, their aafilter.hpp and sos.hpp), so those
 // models compile unmodified without Rack. Each definition follows Rack v2 (VCVRack/Rack

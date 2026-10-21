@@ -43,4 +43,8 @@ inline void formatDb(float db, char* buf, size_t size) { std::snprintf(buf, size
 
 inline void formatKnobHz(float normalized, char* buf, size_t size) { formatHz(knobHz(normalized), buf, size); }
 
+inline void formatKnobQ(float normalized, char* buf, size_t size) {
+  std::snprintf(buf, size, "Q %.2f", double(knobQ(normalized)));
+}
+
 }  // namespace eg13

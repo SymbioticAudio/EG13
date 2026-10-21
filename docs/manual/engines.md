@@ -71,17 +71,17 @@ Controls: **Frequency** (20 Hz to 20 kHz, default fully open), **Resonance** (de
 
 - A circuit model of the analog filter, including its gentle saturation; at full Resonance it self-oscillates.
 - The module's output amplifiers invert the signal; EG13 turns it back, so the filtered sound adds to the Dry signal instead of cancelling it.
-- Ripples' FM knob and its CV and Gain inputs are not controls here: modulation comes from EG13's modulation matrix (M4), and the LP4 VCA output is LP4 with a fixed level.
+- Ripples' FM knob and its CV and Gain inputs are not controls here: modulation will come from EG13's modulation matrix in a later version, and the LP4 VCA output is LP4 with a fixed level.
 - Stereo: while the voice is stereo, a second filter runs for the right channel, starting from the left filter's exact state (no jump).
 - EG13 builds the Analog Filter with the same fast-math settings as VCV Rack, so it can differ from a strict build by about −90 dBFS (measured), which is inaudible.
 
 ### Classic Filters (sst-filters, the filters of the Surge synthesizer)
 
-Controls: **Cutoff** (20 Hz to 20 kHz, default fully open), **Resonance**, **Type** and **Character**.
+Controls: **Cutoff** (20 Hz to 20 kHz, default fully open), **Resonance**, **Model** and **Character**.
 
-- **Type** chooses one of 205 filters: low-, high-, band-pass and notch filters of 12 and 24 dB, ladder models (Legacy, Vintage, Diode), OB-Xd and K35 models, Cutoff Warp and Resonance Warp, the Xpander's pole mixes, Tri-pole, the Fast SVF's shelves and bell, combs, and Sample & Hold. The default is *Vember Classic Lowpass 12 dB Standard*. The list keeps its order in every future version, so a saved type always comes back.
+- **Model** chooses one of 205 filter types: low-, high-, band-pass and notch filters of 12 and 24 dB, ladder models (Legacy, Vintage, Diode), OB-Xd and K35 models, Cutoff Warp and Resonance Warp, the Xpander's pole mixes, Tri-pole, the Fast SVF's shelves and bell, combs, and Sample & Hold. The default is *Vember Classic Lowpass 12 dB Standard*. The list keeps its order in every future version, so a saved type always comes back. (Model is named so that it cannot be mistaken for the Filter slot's *Type*, which chooses the engine.)
 - **Character** is the extra control some types have: OB-Xd 4-pole *Morph*, K35 *Continuous* saturation, the Fast SVF shelves' and bell's gain, and the comb filters' variable mix. Other types ignore it.
-- Changing Type takes effect at once and restarts the filter, as switching a filter type on hardware does; it can click on a sounding note.
+- Changing Model takes effect at once and restarts the filter, as switching a filter type on hardware does; it can click on a sounding note.
 - Stereo: left and right always run together inside one filter, at no extra cost.
 
 ### State Variable Filter
@@ -109,7 +109,7 @@ Warps combines two signals, a **carrier** and a **modulator**, in one of its alg
 - **Modulator**: *Voice* (default), *Source AUX*, *Input* or *Other part*, with the same meanings. Voice into the modulator with the internal oscillator as carrier is the classic way to play Warps; for example, the vocoder then puts the voice's formants on the oscillator. Voice into both inputs is allowed: it is self-modulation.
 - The routing and its defaults are provisional. They may be revisited when patching arrives in a later version. New options are only ever added at the end of each list, so a saved patch keeps its routing. A change of default would apply to new patches only.
 - If a chosen signal isn't there (no sidechain, a silent part), that input is silent.
-- The side signals are time-aligned with the voice: *Source AUX* and *Input* reach Warps at the same moment as the voice's own sound (the Input is delayed by the Source's latency, as the voice is). *Other part* is the other part's finished output, as it is heard, so it arrives one Shaper latency behind the voice (plus the 64-sample feed from Part B to Part A).
+- The side signals are time-aligned with the voice: *Source AUX* and *Input* reach Warps at the same moment as the voice's own sound (the Input is delayed by the Source's latency, as the voice is). *Other part* is the other part's finished output (whether or not that part is heard, see Parts and routing), so it arrives one Shaper latency behind the voice (plus the 64-sample feed from Part B to Part A).
 - **Algorithm** is Warps' big knob. The display names nine positions, after what the module does there: *Crossfade*, *Fold*, *Analog RM*, *Digital RM*, *XOR*, *Compare*, then the vocoder: *Vocoder*, *Vocoder (long release)* and *Vocoder (frozen)*. Turning clockwise through the vocoder lengthens the release of its envelope followers, and fully clockwise it freezes the modulator's formants. Starting a note at *Vocoder (frozen)*, the vocoder is silent, as on the module: it freezes the formants it has, and from a reset it has none. The default is *Analog RM*, the ring modulator the engine is named after. **Timbre** is the algorithm's own control. At its very top (and the frequency shifter's phase shift at Algorithm's top) EG13 stops a hair short of 100 % (by 0.0015 %, inaudible): at exactly 100 % the original firmware reads one value past the end of a table.
 - The knob is continuous and the display shows the nearest position. Between positions the sound blends: neighbouring cross-modulations crossfade, the stretch from *Compare* to *Vocoder* passes through the plain Modulator signal, and the vocoder's release changes gradually (it freezes only in the last few percent).
 - **Carrier Level** and **Mod Level** drive Warps' input amplifiers. Their default, 47 %, passes a full-scale voice at unity gain without saturating (measured: +0.03 dB, 0.06 % distortion). Turn them up for the module's overdriven, squarer character (at 100 % the amplifier adds about 12 dB and heavy distortion).
@@ -124,8 +124,8 @@ Warps combines two signals, a **carrier** and a **modulator**, in one of its alg
 
 A four-band equalizer modelled on the analog circuit: **High Freq** / **High Gain** (high shelf), **Mid 1 Freq** / **Mid 1 Gain** / **Mid 1 Q**, **Mid 2 Freq** / **Mid 2 Gain** / **Mid 2 Q** (two bells), **Low Freq** / **Low Gain** (low shelf). Frequencies run 20 Hz to 20 kHz, gains ±18 dB, Q 0.5 to 40. At the defaults (gains 0 dB) it is flat.
 
-- **Input Pad** (*Off* / *−6 dB*) is the module's pre-gain option: the input goes in 6 dB lower, leaving headroom before the circuit clips (about ±10.5 V inside), and the output is 6 dB lower too.
+- **Input Pad** (*Off* / *−6 dB*) is the module's pre-gain option: the input goes in 6 dB lower, leaving headroom before the circuit clips, and the output is 6 dB lower too. The circuit clips at about ±10.5 V inside, which is about twice EG13's full scale at the input: with high gains (up to +18 dB) a loud input clips, and the output can briefly ring above full scale.
 - **Output** chooses what you hear: the *EQ*, or one of the module's six filter outputs: *Mid 1 LP*, *Mid 1 BP*, *Mid 1 HP*, *Mid 2 LP*, *Mid 2 BP*, *Mid 2 HP*, which turns the EQ into a multimode filter. A change of Output takes effect at once, like moving the cable on the module, so it can click on a sounding note.
-- Shelves' CV inputs are not controls here: modulation comes from EG13's modulation matrix (M4).
+- Shelves' CV inputs are not controls here: modulation will come from EG13's modulation matrix in a later version.
 - Stereo: while the voice is stereo, a second EQ runs for the right channel, starting from the left one's exact state.
 - EG13 builds the EQ with the same fast-math settings as VCV Rack, so it can differ from a strict build by about −95 dBFS (measured), which is inaudible.

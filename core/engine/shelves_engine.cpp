@@ -13,9 +13,6 @@ const char* const kOutputNames[ShelvesEngine::kNumOutputs] = {
     "EQ", "Mid 1 LP", "Mid 1 BP", "Mid 1 HP", "Mid 2 LP", "Mid 2 BP", "Mid 2 HP"};
 
 void formatGain(float v, char* buf, size_t size) { formatDb(ShelvesEngine::gainDb(v), buf, size); }
-void formatQ(float v, char* buf, size_t size) {
-  std::snprintf(buf, size, "Q %.2f", double(ShelvesEngine::qFactor(v)));
-}
 void formatPad(float v, char* buf, size_t size) {
   std::snprintf(buf, size, "%s", ShelvesEngine::padOn(v) ? "-6 dB" : "Off");
 }
@@ -29,8 +26,8 @@ void formatOutput(float v, char* buf, size_t size) {
 // of the six filter taps (Shelves.cpp:93-99).
 const EngineParamInfo kParams[12] = {
     {"High Freq", 0.5f, formatKnobHz},  {"High Gain", 0.5f, formatGain}, {"Mid 1 Freq", 0.5f, formatKnobHz},
-    {"Mid 1 Gain", 0.5f, formatGain},   {"Mid 1 Q", 0.5f, formatQ},      {"Mid 2 Freq", 0.5f, formatKnobHz},
-    {"Mid 2 Gain", 0.5f, formatGain},   {"Mid 2 Q", 0.5f, formatQ},      {"Low Freq", 0.5f, formatKnobHz},
+    {"Mid 1 Gain", 0.5f, formatGain},   {"Mid 1 Q", 0.5f, formatKnobQ},      {"Mid 2 Freq", 0.5f, formatKnobHz},
+    {"Mid 2 Gain", 0.5f, formatGain},   {"Mid 2 Q", 0.5f, formatKnobQ},      {"Low Freq", 0.5f, formatKnobHz},
     {"Low Gain", 0.5f, formatGain},     {"Input Pad", 0.25f, formatPad}, {"Output", 0.5f / 7.0f, formatOutput},
 };
 

@@ -52,12 +52,12 @@ void formatType(float v, char* buf, size_t size) {
 }
 
 // Cutoff: the Analog Filter's 20 Hz .. 20 kHz curve, default fully open. Resonance 0..1,
-// default 0. Type 0 is Surge's classic 12 dB low-pass. Character: sst's extra coefficient
+// default 0. Model (the filter type) 0 is Surge's classic 12 dB low-pass. Character: sst's extra coefficient
 // (OB-Xd morph, K35 saturation, Fast SVF shelf/bell gain, comb mix), centred by default.
 const EngineParamInfo kParams[4] = {
     {"Cutoff", 1.0f, formatKnobHz},
     {"Resonance", 0.0f, formatPercent01},
-    {"Type", 0.5f / float(SstFilterEngine::kTypeSteps), formatType},
+    {"Model", 0.5f / float(SstFilterEngine::kTypeSteps), formatType},
     {"Character", 0.5f, formatPercent01},
 };
 

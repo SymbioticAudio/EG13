@@ -85,7 +85,7 @@ TEST_CASE("Classic Filters describes itself") {
   REQUIRE(std::string(info.displayName) == "Classic Filters");
   REQUIRE(info.paramCount == 4);
   REQUIRE(info.usesInput);
-  const char* const names[4] = {"Cutoff", "Resonance", "Type", "Character"};
+  const char* const names[4] = {"Cutoff", "Resonance", "Model", "Character"};
   for (int i = 0; i < 4; ++i) REQUIRE(std::string(info.params[i].name) == names[i]);
   REQUIRE(info.params[0].defaultValue == 1.0f);
   REQUIRE(SstFilterEngine::typeIndex(info.params[2].defaultValue) == 0);

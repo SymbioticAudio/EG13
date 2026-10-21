@@ -6,10 +6,10 @@
   - The Ring Mod / Vocoder at its defaults is 4.6 dB louder than its input (peak 1.24 from 0.5), and up to 12.3 dB louder at Algorithm *Fold* (peak 2.0). Its output never exceeds Warps' own 16-bit range (3.2 times full scale).
   - At their defaults the filters and the EQ keep the level (within 0.05 dB).
 
-  Keep the master level down. A later milestone (M4) adds gain staging and a soft clipper on the master output.
-- **Resonator velocity:** a new note's velocity rescales the whole Resonator output, including voices still ringing, which can click (fixed in M4).
+  Keep the master level down. A later version adds gain staging and a soft clipper on the master output.
+- **Resonator velocity:** a new note's velocity rescales the whole Resonator output, including voices still ringing, which can click (to be fixed in a later version).
 - **Modal Synth input:** the firmware's noise gate on the external input is not ported.
 - **Part B in Single mode** still runs and uses CPU, so it can feed Part A.
 - **Ring Mod / Vocoder noise carrier:** with Osc Shape *Saw / Noise* in the vocoder range, the noise comes from a random generator shared by the voices on one audio thread, so two renders of the same notes are not sample-identical.
 - **CPU:** sixteen voices (two parts of eight) of the heaviest chain with a mono Source, Macro Oscillator → Analog Filter → Vocoder, use 49.0 % of one Apple M1 core when the Ring Mod / Vocoder's Carrier and Modulator are the internal oscillator or the voice. That is within the budget of half a core. With a side input carrying a signal the same chain is **over** that budget: 50.3 % with one (Modulator *Input*) and 51.5 % with two (Carrier *Source AUX*, Modulator *Input*). With a stereo Source (Modal Synth, Resonator with Spread, a stereo input), every Filter and Shaper runs twice, and the heaviest stereo chain uses 88.2 % (Modal Synth → Analog Filter → Vocoder). Engines that run at their own sample rate save work by converting a side input only while it carries a signal, and the right channel only while it differs from the left; this changes nothing you can hear. When a voice turns stereo, or a side input starts after silence, the conversion restarts with a short burst of extra work in that one block. EG13 checks each conversion path when the plugin is prepared and skips only where the restarted conversion is proven identical; should a restart still come back out of step while playing, that engine converts every channel from then on, after a one-off gap of a few milliseconds. See the README for the measured figures.
-- **Classic Filters Type** changes restart the filter and can click on a sounding note.
+- **Classic Filters Model** changes restart the filter and can click on a sounding note.

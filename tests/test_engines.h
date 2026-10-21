@@ -6,6 +6,14 @@
 
 namespace eg13::test {
 
+// Test-only shorthand: a selector read in four equal steps. Not for decoding saved selectors:
+// each engine's options are append-only lists read in their own fixed steps (Ring Mod / Vocoder:
+// 8 steps), so their meaning survives new options.
+inline SideSource sideSourceOf(float normalized) {
+  const int i = int(clamp01(normalized) * 4.0f);
+  return SideSource(i < 4 ? i : 3);
+}
+
 // Emits one 1.0 sample at the first rendered sample after each noteOn.
 class ImpulseEngine final : public VoiceEngine {
  public:
