@@ -6,10 +6,12 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "alloc_counter.h"
 #include "engine/engine_registry.h"
+#include "engine/warps_engine.h"
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 #include "synth/synth.h"
@@ -27,6 +29,15 @@ SourceSpec sine() { return {std::make_unique<test::SineEngine>(), 48000.0, 12}; 
 
 uint32_t partId(int part, PartParam p) { return paramSpec(partParamIndex(part, p)).id; }
 uint32_t masterId(MasterParam m) { return paramSpec(masterParamIndex(m)).id; }
+uint32_t filterTypeId(int part) { return paramSpec(filterEngineParamIndex(part)).id; }
+uint32_t shaperTypeId(int part) { return paramSpec(shaperEngineParamIndex(part)).id; }
+uint32_t filterId(int part, int p) { return paramSpec(filterParamIndex(part, p)).id; }
+uint32_t shaperId(int part, int p) { return paramSpec(shaperParamIndex(part, p)).id; }
+
+// The exact pass-through tests below predate the Filter: they run it Off.
+void filtersOff(Synth& synth) {
+  for (int part = 0; part < kNumParts; ++part) synth.setParam(filterTypeId(part), 0);
+}
 
 struct Stereo {
   std::vector<float> l, r;
@@ -517,8 +528,9 @@ TEST_CASE("An unknown engine selector value plays the Macro Oscillator") {
   REQUIRE(synth.engine(0) == 0);
 }
 
-TEST_CASE("EG13 FX init patch passes audio at unity through Part A") {
+TEST_CASE("EG13 FX with the Filter Off passes audio at unity through Part A") {
   Synth synth(PluginKind::Effect);
+  filtersOff(synth);
   synth.prepare(44100.0, kBlock);
   REQUIRE(synth.engine(0) == int(SourceEngine::AudioInput));
   const size_t latency = size_t(synth.latencySamples());
@@ -532,6 +544,7 @@ TEST_CASE("EG13 FX init patch passes audio at unity through Part A") {
 
 TEST_CASE("FX: processed input is aligned with Dry") {
   Synth synth(PluginKind::Effect);
+  filtersOff(synth);
   synth.setParam(masterId(MasterParam::Dry), 1.0);
   synth.prepare(44100.0, kBlock);
   const size_t latency = size_t(synth.latencySamples());
@@ -546,6 +559,7 @@ TEST_CASE("FX: processed input is aligned with Dry") {
 
 TEST_CASE("Part B can take Part A as its input") {
   Synth synth(PluginKind::Effect);
+  filtersOff(synth);
   synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
   synth.setParam(partId(0, PartParam::Output), 2);  // Part A: other part only
   synth.setParam(engineId(1), 4);                    // Part B: Audio Input
@@ -685,6 +699,7 @@ void runVarying(Synth& synth, Stereo& out, const Stereo& in, size_t total) {
 // the input delayed by 2L + the B -> A feed's fixed delay.
 void checkFeedDelay(int maxBlock, size_t feedDelay) {
   Synth synth(PluginKind::Effect);
+  filtersOff(synth);
   synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
   synth.setParam(partId(0, PartParam::InputSource), 1);
   synth.setParam(engineId(1), 4);
@@ -749,6 +764,7 @@ TEST_CASE("reset clears the B -> A feed") {
   synth.setParam(engineId(1), 4);
   synth.setParam(partId(1, PartParam::Trigger), 1);
   synth.setParam(partId(1, PartParam::Output), 2);
+  filtersOff(synth);  // the Analog Filter adds VCV's 1e-6 bootstrap noise: exact zeros need it Off
   synth.prepare(44100.0, kMaxBlock);
   const Stereo in = sineInput(8820, 44100.0);
   Stereo out(8820);
@@ -845,4 +861,218 @@ TEST_CASE("process before prepare outputs silence") {
   REQUIRE(silent(r));
   REQUIRE(silent(bl));
   REQUIRE(silent(br));
+}
+
+TEST_CASE("EG13 FX init patch runs Audio Input through the open Analog Filter") {
+  Synth synth(PluginKind::Effect);
+  REQUIRE(synth.engine(SlotKind::Filter, 0) == int(FilterEngine::Analog));
+  REQUIRE(synth.engine(SlotKind::Filter, 1) == int(FilterEngine::Off));
+  REQUIRE(synth.engine(SlotKind::Shaper, 0) == int(ShaperEngine::Off));
+  // The host sees the Analog Filter's own controls at its defaults (docs/manual/engines.md).
+  REQUIRE(std::string(synth.paramName(filterParamIndex(0, 0))) == "Frequency");
+  for (int p = 0; p < filterEngineInfo(int(FilterEngine::Analog)).paramCount; ++p) {
+    REQUIRE(synth.param(filterId(0, p)) == double(filterEngineInfo(int(FilterEngine::Analog)).params[p].defaultValue));
+  }
+  synth.prepare(48000.0, kBlock);
+  const size_t latency = size_t(synth.latencySamples());
+  const Stereo in = sineInput(48000, 48000.0);
+  Stereo out(48000);
+  run(synth, out, 0, 48000, &in);
+  double dot = 0.0;
+  for (size_t i = 9600; i < 48000; ++i) dot += double(out.l[i]) * double(in.l[i - latency]);
+  REQUIRE(dot > 0.0);
+  const double gainDb = 20.0 * std::log10(test::rms(out.l, 9600, 48000) / test::rms(in.l, 9600, 48000));
+  INFO("open Analog Filter gain " << gainDb << " dB");
+  REQUIRE(std::fabs(gainDb) < 1.0);
+}
+
+TEST_CASE("Switching Filter and Shaper types swaps their P values and reports them") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.setParam(filterTypeId(0), double(FilterEngine::Analog));
+  runBlocks(synth, 1);
+  HostUpdate updates[kMaxHostUpdates];
+  REQUIRE(synth.takeHostUpdates(updates, int(kMaxHostUpdates)) == int(kFilterParamCount));
+  REQUIRE(updates[0].id == filterId(0, 0));
+  REQUIRE(updates[0].value == filterEngineInfo(int(FilterEngine::Analog)).params[0].defaultValue);
+  REQUIRE(synth.takeEngineChanged());
+  synth.setParam(filterId(0, 0), 0.3);
+  synth.setParam(filterTypeId(0), double(FilterEngine::Classic));
+  runBlocks(synth, 1);
+  REQUIRE(synth.param(filterId(0, 0)) == double(filterEngineInfo(int(FilterEngine::Classic)).params[0].defaultValue));
+  synth.setParam(filterTypeId(0), double(FilterEngine::Analog));
+  runBlocks(synth, 1);
+  REQUIRE(synth.param(filterId(0, 0)) == double(0.3f));
+
+  synth.takeHostUpdates(updates, int(kMaxHostUpdates));
+  synth.setParam(shaperTypeId(1), double(ShaperEngine::Eq));
+  REQUIRE(synth.takeHostUpdates(updates, int(kMaxHostUpdates)) == int(kShaperParamCount));
+  REQUIRE(updates[11].id == shaperId(1, 11));
+  synth.setParam(shaperId(1, 10), 0.9);  // EQ Input Pad on
+  synth.setParam(shaperTypeId(1), double(ShaperEngine::RingMod));
+  synth.setParam(shaperTypeId(1), double(ShaperEngine::Eq));
+  REQUIRE(synth.param(shaperId(1, 10)) == double(0.9f));
+  synth.setActive(false);
+}
+
+TEST_CASE("Filter and Shaper names and text follow their engines") {
+  Synth synth(PluginKind::Instrument);
+  REQUIRE(std::string(synth.paramName(filterParamIndex(0, 0))) == "(unused)");
+  synth.setParam(filterTypeId(0), double(FilterEngine::StateVariable));
+  synth.setParam(shaperTypeId(0), double(ShaperEngine::Eq));
+  REQUIRE(std::string(synth.paramName(filterParamIndex(0, 0))) == "Cutoff");
+  REQUIRE(std::string(synth.paramName(filterParamIndex(0, 2))) == "Mode");
+  REQUIRE(std::string(synth.paramName(shaperParamIndex(0, 0))) == "High Freq");
+  REQUIRE(std::string(synth.paramName(shaperParamIndex(1, 0))) == "(unused)");
+  char buf[64];
+  synth.formatParam(filterParamIndex(0, 2), 2.5 / 3.0, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "HP");
+  synth.formatParam(filterEngineParamIndex(0), 3, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "State Variable Filter");
+}
+
+TEST_CASE("Switching Filter type keeps the output aligned in time") {
+  auto onset = [](double rate, int filter, int shaper) {
+    Synth synth(PluginKind::Effect);
+    synth.setParam(filterTypeId(0), filter);
+    synth.setParam(shaperTypeId(0), shaper);
+    synth.prepare(rate, kBlock);
+    Stereo in(9600);
+    in.l[4000] = in.r[4000] = 0.25f;
+    Stereo out(9600);
+    run(synth, out, 0, 9600, &in);
+    size_t peak = 0;
+    for (size_t i = 0; i < out.l.size(); ++i) {
+      if (std::fabs(out.l[i]) > std::fabs(out.l[peak])) peak = i;
+    }
+    return std::make_pair(synth.latencySamples(), int(peak) - 4000);
+  };
+  for (double rate : {44100.0, 48000.0, 96000.0}) {
+    const auto off = onset(rate, int(FilterEngine::Off), int(ShaperEngine::Off));
+    INFO("rate " << rate);
+    REQUIRE(off.second == off.first);  // Off and Off: exactly the reported latency
+    // Only an engine's own group delay moves the peak: the Analog Filter's oversampling
+    // filters delay it by ~0.12 ms (6 samples at 48 kHz, measured during planning; 11 at 96 kHz),
+    // as in VCV. The bound is 8 samples at 48 kHz, kept in time at other rates.
+    const int bound = int(std::ceil(8.0 * rate / 48000.0));
+    for (int filter : {int(FilterEngine::Analog), int(FilterEngine::Classic), int(FilterEngine::StateVariable)}) {
+      const auto with = onset(rate, filter, int(ShaperEngine::Off));
+      INFO("filter " << filter << " latency " << with.first << " onset " << with.second);
+      REQUIRE(with.first == off.first);  // the reported latency does not change with the type
+      REQUIRE(std::abs(with.second - off.second) <= bound);
+    }
+    const auto eq = onset(rate, int(FilterEngine::Off), int(ShaperEngine::Eq));
+    INFO("EQ latency " << eq.first << " onset " << eq.second);
+    REQUIRE(eq.first == off.first);
+    REQUIRE(std::abs(eq.second - off.second) <= bound);
+  }
+}
+
+TEST_CASE("Switching Filter type while audio plays makes no step") {
+  Synth synth(PluginKind::Effect);
+  synth.setParam(filterTypeId(0), 0);
+  synth.prepare(48000.0, kBlock);
+  synth.setActive(true);
+  const Stereo in = sineInput(24000, 48000.0);
+  Stereo out(24000);
+  run(synth, out, 0, 9600, &in);
+  synth.setParam(filterTypeId(0), double(FilterEngine::StateVariable));  // open: nearly transparent
+  run(synth, out, 9600, 24000, &in);
+  float maxStep = 0.0f;
+  for (size_t i = 4800; i < 24000; ++i) maxStep = std::max(maxStep, std::fabs(out.l[i] - out.l[i - 1]));
+  REQUIRE(maxStep < 0.05f);  // a 220 Hz, 0.5 sine moves at most 0.0144 per sample
+  synth.setActive(false);
+}
+
+namespace {
+
+// EG13 FX with Part A's Ring Mod set to digital ring modulation, Carrier = Voice (Part A's
+// Audio Input, a 1 kHz sine) and the given Modulator. With partBPlays, Part B plays the same
+// input through Audio Input, always on, heard only by Part A.
+std::vector<float> renderRingMod(PartMode mode, float modulator, bool partBPlays) {
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(mode));
+  filtersOff(synth);
+  synth.setParam(shaperTypeId(0), double(ShaperEngine::RingMod));
+  synth.setParam(shaperId(0, 0), 0.375);  // digital ring modulation
+  synth.setParam(shaperId(0, 1), 0.0);
+  synth.setParam(shaperId(0, 2), 0.5);
+  synth.setParam(shaperId(0, 3), 0.5);
+  synth.setParam(shaperId(0, 4), WarpsEngine::optionValue(1));  // Carrier: Voice (Part A's input)
+  synth.setParam(shaperId(0, 5), modulator);
+  if (partBPlays) {
+    synth.setParam(paramSpec(sourceEngineParamIndex(1)).id, 4);
+    synth.setParam(partId(1, PartParam::Trigger), 1);
+    synth.setParam(partId(1, PartParam::Output), 2);
+  }
+  synth.prepare(48000.0, kBlock);
+  Stereo in(48000);
+  for (size_t i = 0; i < in.l.size(); ++i) {
+    in.l[i] = in.r[i] = 0.4f * float(std::sin(6.283185307179586 * 1000.0 * double(i) / 48000.0));
+  }
+  Stereo out(48000);
+  run(synth, out, 0, 48000, &in);
+  for (float s : out.l) REQUIRE(std::isfinite(s));
+  return out.l;
+}
+
+double magnitudeAt(const std::vector<float>& x, double hz) {  // Goertzel from 9600 on
+  const double c = 2.0 * std::cos(6.283185307179586 * hz / 48000.0);
+  double s1 = 0.0, s2 = 0.0;
+  for (size_t i = 9600; i < x.size(); ++i) {
+    const double s0 = double(x[i]) + c * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  return std::sqrt(std::max(0.0, s1 * s1 + s2 * s2 - c * s1 * s2));
+}
+
+}  // namespace
+
+TEST_CASE("The Ring Mod modulator takes the part's Input and the other part's output") {
+  const auto input = renderRingMod(PartMode::Layer, WarpsEngine::optionValue(2), false);  // Input: carrier²
+  REQUIRE(magnitudeAt(input, 2000.0) > 10.0 * magnitudeAt(input, 1000.0));
+  const auto other = renderRingMod(PartMode::Layer, WarpsEngine::optionValue(3), true);  // Part B's copy
+  REQUIRE(magnitudeAt(other, 2000.0) > 10.0 * magnitudeAt(other, 1000.0));
+  const auto silentB = renderRingMod(PartMode::Layer, WarpsEngine::optionValue(3), false);  // B plays nothing
+  REQUIRE(test::rms(silentB, 9600, silentB.size()) < 1e-4);
+}
+
+TEST_CASE("In Single mode the Ring Mod's Other part is silent unless Part B runs on its own") {
+  // Single mode sends no notes to Part B, so its output, and the Other part signal, is silent.
+  const auto silentB = renderRingMod(PartMode::Single, WarpsEngine::optionValue(3), false);
+  REQUIRE(test::rms(silentB, 9600, silentB.size()) < 1e-4);
+  // An Always-on Part B still runs in Single mode (muted in the mix) and feeds Part A.
+  const auto alwaysOnB = renderRingMod(PartMode::Single, WarpsEngine::optionValue(3), true);
+  REQUIRE(magnitudeAt(alwaysOnB, 2000.0) > 10.0 * magnitudeAt(alwaysOnB, 1000.0));
+}
+
+TEST_CASE("Filter and Shaper switching while playing does not allocate") {
+  Synth synth(PluginKind::Instrument);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  Stereo in = sineInput(kBlock, kRate), out(kBlock);
+  run(synth, out, 0, kBlock, &in);
+  synth.noteOn(0, 60, 0.8f);
+  HostUpdate updates[kMaxHostUpdates];
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int block = 0; block < 120; ++block) {
+      if (block % 10 == 0) {
+        synth.setParam(filterTypeId(block % 20 == 0 ? 0 : 1), (block / 10) % kNumFilterEngines);
+        synth.setParam(shaperTypeId(0), (block / 10) % kNumShaperEngines);
+        synth.setParam(shaperId(0, 4), WarpsEngine::optionValue((block / 10) % WarpsEngine::kNumCarriers));
+        synth.setParam(shaperId(0, 5), WarpsEngine::optionValue((block / 10) % WarpsEngine::kNumModulators));
+      }
+      run(synth, out, 0, kBlock, &in);
+      synth.takeHostUpdates(updates, int(kMaxHostUpdates));
+      synth.takeEngineChanged();
+    }
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
+  synth.setActive(false);
 }

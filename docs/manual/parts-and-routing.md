@@ -12,7 +12,7 @@ If an engine ever produces an invalid signal (a numerical blow-up), the voice is
 
 ## Engine switching
 
-Each engine remembers its own settings in each part. Switching Source from Macro Oscillator to Digital Oscillator and back brings back the Macro Oscillator exactly as you left it. The host's parameters change to the new engine's values; this change is not recorded as automation.
+Each engine of each slot (Source, Filter, Shaper) remembers its own settings in each part. Switching Source from Macro Oscillator to Digital Oscillator and back brings back the Macro Oscillator exactly as you left it. The host's parameters change to the new engine's values; this change is not recorded as automation. The same holds for the Filter and Shaper *Type*: switching from Analog Filter to Classic Filters and back brings the Analog Filter back as you left it, and the host shows each slot's P values named after its current engine.
 
 Switching the **Source** engine is a hard cut: the old engine stops at once, and a held note restarts on the new engine after the plugin's latency.
 
@@ -38,13 +38,16 @@ The plugin's audio input (the instrument's sidechain, or EG13 FX's main input) i
 
 Part A runs before Part B. B therefore hears A with no extra delay, while A hears B 64 samples later (or one host block, if the host's blocks are shorter). Every signal fed from one part to the other passes through a soft limiter: it is untouched up to full scale and never exceeds twice full scale, so a loop between the parts cannot run away.
 
+The Ring Mod / Vocoder can also take the part's Input or the other part's output as its carrier or modulator, with the same delays and limiter. Its *Other part* signal is the other part's output whether or not that part is heard: in *Single* mode Part B is muted but still runs, so a Part B set to *Always on* still reaches Part A's Ring Mod, while a Part B playing nothing gives silence.
+
 Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second output) or to *Other part only*. With *Other part only* the part is not heard; it only feeds the other part.
 
 **Dry** mixes the Input into the main output, delayed by the plugin's latency so it lines up with the processed sound.
 
 ## Default patches
 
-- **EG13:** Part A with the Macro Oscillator.
+- **EG13:** both parts with the Macro Oscillator, Filter *Off* and Shaper *Off*. (The full init patch, with envelopes and a filter, comes with modulation in M4.)
 - **EG13 FX:**
-  - Part A plays the Input through **Audio Input**, with Trigger set to *Always on*, so it processes audio with no MIDI.
+  - Part A plays the Input through **Audio Input** → **Analog Filter** (fully open) → Shaper *Off*, with Trigger set to *Always on*, so it processes audio with no MIDI.
+  - Part B starts with Filter *Off* and Shaper *Off*.
   - Dry is 0 and the master level is 100 %.

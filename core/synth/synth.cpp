@@ -33,6 +33,9 @@ void Synth::prepare(double sampleRate, int maxBlock) {
   for (auto& part : partIn_) {
     for (auto& buffer : part) buffer.assign(size_t(maxBlock), 0.0f);
   }
+  for (auto& part : otherIn_) {
+    for (auto& buffer : part) buffer.assign(size_t(maxBlock), 0.0f);
+  }
   feedDelay_ = size_t(std::min(maxBlock, kFeedBlock));
   for (auto& ring : feedRing_) ring.assign(2 * feedDelay_, 0.0f);
   feedPos_ = 0;
@@ -135,11 +138,15 @@ bool Synth::setParam(uint32_t id, double value) {
   // it in the same block (or flush) then land on the new engine. The P values
   // are swapped before the selector is stored, so a main-thread snapshot() or
   // engineStash() never sees the new selector with the old engine's values.
-  // While the kSourceParamCount P stores are in flight it can still see the old
-  // selector with some new P values; that read is benign (display, or a state
-  // save the host repeats) and the next one is consistent.
-  for (int part = 0; part < kNumParts; ++part) {
-    if (size_t(index) == sourceEngineParamIndex(part)) switchEngine(part, sourceEngineFromSelector(clamped));
+  // While the slot's P stores are in flight it can still see the old selector
+  // with some new P values; that read is benign (display, or a state save the
+  // host repeats) and the next one is consistent. Filter and Shaper selectors
+  // swap the same way as the Source's (their slots rely on it: an engine
+  // waiting for a crossfade keeps its own settings meanwhile).
+  SlotKind kind = SlotKind::Source;
+  int part = 0;
+  if (slotSelectorOf(size_t(index), &kind, &part)) {
+    switchEngine(kind, part, slotEngineFromSelector(kind, clamped));
   }
   values_[size_t(index)].store(clamped, std::memory_order_relaxed);
   return true;
@@ -171,15 +178,27 @@ void Synth::store(const ParamSnapshot& values) {
 
 EngineStash Synth::defaultStash() {
   EngineStash stash{};
-  for (int part = 0; part < kNumParts; ++part) {
-    for (int e = 0; e < kNumSourceEngines; ++e) {
-      const EngineInfo& info = sourceEngineInfo(e);
-      for (int p = 0; p < int(kSourceParamCount); ++p) {
-        stash[stashIndex(part, e, p)] = p < info.paramCount ? info.params[p].defaultValue : 0.0f;
+  for (int k = 0; k < kNumSlotKinds; ++k) {
+    const SlotKind kind = SlotKind(k);
+    for (int part = 0; part < kNumParts; ++part) {
+      for (int e = 0; e < slotEngineCount(kind); ++e) {
+        const EngineInfo& info = slotEngineInfo(kind, e);
+        for (int p = 0; p < int(slotParamCount(kind)); ++p) {
+          stash[slotStashIndex(kind, part, e, p)] = p < info.paramCount ? info.params[p].defaultValue : 0.0f;
+        }
       }
     }
   }
   return stash;
+}
+
+void Synth::adoptEngines(const ParamSnapshot& values) {
+  for (int k = 0; k < kNumSlotKinds; ++k) {
+    const SlotKind kind = SlotKind(k);
+    for (int part = 0; part < kNumParts; ++part) {
+      currentEngine_[size_t(k)][size_t(part)] = slotEngineFromSelector(kind, values[slotEngineParamIndex(kind, part)]);
+    }
+  }
 }
 
 void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash) {  // main thread
@@ -190,9 +209,7 @@ void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash) { 
     store(clamped);
     for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(s[i], std::memory_order_relaxed);
     hostUpdateCount_ = 0;  // superseded by the load
-    for (int part = 0; part < kNumParts; ++part) {
-      currentEngine_[size_t(part)] = sourceEngineFromSelector(clamped[sourceEngineParamIndex(part)]);
-    }
+    adoptEngines(clamped);
     pendingState_.store(kIdle, std::memory_order_release);
     return;
   }
@@ -215,9 +232,7 @@ void Synth::applyPending() {  // audio thread, or main thread while inactive
   for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(pendingStash_[i], std::memory_order_relaxed);
   hostUpdateCount_ = 0;  // switches from before the load are superseded by it
   // The snapshot's P values belong to its engines: adopt them without swapping.
-  for (int part = 0; part < kNumParts; ++part) {
-    currentEngine_[size_t(part)] = sourceEngineFromSelector(pendingValues_[sourceEngineParamIndex(part)]);
-  }
+  adoptEngines(pendingValues_);
   pendingState_.store(kIdle, std::memory_order_release);
 }
 
@@ -227,27 +242,38 @@ EngineStash Synth::engineStash() const {  // main thread
   for (size_t i = 0; i < kStashSize; ++i) {
     s[i] = pending ? pendingStash_[i] : stash_[i].load(std::memory_order_relaxed);
   }
-  for (int part = 0; part < kNumParts; ++part) {
-    const int e = engine(part);
-    for (int p = 0; p < int(kSourceParamCount); ++p) {
-      s[stashIndex(part, e, p)] = float(param(paramSpec(sourceParamIndex(part, p)).id));
+  for (int k = 0; k < kNumSlotKinds; ++k) {
+    const SlotKind kind = SlotKind(k);
+    for (int part = 0; part < kNumParts; ++part) {
+      const int e = engine(kind, part);
+      for (int p = 0; p < int(slotParamCount(kind)); ++p) {
+        s[slotStashIndex(kind, part, e, p)] = float(param(paramSpec(slotParamIndex(kind, part, p)).id));
+      }
     }
   }
   return s;
 }
 
-int Synth::engine(int part) const {
-  return sourceEngineFromSelector(param(paramSpec(sourceEngineParamIndex(part)).id));
+int Synth::engine(SlotKind kind, int part) const {
+  return slotEngineFromSelector(kind, param(paramSpec(slotEngineParamIndex(kind, part)).id));
+}
+
+PartEngines Synth::partEngines(int part) const {
+  PartEngines e;
+  e.source = engine(SlotKind::Source, part);
+  e.filter = engine(SlotKind::Filter, part);
+  e.shaper = engine(SlotKind::Shaper, part);
+  return e;
 }
 
 const char* Synth::paramName(size_t index) const {
   const int part = index < size_t(kNumParts) * kParamsPerPart ? int(index / kParamsPerPart) : 0;
-  return eg13::paramName(index, engine(part));
+  return eg13::paramName(index, partEngines(part));
 }
 
 void Synth::formatParam(size_t index, double value, char* buf, size_t size) const {
   const int part = index < size_t(kNumParts) * kParamsPerPart ? int(index / kParamsPerPart) : 0;
-  eg13::formatParam(index, value, buf, size, engine(part));
+  eg13::formatParam(index, value, buf, size, partEngines(part));
 }
 
 int Synth::takeHostUpdates(HostUpdate* out, int max) {  // audio thread
@@ -258,19 +284,20 @@ int Synth::takeHostUpdates(HostUpdate* out, int max) {  // audio thread
   return count;
 }
 
-// Same threading as setParam. Saves the old engine's P1..P16, loads the new
+// Same threading as setParam. Saves the old engine's P values, loads the new
 // engine's and queues them for the host.
-void Synth::switchEngine(int part, int next) {
-  const int previous = currentEngine_[size_t(part)];
+void Synth::switchEngine(SlotKind kind, int part, int next) {
+  int& current = currentEngine_[size_t(kind)][size_t(part)];
+  const int previous = current;
   if (next == previous) return;
-  for (int p = 0; p < int(kSourceParamCount); ++p) {
-    const size_t index = sourceParamIndex(part, p);
-    stash_[stashIndex(part, previous, p)].store(load(index), std::memory_order_relaxed);
-    const float value = stash_[stashIndex(part, next, p)].load(std::memory_order_relaxed);
+  for (int p = 0; p < int(slotParamCount(kind)); ++p) {
+    const size_t index = slotParamIndex(kind, part, p);
+    stash_[slotStashIndex(kind, part, previous, p)].store(load(index), std::memory_order_relaxed);
+    const float value = stash_[slotStashIndex(kind, part, next, p)].load(std::memory_order_relaxed);
     values_[index].store(value, std::memory_order_relaxed);
     queueHostUpdate({paramSpec(index).id, value});
   }
-  currentEngine_[size_t(part)] = next;
+  current = next;
   engineChanged_.store(true, std::memory_order_release);
 }
 
@@ -291,24 +318,29 @@ float Synth::softLimit(float x) {
   return std::copysign(1.0f + d / (1.0f + d), x);
 }
 
-// External = plugin input; Other part = A takes B's output delayed by exactly
-// feedDelay_ samples (whatever the block sizes), B takes A's current chunk; Both =
-// their sum. Other-part feeds pass the soft limiter.
+// The other part's output for this chunk, soft-limited (spec §2.3): A takes B's output delayed
+// by exactly feedDelay_ samples (whatever the block sizes); B takes A's current chunk.
+void Synth::feedOther(int part, int n) {
+  for (int ch = 0; ch < 2; ++ch) {
+    float* dst = otherIn_[part][ch].data();
+    for (int i = 0; i < n; ++i) {
+      const float feed = part == 0 ? feedRing_[ch][(feedPos_ + size_t(i)) % feedRing_[ch].size()]
+                                   : partOut_[0][ch][size_t(i)];
+      dst[i] = softLimit(feed);
+    }
+  }
+}
+
+// The part's Input by its Input source setting: External = plugin input; Other part = the
+// soft-limited other-part feed; Both = their sum.
 void Synth::routeInput(int part, const float* const* in, int n) {
   const int source = std::clamp(parts_[size_t(part)]->settings().inputSource, 0, 2);
   const bool external = (source == 0 || source == 2) && in != nullptr;
   const bool other = source >= 1;
   for (int ch = 0; ch < 2; ++ch) {
     float* dst = partIn_[part][ch].data();
-    for (int i = 0; i < n; ++i) {
-      float v = external ? in[ch][i] : 0.0f;
-      if (other) {
-        const float feed = part == 0 ? feedRing_[ch][(feedPos_ + size_t(i)) % feedRing_[ch].size()]
-                                     : partOut_[0][ch][size_t(i)];
-        v += softLimit(feed);
-      }
-      dst[i] = v;
-    }
+    const float* feed = otherIn_[part][ch].data();
+    for (int i = 0; i < n; ++i) dst[i] = (external ? in[ch][i] : 0.0f) + (other ? feed[i] : 0.0f);
   }
 }
 
@@ -330,6 +362,8 @@ PartSettings Synth::readPartSettings(int part) const {
   s.mono = v(PartParam::Mono) >= 0.5f;
   s.output = int(v(PartParam::Output));
   s.engine = sourceEngineFromSelector(load(sourceEngineParamIndex(part)));
+  s.filterEngine = slotEngineFromSelector(SlotKind::Filter, load(filterEngineParamIndex(part)));
+  s.shaperEngine = slotEngineFromSelector(SlotKind::Shaper, load(shaperEngineParamIndex(part)));
   s.inputSource = int(v(PartParam::InputSource));
   return s;
 }
@@ -367,15 +401,22 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
   bool toBus2[kNumParts];
   bool heard[kNumParts];
   for (int p = 0; p < kNumParts; ++p) {  // A before B: A -> B has no delay
-    ParamValues source;
-    for (int i = 0; i < int(kSourceParamCount); ++i) source.p[i] = load(sourceParamIndex(p, i));
-    const int inputSource = parts_[size_t(p)]->settings().inputSource;
-    const bool hasInput = inputSource >= 1 || in != nullptr;
+    Part& part = *parts_[size_t(p)];
+    SlotParams params;
+    for (int i = 0; i < int(kSourceParamCount); ++i) params.source.p[i] = load(sourceParamIndex(p, i));
+    for (int i = 0; i < int(kFilterParamCount); ++i) params.filter.p[i] = load(filterParamIndex(p, i));
+    for (int i = 0; i < int(kShaperParamCount); ++i) params.shaper.p[i] = load(shaperParamIndex(p, i));
+    feedOther(p, n);
+    const bool hasInput = part.settings().inputSource >= 1 || in != nullptr;
     if (hasInput) routeInput(p, in, n);
     const float* partIn[2] = {partIn_[p][0].data(), partIn_[p][1].data()};
+    const float* other[2] = {otherIn_[p][0].data(), otherIn_[p][1].data()};
     float* out[2] = {partOut_[p][0].data(), partOut_[p][1].data()};
-    parts_[size_t(p)]->process(hasInput ? partIn : nullptr, out, source, n);
-    const int output = parts_[size_t(p)]->settings().output;
+    VoiceInputs inputs;
+    inputs.input = hasInput ? partIn : nullptr;
+    inputs.other = other;
+    part.process(inputs, out, params, n);
+    const int output = part.settings().output;
     heard[p] = output != 2;  // Other part only: feeds the other part, not heard
     toBus2[p] = bus2Out != nullptr && output == 1;
   }
