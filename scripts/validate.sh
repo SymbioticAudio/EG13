@@ -24,6 +24,26 @@ done
 echo "== clap-validator: $CLAP"
 "$CLAP_VALIDATOR" validate "$CLAP" --only-failed
 
+echo "== AU Info.plist: $COMPONENT/Contents/Info.plist"
+# A stale or generic bundle plist makes auval report "didn't find the component", so check first.
+PLIST="$COMPONENT/Contents/Info.plist"
+for expected in "aumu EG13 Symb" "aumf EGfx Symb"; do
+  read -r want_type want_sub want_man <<<"$expected"
+  found=0
+  n="$(plutil -extract AudioComponents raw -o - "$PLIST" 2>/dev/null || echo 0)"
+  for ((i = 0; i < n; i++)); do
+    t="$(plutil -extract "AudioComponents.$i.type" raw -o - "$PLIST" 2>/dev/null || true)"
+    s="$(plutil -extract "AudioComponents.$i.subtype" raw -o - "$PLIST" 2>/dev/null || true)"
+    m="$(plutil -extract "AudioComponents.$i.manufacturer" raw -o - "$PLIST" 2>/dev/null || true)"
+    if [ "$t" = "$want_type" ] && [ "$s" = "$want_sub" ] && [ "$m" = "$want_man" ]; then found=1; break; fi
+  done
+  if [ "$found" -ne 1 ]; then
+    echo "validate.sh: $PLIST has no AudioComponents entry for $want_type/$want_sub/$want_man (stale or generic plist?). Rebuild: cmake --build --preset mac --target EG13_all" >&2
+    exit 1
+  fi
+  echo "ok: $want_type/$want_sub/$want_man"
+done
+
 echo "== auval: $COMPONENT"
 codesign --force --deep --sign - "$COMPONENT"
 DEST="$HOME/Library/Audio/Plug-Ins/Components"
