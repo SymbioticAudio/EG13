@@ -14,5 +14,6 @@ When a control jumps (an automation step, or a modulation change), each engine f
 - **EQ:** the VCV module reads its knobs every sample; EG13 moves all ten knobs in a straight line across each control block of up to 16 samples. Input Pad and Output switch at once.
 - **Envelope:** no smoothing, as on the module: its controls are read every 8 samples of its own 31.25 kHz (a quarter of a millisecond). Mode switches at once.
 - **LFO:** Tides glides Frequency, Shape, Slope, Smoothness and Shift itself across each of its 8-sample blocks (an eighth of a millisecond). Mode, Output, Range and Sync switch at once.
+- **Random / S&H:** no smoothing, as on the module: controls are read every 5 samples of its own 32 kHz. X Steps, below its middle, smooths the random values themselves.
 
 After a reset, or when a voice starts from silence, every control starts at its current value with no glide (except inside the Ring Mod / Vocoder, as noted above).

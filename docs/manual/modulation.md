@@ -35,3 +35,15 @@ A slope generator with four outputs.
 - **Sync** *On* locks the LFO to the host's tempo: Frequency then picks a ratio from Tides' table (from one cycle every 16 beats to 16 cycles per beat; 50 % is one cycle per beat) and the cycle lines up with the song position. With the transport stopped it keeps running at the last tempo the host gave (120 BPM if none); when the transport starts it jumps into line with the song. With Sync on, notes do not restart the cycle.
 - In Cycle mode the outputs swing from −100 % to +100 %; in AD and AR they run from 0 to 100 %.
 - Defaults: Cycle at 2 Hz, Phase outputs a quarter cycle apart, Sync off.
+
+### Random / S&H (based on Marbles)
+
+Random gates and random voltages, with the module's controls (the knob mappings follow VCV's version of the module). Seven outputs: **T1**, **T2**, **T3** (gates: 0 or 100 %) and **X1**, **X2**, **X3**, **Y** (random values).
+
+- The **T** section makes gates: **T Rate** sets the clock (T2 is the clock itself), **T Model** (*Coin Toss*, *Clusters*, *Drums*) how T1 and T3 share the beats, **T Bias** which of them wins more often, **T Jitter** how loose the timing is, **T Range** (*1x*, *1/4x*, *4x*) the clock's range.
+- The **X** section makes values on each T1/T3 gate: **X Spread** the width of the distribution, **X Bias** where it leans, **X Steps** from smooth (low) through random values to notes of **X Scale** (high: *Major*, *Minor*, *Pentatonic*, *Pelog*, *Raag Bhairav*, *Raag Shri*), **X Mode** (*Identical*, *Bump*, *Tilt*) how the three X outputs differ. **Y** is a slower value (one for every four X values) with the same spread, bias and steps.
+- **X Range**: *Narrow* and *Positive* give 0 to 100 % (Narrow is the module's 0–2 V, Positive its 0–5 V, both scaled to full range), *Full* gives −100 % to +100 % (default).
+- **Deja Vu** loops the random sequences instead of always drawing new ones; **T Deja Vu** and **X Deja Vu** switch it on for each section and **Length** sets the loop's length (1 to 16 steps).
+- **Sync** *On* clocks the T section from the host's tempo, one beat per clock, and T Rate then multiplies or divides the beat. It restarts its pattern when the transport starts or jumps; with the transport stopped it keeps the last tempo (120 BPM if none). It takes about two beats to lock.
+- A new slot with Random / S&H is per part, so every voice hears the same random values; set Scope to per voice for a different sequence on each voice. Every voice and slot has its own random sequence.
+- Defaults: VCV's, except X Range *Full*.

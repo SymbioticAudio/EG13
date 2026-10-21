@@ -16,6 +16,7 @@ add_library(eg13_core STATIC
   engine/mod_engine.cpp
   engine/stages_engine.cpp
   engine/tides_engine.cpp
+  engine/marbles_engine.cpp
   synth/param_table.cpp
   synth/synth.cpp
   state/state.cpp
