@@ -84,13 +84,13 @@ Each mod slot has an **Engine** (Off, Envelope, LFO, Random / S&H, Function Gene
 - *Per voice*: every voice has its own copy of the engine. A voice starting from silence starts its copies afresh, and each new note on a voice retriggers them (an envelope restarts its attack from where it is; an LFO restarts its cycle).
 - *Per part*: one copy for the whole part, which every voice hears. Its gate is held while any key of the part is down and it triggers when the first key goes down after all were up, so a per-part envelope works like a paraphonic synth's single-trigger envelope and a per-part LFO keeps running while you play.
 
-Choosing an engine gives it its own settings, including its scope (Random / S&H starts per part, the others per voice). Each engine remembers its settings in each slot, as the Source, Filter and Shaper engines do. Changing the engine takes effect at once: the new engine starts from the beginning.
+Choosing an engine gives it its own settings, including its scope (Random / S&H starts per part, the others per voice). Each engine remembers its settings in each slot, as the Source, Filter and Shaper engines do. Changing the engine takes effect at once: the new engine starts from the beginning. Changing the scope does too: the copies the slot switches to start from the beginning.
 
 **Routes between mod slots** (for example Mod 1's LFO into Mod 2's Decay) use the value the source had 16 samples earlier. That keeps loops (Mod 1 into Mod 2 into Mod 1, or a slot into its own controls) stable and the order of the slots irrelevant. Routes into everything else use the current value.
 
-A mod engine that outputs NaN/Inf restarts and reads 0 for that tick.
+If a mod engine ever produces an invalid value, it restarts and its outputs read 0 for that moment (16 samples).
 
-**Part Level** and routes into a per-part slot take per-note sources (velocity, a per-voice mod slot, …) from the most recently started voice.
+**Part Level** and routes into a per-part slot take per-note sources (velocity, a per-voice mod slot, …) from the most recently started voice. Part Level takes a per-voice mod slot's value from 16 samples earlier.
 
 ## Amp and voices
 

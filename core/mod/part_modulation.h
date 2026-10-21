@@ -20,7 +20,7 @@ struct ModParams {
 
 // One voice's fixed sources for a tick (the Part keeps them).
 struct ModVoiceInputs {
-  bool active = false;     // the voice is sounding: its per-voice slots run
+  bool active = false;     // for the Part: the voice is sounding (it calls processVoice() for it)
   bool gate = false;       // the per-voice mod engines' gate
   bool retrigger = false;  // a note started on the voice since the last tick
   float note = 60.0f;      // the voice's key, glided
@@ -46,7 +46,7 @@ struct ModPartInputs {
   double beat = 0.0;
   double beatsPerSample = 0.0;
   bool beatJump = false;
-  int lastVoice = -1;      // the most recently started voice (provisional ruling 6)
+  int lastVoice = -1;      // the most recently started voice, -1 or 0..kVoices-1 (provisional ruling 6)
 };
 
 // A part's mod slots and matrix (spec §6): 4 part-scope slot instances and 4 per voice, each
@@ -67,7 +67,8 @@ class PartModulation {
   void prepare(double hostRate);    // main thread
   void reset();
   // Audio thread: slot `slot` plays `engine`, per part or per voice. A new engine starts from
-  // reset; the instances a scope change starts using start from reset too.
+  // reset; the instances a scope change starts using start from reset too. Call it before
+  // processPart() for the tick, never between processPart() and processVoice().
   void configure(int slot, int engine, bool perPart);
   int engine(int slot) const { return engine_[slot]; }
   bool perPart(int slot) const { return perPart_[slot]; }
@@ -76,7 +77,8 @@ class PartModulation {
   void processPart(const ModParams& params, const ModPartInputs& part, const ModVoiceInputs* voices, int n);
   void processVoice(int v, const ModParams& params, const ModPartInputs& part, const ModVoiceInputs& voice,
                     const SlotParams& base, VoiceControl* control, int n);
-  // base + the routes into Part Level (after processPart()), clamped.
+  // base + the routes into Part Level (after processPart()), clamped. Per-part slots read this
+  // tick's outputs; per-voice slots (of lastVoice) the previous tick's, as they have not run yet.
   float partLevel(const ModParams& params, float base) const;
 
   const float* outputs(int slot, int voice) const;  // voice < 0: the part instance

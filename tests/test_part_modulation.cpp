@@ -41,19 +41,25 @@ struct Rig {
 
 }  // namespace
 
-TEST_CASE("Routes into mod-slot P's read the previous tick whatever the slot order") {
-  for (int order = 0; order < 2; ++order) {
-    Rig rig;
-    const int step = order == 0 ? 0 : 3;
-    const int echo = order == 0 ? 1 : 0;
-    rig.mod.configure(step, test::kTestStep, false);
-    rig.mod.configure(echo, test::kTestEcho, false);
-    rig.route(0, modOutputSource(step, 0), modParamDestination(echo, 0), 1.0f);
-    for (int k = 1; k <= 20; ++k) {
-      rig.tick();
-      INFO("order " << order << " tick " << k);
-      REQUIRE(rig.mod.outputs(step, 0)[0] == 0.01f * float(k));
-      REQUIRE(std::fabs(rig.mod.outputs(echo, 0)[0] - 0.01f * float(k - 1)) < 1e-6f);
+TEST_CASE("Routes into mod-slot P's read the previous tick whatever the slot order and scope") {
+  for (int scopes = 0; scopes < 4; ++scopes) {
+    const bool stepPerPart = (scopes & 1) != 0;
+    const bool echoPerPart = (scopes & 2) != 0;
+    for (int order = 0; order < 2; ++order) {
+      Rig rig;
+      rig.part.lastVoice = 0;  // per-part slots read voice 0's per-voice slots
+      const int step = order == 0 ? 0 : 3;
+      const int echo = order == 0 ? 1 : 0;
+      rig.mod.configure(step, test::kTestStep, stepPerPart);
+      rig.mod.configure(echo, test::kTestEcho, echoPerPart);
+      rig.route(0, modOutputSource(step, 0), modParamDestination(echo, 0), 1.0f);
+      for (int k = 1; k <= 20; ++k) {
+        rig.tick();
+        INFO("step per part " << stepPerPart << " echo per part " << echoPerPart << " order " << order
+                              << " tick " << k);
+        REQUIRE(rig.mod.outputs(step, stepPerPart ? -1 : 0)[0] == 0.01f * float(k));
+        REQUIRE(std::fabs(rig.mod.outputs(echo, echoPerPart ? -1 : 0)[0] - 0.01f * float(k - 1)) < 1e-6f);
+      }
     }
   }
 }
@@ -118,6 +124,8 @@ TEST_CASE("Per-voice slots see their own voice's gate and retrigger") {
   REQUIRE(rig.mod.outputs(0, 3)[2] == 0.0f);
   rig.mod.startVoice(2);
   REQUIRE(rig.mod.outputs(0, 2)[0] == 0.0f);
+  rig.mod.processVoice(2, rig.params, rig.part, rig.voices[2], rig.base, &c, 16);
+  REQUIRE(rig.mod.outputs(0, 2)[0] == 0.01f);  // the tick count started again
 }
 
 TEST_CASE("Pitch, Amp and Pan follow their routes") {
@@ -143,6 +151,18 @@ TEST_CASE("Pitch, Amp and Pan follow their routes") {
   c = rig.tick();
   REQUIRE(c.ampRouted);  // routed at zero: silent, not open
   REQUIRE(c.amp == 0.0f);
+}
+
+TEST_CASE("Pitch routes sum to at most 48 semitones") {
+  Rig rig;
+  rig.voices[0].velocity = 1.0f;
+  rig.voices[0].bend = 1.5f;
+  for (int r = 0; r < 3; ++r) rig.route(r, kSrcVelocity, kDestPitch, 1.0f);  // 3 x 24 = 72 st
+  VoiceControl c = rig.tick();
+  REQUIRE(c.pitch == 48.0f + 1.5f);  // the per-note bend comes on top of the cap
+  for (int r = 0; r < 3; ++r) rig.params.routes.amount[r] = -1.0f;
+  c = rig.tick();
+  REQUIRE(c.pitch == -48.0f + 1.5f);
 }
 
 TEST_CASE("Fixed sources: keytrack, note bend, slide, release velocity") {

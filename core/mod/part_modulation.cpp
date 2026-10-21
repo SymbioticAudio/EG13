@@ -1,6 +1,7 @@
 #include "mod/part_modulation.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <iterator>
 
@@ -72,6 +73,7 @@ void PartModulation::configure(int slot, int engine, bool perPart) {
 }
 
 void PartModulation::startVoice(int v) {
+  assert(v >= 0 && v < kVoices);
   for (int s = 0; s < kNumModSlots; ++s) voiceSlot(v, s).restart();
 }
 
@@ -132,6 +134,7 @@ ParamValues modulatedSlot(const ParamValues& base, const RouteSums& sums, int sl
 
 void PartModulation::processPart(const ModParams& params, const ModPartInputs& part, const ModVoiceInputs* voices,
                                  int n) {
+  assert(part.lastVoice >= -1 && part.lastVoice < kVoices);
   const ModVoiceInputs* last = part.lastVoice >= 0 && voices != nullptr ? &voices[part.lastVoice] : nullptr;
   fillFixed(partSource_, part, last);
   for (int s = 0; s < kNumModSlots; ++s) {
@@ -151,6 +154,7 @@ void PartModulation::processPart(const ModParams& params, const ModPartInputs& p
 
 void PartModulation::processVoice(int v, const ModParams& params, const ModPartInputs& part,
                                   const ModVoiceInputs& voice, const SlotParams& base, VoiceControl* control, int n) {
+  assert(v >= 0 && v < kVoices);
   float source[kNumSources];
   fillFixed(source, part, &voice);
   fillMods(source, v, false);
