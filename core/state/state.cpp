@@ -29,7 +29,9 @@ bool parseId(const std::string& key, uint32_t* id) {
 
 // Schema 1 (M0) -> 2: the nine M0 parameters kept their IDs and ranges, so no
 // transformation is needed. Schema 2 -> 3 (M2): Source engine selector. Schema 3 -> 4 (M3):
-// Filter and Shaper types, Off for older documents.
+// Filter and Shaper types, Off for older documents. Schema 4 -> 5 (M4): mod slots, routes and
+// envelope shapes; older documents load with no modulation at their old level (Voice Gain 0 dB,
+// Soft Clip off; provisional ruling 30).
 
 // Source engineSettings arrays hold kSourceParamCount numbers. Early unreleased schema 3 builds
 // wrote 8 (P1..P8); those load as a prefix, the rest keep the engine's defaults.
@@ -54,7 +56,7 @@ const Section kSections[kNumSlotKinds] = {
 size_t sectionWidth(SlotKind kind) { return slotParamCount(kind) + (isModSlot(kind) ? 1 : 0); }
 
 bool isKnownTopLevel(const std::string& key) {
-  if (key == "schemaVersion" || key == "params") return true;
+  if (key == "schemaVersion" || key == "params" || key == "routes" || key == "envelopeShapes") return true;
   for (const Section& s : kSections) {
     if (key == s.key) return true;
   }
@@ -100,6 +102,81 @@ bool readSection(const nlohmann::json& root, const Section& section, EngineStash
   return clean;
 }
 
+// "routes": {part: [[source, destination, via], ... up to 12]}. Codes are kept as saved (unknown
+// ones too: a newer version's routes come back unchanged on resave); entries that are not three
+// integers 0..65535 are dropped. False if anything had to be dropped.
+bool readRoutes(const nlohmann::json& root, PatchData& patch) {
+  const auto found = root.find("routes");
+  if (found == root.end()) return true;
+  if (!found->is_object()) return false;
+  bool clean = true;
+  for (auto partIt = found->begin(); partIt != found->end(); ++partIt) {
+    uint32_t part = 0;
+    if (!parseId(partIt.key(), &part) || part >= uint32_t(kNumParts) || !partIt.value().is_array() ||
+        partIt.value().size() > size_t(kNumRoutes)) {
+      clean = false;
+      continue;
+    }
+    const auto& list = partIt.value();
+    for (size_t r = 0; r < list.size(); ++r) {
+      const auto& entry = list[r];
+      bool valid = entry.is_array() && entry.size() == 3;
+      for (size_t k = 0; valid && k < 3; ++k) {
+        valid = entry[k].is_number_integer() && entry[k].get<long long>() >= 0 && entry[k].get<long long>() <= 65535;
+      }
+      if (!valid) {
+        clean = false;
+        continue;
+      }
+      patch.routes[part][r] = {uint16_t(entry[0].get<long long>()), uint16_t(entry[1].get<long long>()),
+                               uint16_t(entry[2].get<long long>())};
+    }
+  }
+  return clean;
+}
+
+// "envelopeShapes": {part: [{"count": n, "types": [6], "loops": [6]}, ... 4 slots]}. A malformed
+// shape keeps the default (ADSR); values out of range are sanitized.
+bool readShapes(const nlohmann::json& root, PatchData& patch) {
+  const auto found = root.find("envelopeShapes");
+  if (found == root.end()) return true;
+  if (!found->is_object()) return false;
+  bool clean = true;
+  for (auto partIt = found->begin(); partIt != found->end(); ++partIt) {
+    uint32_t part = 0;
+    if (!parseId(partIt.key(), &part) || part >= uint32_t(kNumParts) || !partIt.value().is_array() ||
+        partIt.value().size() > size_t(kNumModSlots)) {
+      clean = false;
+      continue;
+    }
+    const auto& list = partIt.value();
+    for (size_t slot = 0; slot < list.size(); ++slot) {
+      const auto& e = list[slot];
+      const auto count = e.is_object() ? e.find("count") : e.end();
+      const auto types = e.is_object() ? e.find("types") : e.end();
+      const auto loops = e.is_object() ? e.find("loops") : e.end();
+      bool valid = e.is_object() && count != e.end() && count->is_number_integer() && types != e.end() &&
+                   types->is_array() && types->size() == size_t(EnvelopeShape::kMaxSegments) && loops != e.end() &&
+                   loops->is_array() && loops->size() == size_t(EnvelopeShape::kMaxSegments);
+      for (size_t i = 0; valid && i < size_t(EnvelopeShape::kMaxSegments); ++i) {
+        valid = (*types)[i].is_number_integer() && (*loops)[i].is_number_integer();
+      }
+      if (!valid) {
+        clean = false;
+        continue;
+      }
+      EnvelopeShape shape;
+      shape.count = uint8_t(std::clamp(count->get<long long>(), 0LL, 255LL));
+      for (size_t i = 0; i < size_t(EnvelopeShape::kMaxSegments); ++i) {
+        shape.type[i] = uint8_t(std::clamp((*types)[i].get<long long>(), 0LL, 255LL));
+        shape.loop[i] = uint8_t(std::clamp((*loops)[i].get<long long>(), 0LL, 255LL));
+      }
+      patch.shapes[part][slot] = sanitized(shape);
+    }
+  }
+  return clean;
+}
+
 }  // namespace
 
 std::string StateStore::save(const Synth& synth) const {
@@ -129,6 +206,27 @@ std::string StateStore::save(const Synth& synth) const {
     }
     root[section.key] = std::move(engines);
   }
+  const PatchData patch = synth.patch();
+  nlohmann::json routes = nlohmann::json::object();
+  nlohmann::json shapes = nlohmann::json::object();
+  for (int part = 0; part < kNumParts; ++part) {
+    nlohmann::json list = nlohmann::json::array();
+    for (const Route& r : patch.routes[size_t(part)]) list.push_back({r.source, r.destination, r.via});
+    routes[std::to_string(part)] = std::move(list);
+    nlohmann::json slots = nlohmann::json::array();
+    for (const EnvelopeShape& shape : patch.shapes[size_t(part)]) {
+      nlohmann::json types = nlohmann::json::array();
+      nlohmann::json loops = nlohmann::json::array();
+      for (int i = 0; i < EnvelopeShape::kMaxSegments; ++i) {
+        types.push_back(int(shape.type[i]));
+        loops.push_back(int(shape.loop[i]));
+      }
+      slots.push_back({{"count", int(shape.count)}, {"types", std::move(types)}, {"loops", std::move(loops)}});
+    }
+    shapes[std::to_string(part)] = std::move(slots);
+  }
+  root["routes"] = std::move(routes);
+  root["envelopeShapes"] = std::move(shapes);
   return root.dump();
 }
 
@@ -179,6 +277,25 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
     }
   }
 
+  PatchData patch;  // no routes, ADSR custom shapes
+  if (schema < 5) {
+    // Schema 4 (M3) had no modulation: those projects load with every mod slot empty (Off, its
+    // P's at 0 as in Off's stash entry), no routes, and their old level (Voice Gain 0 dB, Soft
+    // Clip off). With no route to the Amp, the Amp follows the gate (spec §5.2).
+    for (int part = 0; part < kNumParts; ++part) {
+      for (int slot = 0; slot < kNumModSlots; ++slot) {
+        values[modEngineParamIndex(part, slot)] = 0.0f;
+        values[modScopeParamIndex(part, slot)] = 0.0f;
+        for (int p = 0; p < int(kModSlotParamCount); ++p) values[modParamIndex(part, slot, p)] = 0.0f;
+      }
+      for (int r = 0; r < kNumRoutes; ++r) values[routeAmountParamIndex(part, r)] = 0.0f;
+    }
+    values[masterParamIndex(MasterParam::VoiceGain)] = 1.0f;
+    values[masterParamIndex(MasterParam::SoftClip)] = 0.0f;
+  }
+  if (!readRoutes(root, patch)) warnings = true;
+  if (!readShapes(root, patch)) warnings = true;
+
   EngineStash stash = Synth::defaultStash();
   for (const Section& section : kSections) {
     if (!readSection(root, section, stash)) warnings = true;
@@ -194,7 +311,7 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
 
   std::string topDump = extraTopLevel.dump();
   std::string paramsDump = extraParams.dump();
-  synth.loadParams(values, &stash);
+  synth.loadParams(values, &stash, &patch);
   extraTopLevel_ = std::move(topDump);
   extraParams_ = std::move(paramsDump);
   return warnings ? LoadResult::OkWithWarnings : LoadResult::Ok;

@@ -1175,3 +1175,50 @@ TEST_CASE("Switching a mod engine while notes sound swaps its P values and scope
   REQUIRE(std::string(buf) == "Minor");
   synth.setActive(false);
 }
+
+TEST_CASE("Routes and parameters of a load apply in the same block") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  runBlocks(synth, 1);
+  synth.setRoute(0, 5, Route{kSrcGate, kDestPan, kSrcNone});  // an edit, not yet taken
+  PatchData loaded = Synth::defaultPatch(PluginKind::Instrument);
+  loaded.routes[1][2] = Route{kSrcRandom, uint16_t(kDestSourceP + 3), kSrcNone};
+  ParamSnapshot values = synth.defaultSnapshot();
+  values[routeAmountParamIndex(1, 2)] = -0.4f;
+  synth.loadParams(values, nullptr, &loaded);  // supersedes the edit
+  REQUIRE(synth.patch().routes[1][2] == loaded.routes[1][2]);
+  REQUIRE(synth.appliedPatch().routes[1][2] == initPatchRoute(PluginKind::Instrument, 1, 2));  // not yet
+  synth.beginBlock();
+  REQUIRE(synth.appliedPatch().routes[1][2] == loaded.routes[1][2]);
+  REQUIRE(synth.appliedPatch().routes[0][5] == Route{});  // the older edit was dropped
+  REQUIRE(synth.param(paramSpec(routeAmountParamIndex(1, 2)).id) == double(-0.4f));
+  synth.setRoute(0, 6, Route{kSrcNote, kDestPitch, kSrcNone});  // an edit after the load
+  synth.beginBlock();
+  REQUIRE(synth.appliedPatch().routes[0][6] == Route{kSrcNote, kDestPitch, kSrcNone});
+  REQUIRE(synth.appliedPatch().routes[1][2] == loaded.routes[1][2]);
+  // A load and an edit made right after it reach the audio thread in the same block, in order.
+  synth.loadParams(values, nullptr, &loaded);
+  synth.setRoute(0, 7, Route{kSrcGate, kDestAmp, kSrcNone});
+  synth.beginBlock();
+  REQUIRE(synth.appliedPatch().routes[0][7] == Route{kSrcGate, kDestAmp, kSrcNone});
+  REQUIRE(synth.appliedPatch().routes[0][6] == Route{});  // the load replaced the earlier edit
+  REQUIRE(synth.appliedPatch().routes[1][2] == loaded.routes[1][2]);
+  synth.setActive(false);
+}
+
+TEST_CASE("A route amount's text follows the route's destination") {
+  Synth synth(PluginKind::Instrument);
+  char buf[64];
+  synth.formatParam(routeAmountParamIndex(0, 2), 0.5 / 24.0, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "+0.50 st");  // the init patch's vibrato route
+  synth.formatParam(routeAmountParamIndex(0, 1), 0.3, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "+30%");
+  synth.formatParam(routeAmountParamIndex(0, 7), 0.3, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "-");
+  REQUIRE_FALSE(synth.takeEngineChanged());
+  synth.setRoute(0, 7, Route{kSrcVelocity, kDestPitch, kSrcNone});
+  synth.formatParam(routeAmountParamIndex(0, 7), 0.25, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "+6.00 st");
+  REQUIRE(synth.takeEngineChanged());  // the host is told to refresh the text
+}

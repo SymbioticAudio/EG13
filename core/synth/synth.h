@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "engine/engine_registry.h"
+#include "mod/mod_routes.h"
 #include "part/part.h"
 #include "synth/param_table.h"
 #include "synth/plugin_kind.h"
@@ -67,6 +68,14 @@ static_assert(scopeStashIndex(kNumParts - 1, kNumModSlots - 1, kNumModEngines - 
               "Scope block size");
 using EngineStash = std::array<float, kStashSize>;
 
+// Patch data (spec §7.1): what is saved with a project but is not a host parameter. Each part's
+// 12 routes (source, destination, via; the amounts are host parameters) and each mod slot's
+// Custom envelope shape.
+struct PatchData {
+  std::array<std::array<Route, kNumRoutes>, kNumParts> routes{};
+  std::array<std::array<EnvelopeShape, kNumModSlots>, kNumParts> shapes{};
+};
+
 struct HostUpdate {
   uint32_t id;
   float value;
@@ -113,12 +122,20 @@ class Synth {
   double param(uint32_t id) const;
   ParamSnapshot defaultSnapshot() const;
   ParamSnapshot snapshot() const;
-  // Main thread. Applied whole at the next beginBlock/process when active. A
-  // stash replaces every engine's remembered settings; without one they reset.
-  void loadParams(const ParamSnapshot& values, const EngineStash* stash = nullptr);
+  // Main thread. Applied whole at the next beginBlock/process when active, with the patch data.
+  // A stash replaces every engine's remembered settings; without one they reset. Without patch
+  // data the plugin's init patch routes apply (defaultPatch()).
+  void loadParams(const ParamSnapshot& values, const EngineStash* stash = nullptr, const PatchData* patch = nullptr);
   void resetParamsToDefaults() { loadParams(defaultSnapshot()); }
   EngineStash engineStash() const;  // main thread; current engines' entries = live P values
   static EngineStash defaultStash();  // each engine's own defaults
+  static PatchData defaultPatch(PluginKind kind);  // the init patch's routes; ADSR custom shapes
+  // Main thread. The patch data as the main thread last set it (applied to the audio at the next
+  // block when active).
+  PatchData patch() const { return mainPatch_; }
+  const PatchData& appliedPatch() const { return patch_; }  // tests: the audio thread's copy
+  void setRoute(int part, int route, const Route& value);
+  void setEnvelopeShape(int part, int slot, const EnvelopeShape& shape);
   int engine(int part) const { return engine(SlotKind::Source, part); }  // main thread
   int engine(SlotKind kind, int part) const;                               // main thread
   // Main thread. Engine-aware: Source, Filter and Shaper P values follow the part's selected engines.
@@ -149,6 +166,7 @@ class Synth {
   }
   void store(const ParamSnapshot& values);
   void applyPending();
+  void publishPatch();  // main thread: mainPatch_ to the audio thread
   PartSettings readPartSettings(int part) const;
   static int clampChannel(int channel);
   void switchEngine(SlotKind kind, int part, int next);  // from setParam, before storing the selector
@@ -186,6 +204,13 @@ class Synth {
   std::vector<float> partIn_[kNumParts][2];
   std::vector<float> otherIn_[kNumParts][2];  // the other part's output, soft-limited
   std::vector<float> feedRing_[2];  // B's output for A, delayed by feedDelay_
+  // Patch data: the audio thread's copy, the main thread's, the copy a load publishes with its
+  // values, and a main-thread edit waiting for the audio thread (same states as pendingState_).
+  PatchData patch_;
+  PatchData mainPatch_;
+  PatchData pendingPatch_;
+  PatchData editPatch_;
+  std::atomic<int> editState_{kIdle};
   size_t feedDelay_ = 0;            // min(maxBlock, kFeedBlock)
   size_t feedPos_ = 0;
 };

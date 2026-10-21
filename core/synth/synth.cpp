@@ -209,17 +209,35 @@ void Synth::adoptEngines(const ParamSnapshot& values) {
   }
 }
 
-void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash) {  // main thread
+PatchData Synth::defaultPatch(PluginKind kind) {
+  PatchData patch;
+  for (int part = 0; part < kNumParts; ++part) {
+    for (int r = 0; r < kNumRoutes; ++r) patch.routes[size_t(part)][size_t(r)] = initPatchRoute(kind, part, r);
+  }
+  return patch;  // envelope shapes: EnvelopeShape's default, an ADSR
+}
+
+void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash, const PatchData* patch) {  // main thread
   ParamSnapshot clamped{};
   for (size_t i = 0; i < kParamCount; ++i) clamped[i] = clampParam(i, double(values[i]));
   const EngineStash s = stash ? *stash : defaultStash();
+  mainPatch_ = patch ? *patch : defaultPatch(kind_);
   if (!active_.load(std::memory_order_acquire)) {  // no audio thread can run
     store(clamped);
     for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(s[i], std::memory_order_relaxed);
     hostUpdateCount_ = 0;  // superseded by the load
     adoptEngines(clamped);
+    patch_ = mainPatch_;
     pendingState_.store(kIdle, std::memory_order_release);
+    editState_.store(kIdle, std::memory_order_release);
     return;
+  }
+  // A route edit still waiting is older than this load: drop it (the load carries mainPatch_).
+  for (;;) {
+    int expected = kReady;
+    if (editState_.compare_exchange_strong(expected, kIdle, std::memory_order_acq_rel)) break;
+    if (expected == kIdle) break;
+    std::this_thread::yield();  // kApplying: the audio thread is copying the edit
   }
   for (;;) {
     int expected = kReady;  // replace a snapshot the audio thread has not taken yet
@@ -230,18 +248,58 @@ void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash) { 
   }
   pendingValues_ = clamped;
   pendingStash_ = s;
+  pendingPatch_ = mainPatch_;
   pendingState_.store(kReady, std::memory_order_release);
+}
+
+void Synth::setRoute(int part, int route, const Route& value) {  // main thread
+  if (part < 0 || part >= kNumParts || route < 0 || route >= kNumRoutes) return;
+  mainPatch_.routes[size_t(part)][size_t(route)] = value;
+  publishPatch();
+  engineChanged_.store(true, std::memory_order_release);  // the route amount's text follows it
+}
+
+void Synth::setEnvelopeShape(int part, int slot, const EnvelopeShape& shape) {  // main thread
+  if (part < 0 || part >= kNumParts || slot < 0 || slot >= kNumModSlots) return;
+  mainPatch_.shapes[size_t(part)][size_t(slot)] = sanitized(shape);
+  publishPatch();
+}
+
+// The pendingState_ protocol for patch edits: the audio thread takes the whole patch at its next
+// block; a newer edit replaces one it has not taken yet.
+void Synth::publishPatch() {
+  if (!active_.load(std::memory_order_acquire)) {
+    patch_ = mainPatch_;
+    return;
+  }
+  for (;;) {
+    int expected = kReady;
+    if (editState_.compare_exchange_strong(expected, kWriting, std::memory_order_acq_rel)) break;
+    expected = kIdle;
+    if (editState_.compare_exchange_strong(expected, kWriting, std::memory_order_acq_rel)) break;
+    std::this_thread::yield();
+  }
+  editPatch_ = mainPatch_;
+  editState_.store(kReady, std::memory_order_release);
 }
 
 void Synth::applyPending() {  // audio thread, or main thread while inactive
   int expected = kReady;
-  if (!pendingState_.compare_exchange_strong(expected, kApplying, std::memory_order_acq_rel)) return;
-  store(pendingValues_);
-  for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(pendingStash_[i], std::memory_order_relaxed);
-  hostUpdateCount_ = 0;  // switches from before the load are superseded by it
-  // The snapshot's P values belong to its engines: adopt them without swapping.
-  adoptEngines(pendingValues_);
-  pendingState_.store(kIdle, std::memory_order_release);
+  if (pendingState_.compare_exchange_strong(expected, kApplying, std::memory_order_acq_rel)) {
+    store(pendingValues_);
+    patch_ = pendingPatch_;  // a load's routes and shapes arrive with its values
+    for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(pendingStash_[i], std::memory_order_relaxed);
+    hostUpdateCount_ = 0;  // switches from before the load are superseded by it
+    // The snapshot's P values belong to its engines: adopt them without swapping.
+    adoptEngines(pendingValues_);
+    pendingState_.store(kIdle, std::memory_order_release);
+  }
+  // Then a route edit: it is newer than any load still waiting (a load drops older edits).
+  int edit = kReady;
+  if (editState_.compare_exchange_strong(edit, kApplying, std::memory_order_acq_rel)) {
+    patch_ = editPatch_;
+    editState_.store(kIdle, std::memory_order_release);
+  }
 }
 
 EngineStash Synth::engineStash() const {  // main thread
@@ -278,6 +336,7 @@ PartEngines Synth::partEngines(int part) const {
   e.filter = engine(SlotKind::Filter, part);
   e.shaper = engine(SlotKind::Shaper, part);
   for (int slot = 0; slot < kNumModSlots; ++slot) e.mod[slot] = engine(modSlotKind(slot), part);
+  for (int r = 0; r < kNumRoutes; ++r) e.routeDestination[r] = mainPatch_.routes[size_t(part)][size_t(r)].destination;
   return e;
 }
 

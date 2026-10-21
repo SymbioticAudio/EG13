@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -53,7 +54,7 @@ TEST_CASE("State round-trips every parameter exactly") {
 TEST_CASE("Saved state has decimal parameter IDs") {
   Synth a(PluginKind::Instrument);
   const std::string json = state::StateStore{}.save(a);
-  REQUIRE(json.find("\"schemaVersion\":4") != std::string::npos);
+  REQUIRE(json.find("\"schemaVersion\":5") != std::string::npos);
   REQUIRE(json.find("\"257\":") != std::string::npos);       // Part A Source P1
   REQUIRE(json.find("\"16711680\":") != std::string::npos);  // master level
 }
@@ -65,7 +66,7 @@ TEST_CASE("Schema 1 documents from M0 load unchanged") {
           state::LoadResult::Ok);
   REQUIRE(s.param(kModel) == double(0.9f));
   REQUIRE(s.param(params::kMasterLevel) == 0.5);
-  REQUIRE(store.save(s).find("\"schemaVersion\":4") != std::string::npos);
+  REQUIRE(store.save(s).find("\"schemaVersion\":5") != std::string::npos);
 }
 
 TEST_CASE("Unusable state is rejected and leaves the synth unchanged") {
@@ -154,12 +155,12 @@ TEST_CASE("A load while processing is reflected immediately") {
   s.setActive(false);
 }
 
-TEST_CASE("Saved state is schema 4 and carries every engine's settings") {
+TEST_CASE("Saved state is schema 5 and carries every engine's settings") {
   Synth a(PluginKind::Instrument);
   a.setParam(paramSpec(sourceParamIndex(0, 1)).id, 0.9);  // Macro Harmonics
   a.setParam(paramSpec(sourceEngineParamIndex(0)).id, 1);  // switch to Digital (stashes Macro's P1..P8)
   const std::string json = state::StateStore{}.save(a);
-  REQUIRE(json.find("\"schemaVersion\":4") != std::string::npos);
+  REQUIRE(json.find("\"schemaVersion\":5") != std::string::npos);
   REQUIRE(json.find("\"engineSettings\"") != std::string::npos);
 
   Synth b(PluginKind::Instrument);
@@ -532,4 +533,214 @@ TEST_CASE("mod settings arrays have 17 numbers; a scope is 0 or 1") {
   REQUIRE(stash[scopeStashIndex(0, 1, 4)] == 1.0f);  // 0.7 rounds to per part
   REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"mod2Settings":{"0":{"4":[0.1,0.1]}}})") ==
           state::LoadResult::OkWithWarnings);
+}
+
+TEST_CASE("Saved state is schema 5 and carries routes and envelope shapes") {
+  Synth a(PluginKind::Instrument);
+  a.setRoute(1, 7, Route{kSrcModWheel, uint16_t(kDestShaperP + 2), kSrcVelocity});
+  EnvelopeShape shape;
+  shape.count = 5;
+  shape.type[4] = EnvelopeShape::Step;
+  shape.loop[1] = 1;
+  a.setEnvelopeShape(0, 3, shape);
+  const std::string json = state::StateStore{}.save(a);
+  Synth b(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.load(b, json) == state::LoadResult::Ok);
+  const PatchData patch = b.patch();
+  REQUIRE(patch.routes[1][7] == Route{kSrcModWheel, uint16_t(kDestShaperP + 2), kSrcVelocity});
+  REQUIRE(patch.routes[0][0] == initPatchRoute(PluginKind::Instrument, 0, 0));  // the init patch's, saved
+  REQUIRE(patch.shapes[0][3] == shape);
+  REQUIRE(patch.shapes[1][3] == EnvelopeShape{});
+  REQUIRE(b.appliedPatch().routes[1][7] == patch.routes[1][7]);  // inactive: applied at once
+}
+
+TEST_CASE("Schema 4 projects load with no modulation at their old level") {
+  for (PluginKind kind : {PluginKind::Instrument, PluginKind::Effect}) {
+    Synth s(kind);
+    state::StateStore store;
+    REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{}})") == state::LoadResult::Ok);
+    for (int part = 0; part < kNumParts; ++part) {
+      for (int slot = 0; slot < kNumModSlots; ++slot) {
+        REQUIRE(s.engine(modSlotKind(slot), part) == int(ModEngineKind::Off));
+        REQUIRE(s.param(paramSpec(modScopeParamIndex(part, slot)).id) == 0.0);
+        // Off's P's, as Filter and Shaper Off in schema 3 projects: the stash holds Off's zeros.
+        for (int p = 0; p < int(kModSlotParamCount); ++p) REQUIRE(s.param(paramSpec(modParamIndex(part, slot, p)).id) == 0.0);
+      }
+      for (int r = 0; r < kNumRoutes; ++r) {
+        REQUIRE(s.patch().routes[size_t(part)][size_t(r)] == Route{});
+        REQUIRE(s.param(paramSpec(routeAmountParamIndex(part, r)).id) == 0.0);
+      }
+    }
+    REQUIRE(s.param(paramSpec(masterParamIndex(MasterParam::VoiceGain)).id) == 1.0);  // 0 dB
+    REQUIRE(s.param(paramSpec(masterParamIndex(MasterParam::SoftClip)).id) == 0.0);   // off
+  }
+}
+
+namespace {
+// Whether a parameter is new in M4 (schema 5): an M3 project never saved it.
+bool newInM4(size_t index) {
+  SlotKind kind = SlotKind::Source;
+  int part = 0, other = 0;
+  if (slotParamOf(index, &kind, &part, &other) && isModSlot(kind)) return true;
+  if (slotSelectorOf(index, &kind, &part) && isModSlot(kind)) return true;
+  if (modScopeOf(index, &part, &other) || routeAmountOf(index, &part, &other)) return true;
+  for (int p = 0; p < kNumParts; ++p) {
+    for (PartParam q : {PartParam::MpeMode, PartParam::MpeBendRange, PartParam::CcA, PartParam::CcB, PartParam::CcC,
+                        PartParam::CcD}) {
+      if (index == partParamIndex(p, q)) return true;
+    }
+  }
+  return index == masterParamIndex(MasterParam::VoiceGain) || index == masterParamIndex(MasterParam::SoftClip);
+}
+}  // namespace
+
+TEST_CASE("An EG13 FX project saved before modulation sounds as it did") {
+  // An M3-shaped document: every M3 parameter at EG13 FX's values with the Filter Off and Dry at
+  // 100 %, so M3 passed its input at unity plus Dry (as in "Schema 3 projects load with Filter and Shaper Off ...").
+  Synth fx(PluginKind::Effect);
+  const ParamSnapshot defaults = fx.defaultSnapshot();
+  std::string json = R"({"schemaVersion":4,"params":{)";
+  bool first = true;
+  int written = 0;
+  for (size_t i = 0; i < kParamCount; ++i) {
+    if (newInM4(i)) continue;
+    const float v = i == filterEngineParamIndex(0)              ? 0.0f
+                    : i == masterParamIndex(MasterParam::Dry) ? 1.0f
+                                                              : defaults[i];
+    char entry[64];
+    std::snprintf(entry, sizeof(entry), "%s\"%u\":%.9g", first ? "" : ",", unsigned(paramSpec(i).id), double(v));
+    json += entry;
+    first = false;
+    ++written;
+  }
+  json += "}}";
+  REQUIRE(written > 0);
+  REQUIRE(json.find("\"" + std::to_string(masterId(MasterParam::VoiceGain)) + "\":") == std::string::npos);
+  state::StateStore store;
+  REQUIRE(store.load(fx, json) == state::LoadResult::Ok);
+  REQUIRE(fx.engine(SlotKind::Source, 0) == int(SourceEngine::AudioInput));
+  REQUIRE(fx.engine(SlotKind::Filter, 0) == int(FilterEngine::Off));
+  REQUIRE(fx.engine(SlotKind::Mod1, 0) == int(ModEngineKind::Off));  // the new FX's LFO is not added
+  REQUIRE(fx.patch().routes[0][0] == Route{});
+  REQUIRE(fx.param(masterId(MasterParam::SoftClip)) == 0.0);
+  // Wet + Dry peak at 0.9, above the soft clipper's knee (-3 dBFS): Soft Clip On would bend it.
+  fx.prepare(44100.0, 256);
+  fx.setActive(true);
+  const size_t latency = size_t(fx.latencySamples());
+  std::vector<float> l(13230), r(13230), ol(13230), orr(13230);
+  for (size_t i = 0; i < l.size(); ++i) {
+    l[i] = 0.45f * float(std::sin(6.283185307179586 * 220.0 * double(i) / 44100.0));
+    r[i] = -l[i];
+  }
+  for (size_t done = 0; done < l.size(); done += 256) {
+    const int n = int(std::min<size_t>(256, l.size() - done));
+    const float* in[2] = {l.data() + done, r.data() + done};
+    float* out[2] = {ol.data() + done, orr.data() + done};
+    fx.beginBlock();
+    fx.process(in, out, nullptr, n);
+  }
+  fx.setActive(false);
+  for (size_t i = latency + 2205; i < l.size(); ++i) {
+    REQUIRE(std::fabs(ol[i] - 2.0f * l[i - latency]) < 1e-4f);  // wet + Dry (Dry 1.0)
+    REQUIRE(std::fabs(orr[i] - 2.0f * r[i - latency]) < 1e-4f);
+  }
+}
+
+TEST_CASE("Malformed routes and envelope shapes are dropped with a warning") {
+  Synth s(PluginKind::Instrument);
+  state::StateStore store;
+  const char* json =
+      R"({"schemaVersion":5,"params":{},"routes":{"0":[[9,2,0],[1,"x",0],[1,2],[70000,1,0]],"5":[],"1":7},)"
+      R"("envelopeShapes":{"0":[{"count":9,"types":[0,1,2,7,0,0],"loops":[0,1,0,0,0,3]},{"count":2},5]}})";
+  REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
+  const PatchData patch = s.patch();
+  REQUIRE(patch.routes[0][0] == Route{kSrcModWheel, kDestAmp, kSrcNone});
+  REQUIRE(patch.routes[0][1] == Route{});
+  REQUIRE(patch.routes[0][2] == Route{});
+  REQUIRE(patch.routes[0][3] == Route{});
+  REQUIRE(patch.routes[1][0] == Route{});
+  REQUIRE(patch.shapes[0][0].count == 6);                      // clamped
+  REQUIRE(patch.shapes[0][0].type[3] == EnvelopeShape::Ramp);  // unknown type
+  REQUIRE(patch.shapes[0][0].loop[5] == 1);
+  REQUIRE(patch.shapes[0][1] == EnvelopeShape{});  // malformed: the default
+}
+
+TEST_CASE("Routes and envelope shapes: wrong types, negative, float and oversized input") {
+  struct Case {
+    const char* json;
+    state::LoadResult result;
+  };
+  for (const Case c : {
+           Case{R"({"schemaVersion":5,"params":{},"routes":7})", state::LoadResult::OkWithWarnings},
+           Case{R"({"schemaVersion":5,"params":{},"routes":[[1,2,0]]})", state::LoadResult::OkWithWarnings},
+           Case{R"({"schemaVersion":5,"params":{},"routes":{"0":[[-1,2,0],[1.5,2,0],[1,2,0,4],"x",null]}})",
+                state::LoadResult::OkWithWarnings},
+           Case{R"({"schemaVersion":5,"params":{},"routes":{"0":[[1,2,0],[1,2,0],[1,2,0],[1,2,0],[1,2,0],[1,2,0],)"
+                R"([1,2,0],[1,2,0],[1,2,0],[1,2,0],[1,2,0],[1,2,0],[1,2,0]]}})",
+                state::LoadResult::OkWithWarnings},  // 13 routes: the part is dropped
+           Case{R"({"schemaVersion":5,"params":{},"routes":{"x":[[1,2,0]],"-1":[[1,2,0]],"99999999999":[]}})",
+                state::LoadResult::OkWithWarnings},
+           Case{R"({"schemaVersion":5,"params":{},"envelopeShapes":[1]})", state::LoadResult::OkWithWarnings},
+           Case{R"({"schemaVersion":5,"params":{},"envelopeShapes":{"0":[{"count":2.5,"types":[0,0,0,0,0,0],)"
+                R"("loops":[0,0,0,0,0,0]},{"count":2,"types":[0,0,0,0,0],"loops":[0,0,0,0,0,0]},)"
+                R"({"count":2,"types":[0,0,"a",0,0,0],"loops":[0,0,0,0,0,0]},{}]}})",
+                state::LoadResult::OkWithWarnings},
+           Case{R"({"schemaVersion":5,"params":{},"envelopeShapes":{"0":[{"count":2,"types":[0,0,0,0,0,0],)"
+                R"("loops":[0,0,0,0,0,0]},{},{},{},{}],"1":[7,null,"x"],"2":[{"count":2}],"0x":[]}})",
+                state::LoadResult::OkWithWarnings},  // 5 slots: the part is dropped
+       }) {
+    INFO(c.json);
+    Synth s(PluginKind::Instrument);
+    state::StateStore store;
+    REQUIRE(store.load(s, c.json) == c.result);
+    for (int part = 0; part < kNumParts; ++part) {
+      for (int r = 0; r < kNumRoutes; ++r) REQUIRE(s.patch().routes[size_t(part)][size_t(r)] == Route{});
+      for (int slot = 0; slot < kNumModSlots; ++slot) {
+        REQUIRE(s.patch().shapes[size_t(part)][size_t(slot)] == EnvelopeShape{});
+      }
+    }
+  }
+  // Negative and out-of-range numbers in a well-formed shape are sanitized, not dropped.
+  Synth s(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"envelopeShapes":{"1":[{"count":-3,)"
+                        R"("types":[-1,1,2,300,0,0],"loops":[0,0,-5,0,0,0]}]}})") == state::LoadResult::Ok);
+  const EnvelopeShape shape = s.patch().shapes[1][0];
+  REQUIRE(shape.count == 1);
+  REQUIRE(shape.type[0] == EnvelopeShape::Ramp);
+  REQUIRE(shape.type[1] == EnvelopeShape::Step);
+  REQUIRE(shape.type[2] == EnvelopeShape::Hold);
+  REQUIRE(shape.type[3] == EnvelopeShape::Ramp);
+  REQUIRE(shape.loop[2] == 0);
+}
+
+TEST_CASE("Routes with codes from a newer version come back unchanged on resave") {
+  Synth s(PluginKind::Instrument);
+  state::StateStore store;
+  // Route 1 uses a reserved source (17..31) into the Amp at 100 %: kept, and ignored (G4).
+  const std::string amount = std::to_string(paramSpec(routeAmountParamIndex(0, 1)).id);
+  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{")" + amount +
+                            R"(":1.0},"routes":{"0":[[30,200,17],[17,2,0]]}})") == state::LoadResult::Ok);
+  REQUIRE(s.patch().routes[0][0] == Route{30, 200, 17});
+  REQUIRE(s.patch().routes[0][1] == Route{17, kDestAmp, kSrcNone});
+  REQUIRE_FALSE(routeActive(s.patch().routes[0][0]));  // ignored by this version
+  REQUIRE_FALSE(routeActive(s.patch().routes[0][1]));
+  Synth again(PluginKind::Instrument);
+  REQUIRE(store.load(again, store.save(s)) == state::LoadResult::Ok);
+  REQUIRE(again.patch().routes[0][0] == Route{30, 200, 17});
+  REQUIRE(again.patch().routes[0][1] == Route{17, kDestAmp, kSrcNone});
+  // The loaded routes and amounts, summed as the voice sums them: the Amp is not routed.
+  RouteSet set;
+  for (int r = 0; r < kNumRoutes; ++r) {
+    set.route[r] = again.appliedPatch().routes[0][size_t(r)];
+    set.amount[r] = float(again.param(paramSpec(routeAmountParamIndex(0, r)).id));
+  }
+  REQUIRE(set.amount[1] == 1.0f);
+  float source[kNumSources];
+  for (float& v : source) v = 1.0f;
+  RouteSums sums;
+  sumRoutes(set, source, DestinationKind::Voice, &sums);
+  REQUIRE_FALSE(sums.touched[kDestAmp]);
+  REQUIRE(sums.value[kDestAmp] == 0.0f);
 }
