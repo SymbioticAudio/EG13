@@ -19,7 +19,7 @@ namespace eg13 {
 // nativeRate <= 0 runs the engine at the host rate.
 class NativeRateWrapper final : public VoiceEngine {
  public:
-  // ~2.3 ms of latency at every common host rate (r8brain 7.6, measured).
+  // ~2.3 ms for Plaits-rate engines; up to ~4.6 ms for 32 kHz engines (r8brain 7.6, measured).
   static constexpr double kTransitionBandPercent = 30.0;
 
   NativeRateWrapper(std::unique_ptr<VoiceEngine> inner, double nativeRate, int nativeBlock);
