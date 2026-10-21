@@ -29,6 +29,11 @@ add_library(eg13_eurorack STATIC
   ${EURORACK_DIR}/rings/dsp/fm_voice.cc
   ${EURORACK_DIR}/rings/dsp/string_synth_part.cc
   ${EURORACK_DIR}/rings/resources.cc
+  ${EURORACK_DIR}/warps/dsp/modulator.cc
+  ${EURORACK_DIR}/warps/dsp/oscillator.cc
+  ${EURORACK_DIR}/warps/dsp/vocoder.cc
+  ${EURORACK_DIR}/warps/dsp/filter_bank.cc
+  ${EURORACK_DIR}/warps/resources.cc
   ${EURORACK_DIR}/stmlib/dsp/units.cc
   ${EG13_EURORACK_PATCHES}/stmlib/utils/random.cc)
 target_include_directories(eg13_eurorack SYSTEM BEFORE PUBLIC ${EG13_EURORACK_PATCHES})

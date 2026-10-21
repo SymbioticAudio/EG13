@@ -115,8 +115,8 @@ core/engine/bypass_engine.h|.cpp          Off
 core/engine/engine_registry.h|.cpp        Filter and Shaper ids, names, infos
 core/voice/processor_factory.h|.cpp       makeAllFilters(), makeAllShapers()
 core/voice/processor_slot.h|.cpp          one Filter or Shaper slot of a voice
-core/voice/voice.h|.cpp                   Source -> Filter -> Shaper, side signal, latency
-core/part/part.h|.cpp                     slot engines, VoiceInputs, SlotParams
+core/voice/voice.h|.cpp                   Source -> Filter -> Shaper, side signal, latency; VoiceInputs, SlotParams
+core/part/part.h|.cpp                     slot engines
 core/synth/param_table.h|.cpp             v4 table: Filter/Shaper selectors and P's, SlotKind helpers
 core/synth/synth.h|.cpp                   three-slot stash and switching, other-part feed for voices
 core/state/state.h|.cpp                   schema 4: filterSettings, shaperSettings; migration

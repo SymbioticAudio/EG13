@@ -57,6 +57,9 @@ cmake --preset linux && cmake --build --preset linux && ctest --preset linux
 
 - EG13 is licensed under GPL-3.0 (see `LICENSE`).
 - Eurorack DSP: © Émilie Gillet, MIT licence.
+- Analog Filter and EQ: the Ripples and Shelves models from VCV's AudibleInstruments (© 2020 Tyler Coy and contributors), GPL-3.0-or-later.
+- Classic Filters: sst-filters and sst-basic-blocks by the Surge Synth Team, GPL-3.0-or-later.
+- simde (SIMD Everywhere): MIT licence.
 - CLAP and clap-wrapper: free-audio, MIT licence.
 - Catch2: Boost Software License 1.0. nlohmann/json: MIT licence.
 - VST3 SDK (Steinberg, MIT), AudioUnitSDK (Apple, Apache-2.0), RtAudio/RtMidi (MIT-style, Standalone build).

@@ -14,6 +14,8 @@ option(EG13_BUILD_TESTS "Build the test suite" ON)
 
 include(cmake/eurorack.cmake)
 include(cmake/r8brain.cmake)
+include(cmake/vcv.cmake)
+include(cmake/sst.cmake)
 
 add_library(eg13_nlohmann INTERFACE)
 target_include_directories(eg13_nlohmann SYSTEM INTERFACE ${CMAKE_SOURCE_DIR}/third_party/nlohmann)
