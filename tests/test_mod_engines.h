@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <vector>
 
 #include "engine/mod_engine.h"
 
@@ -61,5 +63,62 @@ class NanModEngine final : public ModEngine {
   int ticks = 0;
   int resets = 0;
 };
+
+// Outputs its own P1..P8 (to watch what the matrix gives a slot).
+class EchoModEngine final : public ModEngine {
+ public:
+  void prepare(double) override {}
+  void reset() override {}
+  void process(const ModContext&, const ParamValues& p, int, float* out) override {
+    for (int k = 0; k < kMaxModOutputs; ++k) out[k] = p.p[k];
+  }
+  const ModEngineInfo& info() const override {
+    static const ModOutputInfo kOutputs[8] = {{"P1", false}, {"P2", false}, {"P3", false}, {"P4", false},
+                                              {"P5", false}, {"P6", false}, {"P7", false}, {"P8", false}};
+    static const ModEngineInfo kInfo = {{"echo", "Echo", 0, nullptr, false}, 8, kOutputs, false};
+    return kInfo;
+  }
+};
+
+// Counts its ticks and reports what it hears: output 0 = 0.01 x ticks since reset, 1 = gate,
+// 2 = 0.1 x retriggers since reset, 3 = the tick's beat position, 4 = 0.001 x samples since reset.
+class StepModEngine final : public ModEngine {
+ public:
+  void prepare(double) override {}
+  void reset() override { ticks_ = retriggers_ = samples_ = 0; }
+  void process(const ModContext& ctx, const ParamValues&, int n, float* out) override {
+    ++ticks_;
+    if (ctx.retrigger) ++retriggers_;
+    samples_ += n;
+    for (int k = 0; k < kMaxModOutputs; ++k) out[k] = 0.0f;
+    out[0] = 0.01f * float(ticks_);
+    out[1] = ctx.gate ? 1.0f : 0.0f;
+    out[2] = 0.1f * float(retriggers_);
+    out[3] = float(ctx.beat);
+    out[4] = 0.001f * float(samples_);
+  }
+  const ModEngineInfo& info() const override {
+    static const ModOutputInfo kOutputs[5] = {{"Ticks", false}, {"Gate", false}, {"Retriggers", false},
+                                              {"Beat", false}, {"Samples", false}};
+    static const ModEngineInfo kInfo = {{"step", "Step", 0, nullptr, false}, 5, kOutputs, false};
+    return kInfo;
+  }
+
+ private:
+  int ticks_ = 0;
+  int retriggers_ = 0;
+  int samples_ = 0;
+};
+
+// Test mod slots: 0 Off, 1 Echo, 2 Step, 3 NaN.
+enum TestModEngine : int { kTestOff = 0, kTestEcho = 1, kTestStep = 2, kTestNan = 3 };
+inline std::vector<std::unique_ptr<ModEngine>> testModEngines() {
+  std::vector<std::unique_ptr<ModEngine>> engines;
+  engines.push_back(std::make_unique<OffModEngine>());
+  engines.push_back(std::make_unique<EchoModEngine>());
+  engines.push_back(std::make_unique<StepModEngine>());
+  engines.push_back(std::make_unique<NanModEngine>());
+  return engines;
+}
 
 }  // namespace eg13::test

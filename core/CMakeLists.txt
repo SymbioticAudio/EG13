@@ -29,6 +29,7 @@ add_library(eg13_core STATIC
   part/part.cpp
   mod/mod_factory.cpp
   mod/mod_routes.cpp
+  mod/part_modulation.cpp
   mod/mod_slot.cpp)
 target_include_directories(eg13_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eg13_core PRIVATE eg13_eurorack eg13_nlohmann eg13_r8brain eg13_vcv eg13_sst)

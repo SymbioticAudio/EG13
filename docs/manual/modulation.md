@@ -72,7 +72,22 @@ Each of a part's twelve routes has a **source**, a **destination**, an **amount*
 
 **How routes add up**: every control is a position from 0 to 100 %. The routes into it are added to where its knob is, and the result stops at 0 % and 100 %. So a cutoff at 70 % with +30 % from an envelope opens fully at the envelope's peak; two routes of +80 % into a control at 50 % stop at 100 %. A stepped control (a mode or a model) moves through its options the same way.
 
-- **Pitch** is in semitones: ±100 % is ±24 semitones (so 2 % is about half a semitone). Pitch routes come on top of the part's pitch bend and transpose.
+- **Pitch** is in semitones: ±100 % is ±24 semitones (so 2 % is about half a semitone). Pitch routes come on top of the part's pitch bend and transpose. Pitch routes sum to at most ±48 semitones.
 - **Pan** starts from the centre: −50 % is fully left, +50 % fully right.
 - **Amp**: see Amp and voices below.
 - **Part Level** adds to the part's Level setting.
+
+## Mod slots: engine and scope
+
+Each mod slot has an **Engine** (Off, Envelope, LFO, Random / S&H, Function Generator) and a **Scope**:
+
+- *Per voice*: every voice has its own copy of the engine. A voice starting from silence starts its copies afresh, and each new note on a voice retriggers them (an envelope restarts its attack from where it is; an LFO restarts its cycle).
+- *Per part*: one copy for the whole part, which every voice hears. Its gate is held while any key of the part is down and it triggers when the first key goes down after all were up, so a per-part envelope works like a paraphonic synth's single-trigger envelope and a per-part LFO keeps running while you play.
+
+Choosing an engine gives it its own settings, including its scope (Random / S&H starts per part, the others per voice). Each engine remembers its settings in each slot, as the Source, Filter and Shaper engines do. Changing the engine takes effect at once: the new engine starts from the beginning.
+
+**Routes between mod slots** (for example Mod 1's LFO into Mod 2's Decay) use the value the source had 16 samples earlier. That keeps loops (Mod 1 into Mod 2 into Mod 1, or a slot into its own controls) stable and the order of the slots irrelevant. Routes into everything else use the current value.
+
+A mod engine that outputs NaN/Inf restarts and reads 0 for that tick.
+
+**Part Level** and routes into a per-part slot take per-note sources (velocity, a per-voice mod slot, …) from the most recently started voice.

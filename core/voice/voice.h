@@ -5,6 +5,7 @@
 
 #include "engine/native_rate_wrapper.h"
 #include "voice/processor_slot.h"
+#include "voice/slot_params.h"
 #include "voice/source_factory.h"
 
 namespace eg13 {
@@ -19,13 +20,6 @@ struct VoiceInputs {
   // The Input as the Shaper's side signals see it: mono, delayed by sourceLatencySamples() so it
   // reaches the Shaper with the voice. Part fills it from input; nullable (silence).
   const float* inputSide = nullptr;
-};
-
-// Post-modulation parameters of each slot in the voice chain.
-struct SlotParams {
-  ParamValues source;
-  ParamValues filter;
-  ParamValues shaper;
 };
 
 // One synth voice: Source -> Filter -> Shaper (spec §2), plus note, glide and bend handling and
