@@ -114,8 +114,9 @@ void StagesEngine::renderBlock(const ParamValues& p, const uint8_t* gate, const 
   const EnvelopeShape shape = modeShape(modeIndex(p.p[0]), custom_);
   if (configure_ || shape != configured_) {
     // As the module does when its segment types, loops or groups change (VCV Stages.cpp
-    // stepBlock): Configure() keeps the generator's state, so playing continues from wherever it
-    // is in the new layout.
+    // stepBlock). Configure() leaves the generator idle (segment_generator.cc, end of Configure):
+    // a held envelope falls to zero within about 1 ms and stays there until the next note, except
+    // Looping, which starts cycling again.
     stages::segment::Configuration config[EnvelopeShape::kMaxSegments];
     for (int i = 0; i < shape.count; ++i) config[i] = {segmentType(shape.type[i]), shape.loop[i] != 0};
     s.generator.Configure(true, config, shape.count);

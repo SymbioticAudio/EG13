@@ -181,29 +181,70 @@ TEST_CASE("Envelope times hold at 44.1, 48 and 96 kHz") {
     return double(samples) / rate;
   };
   const double expected = double(StagesEngine::segmentSeconds(0.3f));
+  REQUIRE(std::fabs(expected - 0.072) < 0.003);  // the display function itself, pinned literally
   for (double rate : {44100.0, 48000.0, 96000.0}) {
     INFO("rate " << rate);
     REQUIRE(std::fabs(attackSeconds(rate) - expected) < 16.0 / rate + 8.0 / StagesEngine::kNativeRate);
   }
 }
 
-TEST_CASE("Changing the Envelope mode while held keeps the output in range") {
-  StagesEngine e;
-  e.prepare(48000.0);
-  e.reset();
-  ParamValues p = defaults();
-  p.p[5] = 0.5f;
-  ModContext ctx;
-  ctx.gate = true;
+TEST_CASE("Changing the Envelope mode while held stops it, except Looping, which cycles") {
+  // Configure() leaves the generator idle, as on the module: a held ADSR switched to AD falls to
+  // zero within about a millisecond and stays there until the next gate.
+  auto held = [](StagesEngine& e, ParamValues& p, ModContext& ctx, float* out) {
+    e.prepare(48000.0);
+    e.reset();
+    p = defaults();
+    p.p[5] = 0.5f;
+    ctx.gate = true;
+    for (int t = 0; t < 3000; ++t) e.process(ctx, p, 16, out);
+    REQUIRE(std::fabs(out[0] - 0.5f) < 1e-3f);
+  };
   float out[kMaxModOutputs];
-  for (int t = 0; t < 3000; ++t) e.process(ctx, p, 16, out);
-  for (int mode : {StagesEngine::Looping, StagesEngine::Ad, StagesEngine::Custom, StagesEngine::Adsr}) {
-    p.p[0] = modOptionValue(mode);
-    for (int t = 0; t < 2000; ++t) {
+  ModContext ctx;
+  ParamValues p;
+  SECTION("ADSR to AD") {
+    StagesEngine e;
+    held(e, p, ctx, out);
+    p.p[0] = modOptionValue(StagesEngine::Ad);
+    for (int t = 0; t < 10; ++t) e.process(ctx, p, 16, out);  // 3.3 ms
+    REQUIRE(out[0] < 0.01f);
+    for (int t = 0; t < 3000; ++t) {
       e.process(ctx, p, 16, out);
-      REQUIRE(out[0] >= 0.0f);
-      REQUIRE(out[0] <= 1.0f);
+      REQUIRE(out[0] < 0.01f);
     }
+    ctx.gate = false;
+    e.process(ctx, p, 16, out);
+    ctx.gate = true;
+    float peak = 0.0f;
+    for (int t = 0; t < 300; ++t) {
+      e.process(ctx, p, 16, out);
+      peak = std::max(peak, out[0]);
+    }
+    REQUIRE(peak > 0.9f);  // the next gate starts an envelope again
+  }
+  SECTION("ADSR to Looping") {
+    StagesEngine e;
+    held(e, p, ctx, out);
+    p.p[0] = modOptionValue(StagesEngine::Looping);
+    p.p[3] = 0.2f;  // a short decay, so it cycles several times in the window
+    float lo = 1.0f, hi = 0.0f;
+    int restarts = 0;  // counted at each climb above 0.9 after a fall below 0.1
+    bool low = true;
+    for (int t = 0; t < 3000; ++t) {
+      e.process(ctx, p, 16, out);
+      lo = std::min(lo, out[0]);
+      hi = std::max(hi, out[0]);
+      if (low && out[0] > 0.9f) {
+        ++restarts;
+        low = false;
+      } else if (!low && out[0] < 0.1f) {
+        low = true;
+      }
+    }
+    REQUIRE(hi > 0.95f);
+    REQUIRE(lo < 0.05f);
+    REQUIRE(restarts >= 2);
   }
 }
 

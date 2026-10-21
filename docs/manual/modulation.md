@@ -19,7 +19,8 @@ An envelope made of up to six segments, as one gated group of the module. One ou
 - **Custom** plays up to six segments whose kinds (*Ramp*, *Step* or *Hold*) and loops are part of the patch, as you would set them with the module's buttons; the default custom shape is the ADSR. Each segment has two controls, in order: Attack and Attack Shape are segment 1's, Decay and Decay Shape segment 2's, Sustain and Sustain Time segment 3's, Release and Release Shape segment 4's, then Seg 5 A/B and Seg 6 A/B. As on the module, a Ramp's first control is its time and the second its shape; a Hold's first is its level and the second its time; a Step's first is its level and the second its glide. (EG13's own editor for Custom shapes arrives with the interface.)
 - With a single segment, Custom plays the module's single-segment functions, as one Stages channel with its gate patched does: a Ramp is a decay envelope (looping: an LFO tapped by the notes), a Step samples and holds its level on each note (with glide), a Hold plays a pulse at its level for the time its second control sets (looping: a gate that lets each note through with a probability set by its second control).
 - A new note on the voice restarts the attack from wherever the envelope is, so fast repeated notes do not click.
-- Changing Mode while the envelope runs continues from wherever it is in the new layout, as on the module.
+- Changing Mode stops the envelope, as on the module: a held note's envelope falls silent (within about a millisecond) until the next note, except Looping, which starts cycling again.
+- Sustain Time and Seg 5 / Seg 6 only act in Custom.
 - Defaults: ADSR, 1 ms attack, 0.5 s decay, full sustain, 0.5 s release, straight segments.
 
 ### LFO (based on Tides 2)
