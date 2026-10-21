@@ -49,3 +49,17 @@ Controls: **Model** (Modal, Sympathetic, String, FM Voice, Sympathetic Q, String
 ### Audio Input
 
 Plays the part's Input through each voice: notes open a gate with **Attack** (1 ms to 2 s) and **Release** (5 ms to 5 s); **Gain** sets the level (−24 to +12 dB). The Input is stereo when the host sends stereo.
+
+## Filters
+
+Every voice has a Filter slot after its Source. **Off** passes the sound through unchanged. All filters' first control is the cutoff, on the same scale (20 Hz to 20 kHz), so one modulation amount sweeps every filter alike. Every filter starts fully open, so choosing one does not change the level.
+
+### Analog Filter (the VCV model of Ripples)
+
+Controls: **Frequency** (20 Hz to 20 kHz, default fully open), **Resonance** (default 0) and **Mode**: *LP4* (24 dB/octave low-pass), *LP2* (12 dB low-pass) or *BP2* (12 dB band-pass).
+
+- A circuit model of the analog filter, including its gentle saturation; at full Resonance it self-oscillates.
+- The module's output amplifiers invert the signal; EG13 turns it back, so the filtered sound adds to the Dry signal instead of cancelling it.
+- Ripples' FM knob and its CV and Gain inputs are not controls here: modulation comes from EG13's modulation matrix (M4), and the LP4 VCA output is LP4 with a fixed level.
+- Stereo: while the voice is stereo, a second filter runs for the right channel, starting from the left filter's exact state (no jump).
+- EG13 builds the Analog Filter with the same fast-math settings as VCV Rack, so it can differ from a strict build by less than −90 dBFS.

@@ -55,7 +55,10 @@ class VoiceEngine {
                        int n) = 0;
   virtual const EngineInfo& info() const = 0;
   // Filter/Shaper (spec §5.1): run the right-channel instance only while the input is stereo.
-  // Called before process(); engines without a second instance ignore it.
+  // Called on the audio thread, before process(), so it must not allocate (prepare() reserves
+  // what the right instance needs); engines without a second instance ignore it. An engine inside
+  // a NativeRateWrapper receives it when the host block arrives, so it sees the change about one
+  // input latency (inputLatencySamples()) before the samples that caused it.
   virtual void setStereo(bool) {}
   // Sources with info().hasAux: write out[2] from now on. Main thread, before prepare(); off by
   // default so two-channel callers stay valid.
@@ -69,6 +72,9 @@ inline float clamp01(float x) {
   return x > 1.0f ? 1.0f : x;
 }
 
+// Test-only shorthand: a selector read in four equal steps. Not for decoding saved selectors:
+// each engine's options are append-only lists read in their own fixed steps (Ring Mod / Vocoder:
+// 8 steps), so their meaning survives new options.
 inline SideSource sideSourceOf(float normalized) {
   const int i = int(clamp01(normalized) * 4.0f);
   return SideSource(i < 4 ? i : 3);
