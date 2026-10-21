@@ -42,7 +42,7 @@ After installing or rebuilding the AU, quit and reopen Logic so it rescans
 plugins; if EG13 is still missing, use Logic Pro → Settings → Plug-in Manager →
 Reset & Rescan Selection.
 
-EG13 reports about 3.4–4.6 ms of latency (the Modal Synth's 32 kHz engine sets it) and EG13 FX about 10 ms, so processed input lines up with Dry; hosts compensate automatically. In the instrument, note onsets are aligned: sidechain input that excites the Resonator or Modal Synth arrives 3–6 ms after Dry.
+EG13 reports about 3.4–4.6 ms of latency (the Modal Synth's 32 kHz engine sets it) and EG13 FX about 10 ms, so processed input lines up with Dry; hosts compensate automatically. In the instrument, note onsets are aligned: sidechain input that excites the Resonator or Modal Synth arrives up to about 6 ms after Dry.
 
 Plugins are written to `build/mac/plugins`. The first configure downloads the VST3 and
 AudioUnit SDKs.

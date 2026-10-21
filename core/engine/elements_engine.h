@@ -12,6 +12,7 @@ class ElementsEngine final : public VoiceEngine {
   static constexpr double kNativeRate = 32000.0;
   static constexpr int kNativeBlock = 16;
   static constexpr int kNumModels = 3;
+  static constexpr int kNumExtIn = 4;
 
   ElementsEngine();
   ~ElementsEngine() override;
@@ -27,6 +28,7 @@ class ElementsEngine final : public VoiceEngine {
 
   static const EngineInfo& staticInfo();
   static int modelIndex(float normalized);  // P1 -> 0..2
+  static int extInIndex(float normalized);  // P16 -> 0 Off, 1 Blow, 2 Strike, 3 Both
 
  private:
   struct Impl;
