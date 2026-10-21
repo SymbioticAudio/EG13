@@ -45,7 +45,7 @@ Random gates and random voltages, with the module's controls (the knob mappings 
 - **X Range**: *Narrow* and *Positive* give 0 to 100 % (Narrow is the module's 0–2 V, Positive its 0–5 V, both scaled to full range), *Full* gives −100 % to +100 % (default).
 - **Deja Vu** loops the random sequences instead of always drawing new ones; **T Deja Vu** and **X Deja Vu** switch it on for each section and **Length** sets the loop's length (1 to 16 steps).
 - **Sync** *On* clocks the T section from the host's tempo, one beat per clock, and T Rate then multiplies or divides the beat. It restarts its pattern when the transport starts or jumps; with the transport stopped it keeps the last tempo (120 BPM if none). It takes about two beats to lock.
-- A new slot with Random / S&H is per part, so every voice hears the same random values; set Scope to per voice for a different sequence on each voice. Every voice and slot has its own random sequence.
+- A new slot with Random / S&H is per part: the part has one random sequence, and all its voices hear the same values. Set Scope to per voice and each voice gets its own sequence. Different slots and different parts never share a sequence.
 - Defaults: VCV's, except X Range *Full*.
 
 ### Function Generator (based on Peaks)
