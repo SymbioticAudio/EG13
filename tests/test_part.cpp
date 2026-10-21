@@ -333,3 +333,35 @@ TEST_CASE("Memory per part with every engine preallocated", "[memory]") {
               double(constructed) / 1048576.0, double(prepared) / 1048576.0, rssMb);
   REQUIRE(constructed + prepared < size_t(64) * 1024 * 1024);
 }
+
+TEST_CASE("An Always-on part starts with its Filter in place, with no fade in from Off") {
+  // A 5 kHz input through the SVF low-pass at its lowest cutoff (20 Hz) is about -96 dB; a 10 ms
+  // fade from Off would let the input through at up to full level.
+  Part part;
+  part.prepare(kRate, kBlock);
+  PartSettings s;
+  s.engine = int(SourceEngine::AudioInput);
+  s.alwaysOn = true;
+  s.filterEngine = int(FilterEngine::StateVariable);
+  SlotParams p;
+  p.source = test::defaultParams(sourceEngineInfo(int(SourceEngine::AudioInput)));
+  p.filter = test::defaultParams(filterEngineInfo(int(FilterEngine::StateVariable)));
+  p.filter.p[0] = 0.0f;
+  std::vector<float> input(9600);
+  for (size_t i = 0; i < input.size(); ++i) input[i] = 0.25f * float(std::sin(6.283185307179586 * 5000.0 * double(i) / kRate));
+  auto peak = [&] {
+    std::vector<float> l(input.size()), r(input.size());
+    for (int done = 0; done < int(input.size()); done += kBlock) {
+      const float* in[2] = {input.data() + done, input.data() + done};
+      float* out[2] = {l.data() + done, r.data() + done};
+      part.process(VoiceInputs{in, nullptr}, out, p, std::min(kBlock, int(input.size()) - done));
+    }
+    float m = 0.0f;
+    for (float x : l) m = std::max(m, std::fabs(x));
+    return m;
+  };
+  part.applySettings(s);  // after prepare()
+  REQUIRE(peak() < 1e-3f);
+  part.reset();  // re-applies the settings to reset voices
+  REQUIRE(peak() < 1e-3f);
+}

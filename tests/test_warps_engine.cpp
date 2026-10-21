@@ -618,3 +618,26 @@ TEST_CASE("Ring Mod / Vocoder input onset lands at the wrapper's inputLatencySam
     REQUIRE(wrapped.inputUnderruns() == 0);
   }
 }
+
+// Upstream reads past its lookup tables at some exact knob values (see kMaxTablePosition).
+// Under AddressSanitizer this sweeps them; in any build it pins the adapter's guard. Shifter
+// cases use an external carrier: the internal oscillator's own wrap is not reachable from here.
+TEST_CASE("Ring Mod / Vocoder keeps Warps' table reads in range at full Timbre and phase shift") {
+  REQUIRE(WarpsEngine::tablePosition(1.0f) < 1.0f);
+  REQUIRE(WarpsEngine::tablePosition(1.0f) * 256.0f < 256.0f);
+  REQUIRE(WarpsEngine::tablePosition(0.3f) == 0.3f);
+  REQUIRE(WarpsEngine::tablePosition(std::numeric_limits<float>::quiet_NaN()) == 0.0f);
+  const auto voice = sine(kN * 20, 440.0, kRate);
+  const auto side = sine(kN * 20, 97.0, kRate);
+  for (float algorithm : {0.0f, 0.125f, 0.5f, 0.875f, 1.0f}) {
+    for (float timbre : {0.0f, 0.5f, 1.0f}) {
+      for (bool shifter : {false, true}) {
+        WarpsEngine engine;
+        engine.prepare(kRate, 256);
+        const Stereo out = run(engine, voice, voice, nullptr, &side,
+                               with({algorithm, timbre, 0.5f, 0.5f}, kCarrierVoice, kModInput, shifter));
+        for (float s : out.l) REQUIRE(std::isfinite(s));
+      }
+    }
+  }
+}

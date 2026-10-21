@@ -128,6 +128,8 @@ int WarpsEngine::modulatorIndex(float normalized) {
 
 float WarpsEngine::optionValue(int index) { return (float(index) + 0.5f) / float(kSelectorSteps); }
 
+float WarpsEngine::tablePosition(float normalized) { return std::min(clamp01(normalized), kMaxTablePosition); }
+
 bool WarpsEngine::shifterMode(float normalized) { return clamp01(normalized) >= 0.5f; }
 
 short WarpsEngine::toShort(float x) {
@@ -194,10 +196,11 @@ void WarpsEngine::renderBlock(const ParamValues& p) {
     w->channel_drive[0] = pots_[2];  // no effect with the oscillator on (modulator.cc:215)
     w->channel_drive[1] = pots_[3];
     w->modulation_algorithm = pots_[0];
-    w->modulation_parameter = pots_[1];
+    // Kept off the ends of the lookup tables upstream reads past (tablePosition).
+    w->modulation_parameter = tablePosition(pots_[1]);
     w->frequency_shift_pot = pots_[0];
     w->frequency_shift_cv = 0.0f;
-    w->phase_shift = pots_[0];
+    w->phase_shift = tablePosition(pots_[0]);
     // The internal oscillator's pitch: the module takes it from the LEVEL 1 pot and V/OCT
     // (cv_scaler.cc:149-173); EG13 plays it at the voice's pitch plus Osc Pitch. Warps runs at
     // its own 96 kHz here, so no rate correction (VCV adds one at other rates, Warps.cpp:97).

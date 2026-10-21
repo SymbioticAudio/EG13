@@ -188,8 +188,11 @@ TEST_CASE("Asking for the fading-in engine again cancels a waiting request") {
 
 TEST_CASE("restart() and reset() go straight to a waiting request") {
   for (bool full : {false, true}) {
+    INFO((full ? "reset()" : "restart()"));
     ProcessorSlot slot(threeGainsWithHold());
     slot.prepare(kRate, 16);
+    const std::vector<float> dc(4800, 0.5f);
+    run(slot, dc, dc, gainParams(1.0f));
     slot.setEngine(1);
     slot.setEngine(2);
     REQUIRE(slot.pendingEngine() == 2);
@@ -201,7 +204,50 @@ TEST_CASE("restart() and reset() go straight to a waiting request") {
     REQUIRE(slot.engine() == 2);
     REQUIRE(slot.pendingEngine() == -1);
     REQUIRE_FALSE(slot.fading());
+    // Engine 2 alone at full weight: silent for its (fresh) 60-sample delay, then gain 2.
+    const Stereo out = run(slot, dc, dc, gainParams(2.0f));
+    for (size_t i = 0; i < 60; ++i) REQUIRE(out.l[i] == 0.0f);
+    for (size_t i = 60; i < out.l.size(); ++i) REQUIRE(out.l[i] == 1.0f);
   }
+}
+
+TEST_CASE("A switch right after reset() or restart() is immediate: no fade from stale settings") {
+  // Found in review: reset() left the outgoing engine with all-zero parameters, which for Ring
+  // Mod is a full-level internal oscillator (a 1.12 peak for 16 ms from silent input).
+  for (bool full : {false, true}) {
+    INFO((full ? "reset()" : "restart()"));
+    ProcessorSlot shapers(makeAllShapers());
+    shapers.prepare(kRate, 16);
+    shapers.setEngine(int(ShaperEngine::RingMod));
+    const std::vector<float> silence(4800, 0.0f);
+    run(shapers, silence, silence, test::defaultParams(shaperEngineInfo(int(ShaperEngine::RingMod))));
+    if (full) {
+      shapers.reset();
+    } else {
+      shapers.restart();
+    }
+    shapers.setEngine(int(ShaperEngine::Eq));
+    REQUIRE(shapers.engine() == int(ShaperEngine::Eq));
+    REQUIRE_FALSE(shapers.fading());
+    const Stereo out = run(shapers, silence, silence, test::defaultParams(shaperEngineInfo(int(ShaperEngine::Eq))));
+    float peak = 0.0f;
+    for (float s : out.l) peak = std::max(peak, std::fabs(s));
+    REQUIRE(peak == 0.0f);  // EQ of silence
+  }
+  // restart() with a request waiting: the waiting engine starts, and a switch before the next
+  // block is immediate too (it would otherwise fade out with another engine's settings).
+  ProcessorSlot shapers(makeAllShapers());
+  shapers.prepare(kRate, 16);
+  const std::vector<float> silence(4800, 0.0f);
+  run(shapers, silence, silence, ParamValues{});
+  shapers.setEngine(int(ShaperEngine::Eq));
+  shapers.setEngine(int(ShaperEngine::RingMod));
+  shapers.restart();
+  REQUIRE(shapers.engine() == int(ShaperEngine::RingMod));
+  shapers.setEngine(int(ShaperEngine::Off));
+  REQUIRE_FALSE(shapers.fading());
+  const Stereo out = run(shapers, silence, silence, ParamValues{});
+  for (float s : out.l) REQUIRE(s == 0.0f);
 }
 
 TEST_CASE("A Shaper switch holds the old engine for the slot latency, so the level does not dip") {
@@ -246,7 +292,7 @@ TEST_CASE("The outgoing Ring Mod keeps its own side inputs while it fades out") 
   for (size_t w = 0; w + kWindow <= size_t(latency) + 480 + 2 * kWindow; w += kWindow / 4) {
     const double db = 20.0 * std::log10(test::rms(out.l, w, w + kWindow) / floor);
     INFO("window at " << w << " (hold ends at " << latency << "): " << db << " dB");
-    REQUIRE(db > -6.0);  // a linear crossfade of unrelated signals dips 3 dB at most
+    REQUIRE(db > -3.0);  // a linear crossfade of unrelated signals dips 3 dB at most
   }
 }
 
@@ -344,7 +390,9 @@ TEST_CASE("Slot processing, engine switches and stereo changes do not allocate")
   {
     test::ScopedAllocationCounter counter;
     for (int block = 0; block < 600; ++block) {
-      if (block % 60 == 0 || block % 60 == 7) {  // the second request of each pair waits
+      // Every 60 blocks a switch, and 7 blocks later (inside its fade) a second request that waits:
+      // block / 7 cycles the engine index, so the pairs ask for different engines in turn.
+      if (block % 60 == 0 || block % 60 == 7) {
         shapers.setEngine((block / 7) % kNumShaperEngines);
         filters.setEngine((block / 7) % kNumFilterEngines);
       }

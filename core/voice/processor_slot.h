@@ -25,18 +25,22 @@ struct SideSignals {
 // moves the output in time. Tells its engine whether the input is stereo (§5.1).
 class ProcessorSlot {
  public:
-  explicit ProcessorSlot(std::vector<SourceSpec> engines);  // index = engine id; at least one
+  explicit ProcessorSlot(std::vector<SourceSpec> engines);  // index = engine id; empty -> Off only
 
   // Main thread: prepares every engine (allocates) and pads it to latencySamples().
   void prepare(double hostRate, int maxBlock);
-  void reset();    // every engine; no fade; mono. A waiting request takes effect at once.
-  void restart();  // the current engine only: a new note on an idle voice, or after a NaN.
-                   // A waiting request takes effect at once, with no fade.
+  // reset(): every engine; no fade; mono. restart(): the current engine only (a new note on an
+  // idle voice, or after a NaN). Both: a waiting request takes effect at once, and until the
+  // next process() a setEngine() switches at once too, since nothing has played to fade from.
+  void reset();
+  void restart();
 
   int latencySamples() const { return latency_; }
   int engineCount() const { return int(engines_.size()); }
   int engine() const { return current_; }  // the engine playing (fading in, during a fade)
   int pendingEngine() const { return pending_; }  // a request waiting for the fade; -1: none
+  // The playing engine's info, not a waiting request's: take display and parameter metadata
+  // from the selector, not from here.
   const EngineInfo& info() const { return engines_[size_t(current_)]->info(); }
   bool stereo() const { return detector_.stereo(); }
   bool fading() const { return previous_ >= 0; }
@@ -61,6 +65,7 @@ class ProcessorSlot {
  private:
   NativeRateWrapper& at(int engine) { return *engines_[size_t(engine)]; }
   void startFade(int engine, const ParamValues& outgoing);
+  void startEngine();  // reset current_ and give it the note state
   void render(int engine, const float* const* in, const SideSignals* sides, float* const* out,
               const ParamValues& p, bool stereo, int n);
 
@@ -79,6 +84,7 @@ class ProcessorSlot {
   float note_ = 60.0f;
   float velocity_ = 1.0f;
   bool gate_ = false;
+  bool fresh_ = true;  // reset()/restart() since the last process()
   std::vector<float> fade_[2];
 };
 

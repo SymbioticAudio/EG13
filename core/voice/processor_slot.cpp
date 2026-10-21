@@ -1,8 +1,9 @@
 #include "voice/processor_slot.h"
 
 #include <algorithm>
-#include <cassert>
 #include <utility>
+
+#include "voice/processor_factory.h"
 
 namespace eg13 {
 
@@ -23,10 +24,10 @@ const float* sideSignal(const SideSignals& sides, SideSource source) {
 }  // namespace
 
 ProcessorSlot::ProcessorSlot(std::vector<SourceSpec> engines) {
+  if (engines.empty()) engines.push_back(makeOff());  // a slot needs at least one engine
   for (auto& e : engines) {
     engines_.push_back(std::make_unique<NativeRateWrapper>(std::move(e.engine), e.nativeRate, e.nativeBlock));
   }
-  assert(!engines_.empty() && "a slot needs at least one engine");
 }
 
 void ProcessorSlot::prepare(double hostRate, int maxBlock) {
@@ -52,6 +53,7 @@ void ProcessorSlot::reset() {
   fadeWeight_ = 1.0f;
   gate_ = false;
   last_ = ParamValues{};
+  fresh_ = true;
 }
 
 void ProcessorSlot::restart() {
@@ -62,10 +64,18 @@ void ProcessorSlot::restart() {
   pending_ = -1;
   fadeHold_ = 0;
   fadeWeight_ = 1.0f;
+  fresh_ = true;
 }
 
 void ProcessorSlot::setEngine(int engine) {
   engine = std::clamp(engine, 0, engineCount() - 1);
+  if (fresh_) {  // nothing has played since reset()/restart(): nothing to fade from
+    if (engine != current_) {
+      current_ = engine;
+      startEngine();
+    }
+    return;
+  }
   if (previous_ >= 0) {  // a fade is under way: wait for it to end
     if (engine == current_) {
       pending_ = -1;
@@ -82,12 +92,16 @@ void ProcessorSlot::startFade(int engine, const ParamValues& outgoing) {
   previous_ = current_;
   fadeParams_ = outgoing;
   current_ = engine;
+  startEngine();
+  fadeHold_ = latency_;
+  fadeWeight_ = 0.0f;
+}
+
+void ProcessorSlot::startEngine() {
   NativeRateWrapper& next = at(current_);
   next.reset();
   next.setNote(note_);
   if (gate_) next.noteOn(note_, velocity_);
-  fadeHold_ = latency_;
-  fadeWeight_ = 0.0f;
 }
 
 void ProcessorSlot::noteOn(float note, float velocity) {
@@ -125,6 +139,7 @@ void ProcessorSlot::render(int engine, const float* const* in, const SideSignals
 
 void ProcessorSlot::process(const float* const* in, const SideSignals* sides, float* const* out,
                             const ParamValues& p, int n) {
+  fresh_ = false;
   const bool stereo = detector_.update(in[0], in[1], n);
   const ParamValues& own = pending_ >= 0 ? held_ : p;
   render(current_, in, sides, out, own, stereo, n);

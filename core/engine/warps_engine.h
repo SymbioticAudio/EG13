@@ -64,6 +64,16 @@ class WarpsEngine final : public VoiceEngine {
   static float oscillatorOffset(float normalized);  // P7: -24..+24 semitones
   static int oscillatorMode(float normalized);      // P8 thirds: 0..2 (carrier_shape 1..3)
   static bool shifterMode(float normalized);        // P9 halves: modulation / frequency shifter
+  // Upstream reads one entry past a lookup table when a table position is exactly 1.0
+  // (stmlib::Interpolate on lut_xfade_in/out with Timbre at full, modulator.cc:167,362; on
+  // lut_sin + 256 with the shifter's phase shift at full, modulator.cc:115). The adapter keeps
+  // Timbre and the phase shift a hair below 1 (inaudible). Not avoidable from here: the
+  // frequency shifter's quadrature oscillator wraps its phase to exactly 1.0 when a negative
+  // step lands within 2^-25 below 0 (quadrature_oscillator.h:70-83), e.g. at a shift of
+  // exactly 0, or on the first block after reset, which ramps from 0. It then reads the entry
+  // past its wavetable but weights it by exactly 0, so the output is unaffected.
+  static constexpr float kMaxTablePosition = 1.0f - 1.0f / 65536.0f;
+  static float tablePosition(float normalized);  // clamp01, then at most kMaxTablePosition
   static short toShort(float x);                    // EG13 sample -> Warps' 16-bit input
   static float fromShort(short x);                  // Warps' 16-bit output -> EG13 sample
   float smoothedParam(int index) const;             // test hook: pot-filtered P1..P9
