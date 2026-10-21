@@ -33,7 +33,7 @@ void Synth::prepare(double sampleRate, int maxBlock) {
   for (auto& part : partIn_) {
     for (auto& buffer : part) buffer.assign(size_t(maxBlock), 0.0f);
   }
-  feedDelay_ = size_t(maxBlock);
+  feedDelay_ = size_t(std::min(maxBlock, kFeedBlock));
   for (auto& ring : feedRing_) ring.assign(2 * feedDelay_, 0.0f);
   feedPos_ = 0;
   masterGain_.prepare(sampleRate, kGainSmoothingSeconds);
@@ -205,7 +205,6 @@ void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash) { 
   }
   pendingValues_ = clamped;
   pendingStash_ = s;
-  pendingHasStash_ = true;
   pendingState_.store(kReady, std::memory_order_release);
 }
 
@@ -213,9 +212,7 @@ void Synth::applyPending() {  // audio thread, or main thread while inactive
   int expected = kReady;
   if (!pendingState_.compare_exchange_strong(expected, kApplying, std::memory_order_acq_rel)) return;
   store(pendingValues_);
-  if (pendingHasStash_) {
-    for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(pendingStash_[i], std::memory_order_relaxed);
-  }
+  for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(pendingStash_[i], std::memory_order_relaxed);
   hostUpdateCount_ = 0;  // switches from before the load are superseded by it
   // The snapshot's P values belong to its engines: adopt them without swapping.
   for (int part = 0; part < kNumParts; ++part) {
@@ -295,7 +292,7 @@ float Synth::softLimit(float x) {
 }
 
 // External = plugin input; Other part = A takes B's output delayed by exactly
-// maxBlock samples (whatever the block sizes), B takes A's current block; Both =
+// feedDelay_ samples (whatever the block sizes), B takes A's current chunk; Both =
 // their sum. Other-part feeds pass the soft limiter.
 void Synth::routeInput(int part, const float* const* in, int n) {
   const int source = std::clamp(parts_[size_t(part)]->settings().inputSource, 0, 2);
@@ -345,6 +342,21 @@ void Synth::process(const float* const* in, float* const* mainOut, float* const*
   const auto mode = PartMode(int(load(masterParamIndex(MasterParam::Mode))));
   partBMute_.setTarget(mode == PartMode::Single ? 0.0f : 1.0f);
 
+  // Fixed internal chunks keep the B -> A delay at feedDelay_ for any host
+  // block size. Each chunk reads its input range before writing the same
+  // output range, so in-place buffers stay safe.
+  const int chunk = std::max(1, int(feedDelay_));
+  for (int done = 0; done < n;) {
+    const int count = std::min(chunk, n - done);
+    const float* inSlice[2] = {in ? in[0] + done : nullptr, in ? in[1] + done : nullptr};
+    float* outSlice[2] = {mainOut[0] + done, mainOut[1] + done};
+    float* busSlice[2] = {bus2Out ? bus2Out[0] + done : nullptr, bus2Out ? bus2Out[1] + done : nullptr};
+    processChunk(in ? inSlice : nullptr, outSlice, bus2Out ? busSlice : nullptr, count);
+    done += count;
+  }
+}
+
+void Synth::processChunk(const float* const* in, float* const* mainOut, float* const* bus2Out, int n) {
   bool toBus2[kNumParts];
   bool heard[kNumParts];
   for (int p = 0; p < kNumParts; ++p) {  // A before B: A -> B has no delay
@@ -360,7 +372,7 @@ void Synth::process(const float* const* in, float* const* mainOut, float* const*
     heard[p] = output != 2;  // Other part only: feeds the other part, not heard
     toBus2[p] = bus2Out != nullptr && output == 1;
   }
-  // Append B's block to the feed ring. feedPos_ is where A reads next: the
+  // Append B's chunk to the feed ring. feedPos_ is where A reads next: the
   // sample written feedDelay_ samples before it (ring size 2 * feedDelay_).
   const size_t ringSize = feedRing_[0].size();
   for (int ch = 0; ch < 2; ++ch) {

@@ -38,6 +38,10 @@ class Synth {
   Synth(const Synth&) = delete;
   Synth& operator=(const Synth&) = delete;
 
+  // B -> A feed delay in samples (or maxBlock, if shorter), independent of the
+  // host's block sizes. process() runs the parts in chunks of at most this.
+  static constexpr int kFeedBlock = 64;
+
   PluginKind kind() const { return kind_; }
 
   void prepare(double sampleRate, int maxBlock);  // main thread, not processing
@@ -99,6 +103,8 @@ class Synth {
   void switchEngine(int part, int next);  // from setParam, before storing the selector
   void queueHostUpdate(const HostUpdate& update);
   void routeInput(int part, const float* const* in, int n);
+  // One chunk of process(): n <= feedDelay_, so A only reads B samples already written.
+  void processChunk(const float* const* in, float* const* mainOut, float* const* bus2Out, int n);
   static float softLimit(float x);
 
   PluginKind kind_;
@@ -119,14 +125,13 @@ class Synth {
 
   std::array<std::atomic<float>, kStashSize> stash_;
   EngineStash pendingStash_{};
-  bool pendingHasStash_ = false;
   std::array<int, kNumParts> currentEngine_{};  // setParam's thread
   HostUpdate hostUpdates_[2 * kSourceParamCount] = {};
   int hostUpdateCount_ = 0;
   std::atomic<bool> engineChanged_{false};
   std::vector<float> partIn_[kNumParts][2];
   std::vector<float> feedRing_[2];  // B's output for A, delayed by feedDelay_
-  size_t feedDelay_ = 0;            // maxBlock
+  size_t feedDelay_ = 0;            // min(maxBlock, kFeedBlock)
   size_t feedPos_ = 0;
 };
 

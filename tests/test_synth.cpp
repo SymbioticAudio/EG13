@@ -678,30 +678,43 @@ void runVarying(Synth& synth, Stereo& out, const Stereo& in, size_t total) {
   }
 }
 
-}  // namespace
-
-TEST_CASE("Part A hears Part B one block later, continuously, with varying block sizes") {
-  // B: Audio Input on the external input, other part only. A: Audio Input on
-  // Other part. Each Audio Input part delays by the latency L, so main out is
-  // the input delayed by 2L + maxBlock (the B -> A feed's fixed delay).
-  constexpr int kMaxBlock = 512;
+// B: Audio Input on the external input, other part only. A: Audio Input on
+// Other part. Each Audio Input part delays by the latency L, so main out is
+// the input delayed by 2L + the B -> A feed's fixed delay.
+void checkFeedDelay(int maxBlock, size_t feedDelay) {
   Synth synth(PluginKind::Effect);
   synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
   synth.setParam(partId(0, PartParam::InputSource), 1);
   synth.setParam(engineId(1), 4);
   synth.setParam(partId(1, PartParam::Trigger), 1);
   synth.setParam(partId(1, PartParam::Output), 2);
-  synth.prepare(44100.0, kMaxBlock);
-  const size_t delay = 2 * size_t(synth.latencySamples()) + size_t(kMaxBlock);
+  synth.prepare(44100.0, maxBlock);
+  const size_t delay = 2 * size_t(synth.latencySamples()) + feedDelay;
   const size_t total = 22050;
   const Stereo in = sineInput(total, 44100.0);
   Stereo out(total);
-  runVarying(synth, out, in, total);
-  INFO("latency " << synth.latencySamples() << " total delay " << delay);
+  if (maxBlock >= 512) {
+    runVarying(synth, out, in, total);
+  } else {
+    run(synth, out, 0, total, &in, nullptr, maxBlock);
+  }
+  INFO("maxBlock " << maxBlock << " latency " << synth.latencySamples() << " total delay " << delay);
   for (size_t i = delay + 4410; i < total; ++i) {
     REQUIRE(std::fabs(out.l[i] - in.l[i - delay]) < 1e-3f);
     REQUIRE(std::fabs(out.r[i] - in.r[i - delay]) < 1e-3f);
   }
+}
+
+}  // namespace
+
+TEST_CASE("Part A hears Part B kFeedBlock samples later, whatever the host block sizes") {
+  REQUIRE(Synth::kFeedBlock == 64);
+  checkFeedDelay(512, 64);   // varying blocks 5, 507, 64, 256
+  checkFeedDelay(4096, 64);  // a large host maxBlock does not lengthen the delay
+}
+
+TEST_CASE("The B -> A feed delay is the host block when it is shorter than kFeedBlock") {
+  checkFeedDelay(32, 32);
 }
 
 TEST_CASE("The B -> A feed does not allocate with varying block sizes") {
