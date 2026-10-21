@@ -12,6 +12,8 @@
 #include "engine/braids_engine.h"
 #include "engine/native_rate_wrapper.h"
 #include "test_helpers.h"
+#include "voice/source_factory.h"
+#include "voice/voice.h"
 
 using namespace eg13;
 
@@ -106,6 +108,83 @@ TEST_CASE("Bit depth and sample-rate reduction change the sound") {
   p.p[5] = 0.5f / 7.0f;  // 2 bit
   p.p[6] = 0.5f / 7.0f;  // 4 kHz
   REQUIRE(render(clean, defaults(), 4800) != render(crushed, p, 4800));
+}
+
+TEST_CASE("Sample-rate reduction keeps its phase across short process calls") {
+  // At a 96 kHz host the Voice feeds Braids 16-sample calls; the hold period
+  // must stay regular, as if the whole render were one call. The upstream
+  // oscillator's own output depends on the call size, so the reference is the
+  // same 16-sample-call render without reduction, held on the global grid.
+  ParamValues full = defaults();  // 96 kHz: no decimation
+  BraidsEngine reference;
+  reference.prepare(BraidsEngine::kNativeRate, 512);
+  reference.noteOn(60.0f, 1.0f);
+  const auto clean = render(reference, full, 9600, 16);
+  const int decimation[7] = {24, 12, 6, 4, 3, 2, 1};
+  for (int rate = 0; rate < 7; ++rate) {
+    ParamValues p = defaults();
+    p.p[6] = (float(rate) + 0.5f) / 7.0f;
+    BraidsEngine engine;
+    engine.prepare(BraidsEngine::kNativeRate, 512);
+    engine.noteOn(60.0f, 1.0f);
+    const auto held = render(engine, p, 9600, 16);
+    INFO("sample rate index " << rate);
+    const size_t d = size_t(decimation[rate]);
+    for (size_t i = 4800; i < held.size(); ++i) REQUIRE(held[i] == clean[i - i % d]);  // gain settled
+  }
+}
+
+TEST_CASE("Signature at max: a silent Digital Oscillator outputs 0") {
+  ParamValues p = defaults();
+  p.p[4] = 1.0f;  // Signature 100%
+  BraidsEngine engine;
+  engine.prepare(BraidsEngine::kNativeRate, 512);
+  for (float s : render(engine, p, 4800)) REQUIRE(s == 0.0f);
+}
+
+TEST_CASE("Signature at max: a released voice decays to silence and frees") {
+  ParamValues p = defaults();
+  p.p[4] = 1.0f;
+  Voice voice(makeSource(1));  // Digital Oscillator
+  voice.prepare(48000.0, 256);
+  voice.trigger(60, 1.0f);
+  std::vector<float> l(256), r(256);
+  float* out[2] = {l.data(), r.data()};
+  for (int block = 0; block < 40; ++block) voice.process(out, p, 256);
+  voice.release();
+  std::vector<float> tail;
+  for (int block = 0; block < 100 && voice.active(); ++block) {
+    std::fill(l.begin(), l.end(), 0.0f);
+    std::fill(r.begin(), r.end(), 0.0f);
+    voice.process(out, p, 256);
+    tail.insert(tail.end(), l.begin(), l.end());
+  }
+  REQUIRE_FALSE(voice.active());
+  REQUIRE(tail.size() >= 2400);  // freed after the Voice's silence window
+  REQUIRE(test::rms(tail, tail.size() - 2400, tail.size()) < 1e-4);
+}
+
+TEST_CASE("Signature drive follows the level, as in the firmware (VCA first)") {
+  ParamValues p = defaults();
+  p.p[4] = 1.0f;
+  BraidsEngine loud, soft;
+  for (auto* e : {&loud, &soft}) e->prepare(BraidsEngine::kNativeRate, 512);
+  loud.noteOn(60.0f, 1.0f);
+  soft.noteOn(60.0f, 0.25f);
+  auto a = render(loud, p, 9600);
+  auto b = render(soft, p, 9600);
+  auto normalise = [](std::vector<float>& v) {
+    float peak = 0.0f;
+    for (size_t i = 4800; i < v.size(); ++i) peak = std::max(peak, std::fabs(v[i]));
+    for (float& s : v) s /= peak;
+  };
+  normalise(a);
+  normalise(b);
+  double diff = 0.0;
+  for (size_t i = 4800; i < a.size(); ++i) diff += double(a[i] - b[i]) * double(a[i] - b[i]);
+  diff = std::sqrt(diff / double(a.size() - 4800));
+  INFO("normalised RMS difference " << diff);
+  REQUIRE(diff > 0.01);
 }
 
 TEST_CASE("Digital Oscillator survives NaN parameters") {

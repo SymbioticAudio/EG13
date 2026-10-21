@@ -42,6 +42,7 @@ class BraidsEngine final : public VoiceEngine {
   bool gate_ = false;
   bool strike_ = false;
   float gain_ = 0.0f;
+  int phase_ = 0;  // sample-rate reduction phase, kept across process calls
 };
 
 }  // namespace eg13

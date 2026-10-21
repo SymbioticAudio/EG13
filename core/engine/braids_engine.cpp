@@ -103,6 +103,7 @@ void BraidsEngine::reset() {
   gate_ = false;
   strike_ = false;
   gain_ = 0.0f;
+  phase_ = 0;
 }
 
 void BraidsEngine::noteOn(float note, float velocity) {
@@ -139,14 +140,25 @@ void BraidsEngine::renderBlock(const ParamValues& p, float* const* out, int offs
   const float sig = clamp01(p.p[4]) * 4.0f;
   const uint16_t signature = uint16_t(std::min(65535.0f, sig * sig * 4095.0f));
   const float target = gate_ ? velocity_ : 0.0f;
+  // Firmware order (braids/braids.cc:287-291): VCA, then the signature
+  // waveshaper, so the level sets how hard it is driven. The waveshaper maps 0
+  // to a non-zero level; subtract it so a closed VCA is silent and the voice
+  // can be freed.
+  const int16_t rest = stmlib::Mix(
+      int16_t(0),
+      int16_t(std::clamp(s.waveshaper.Transform(0), int32_t(-32768), int32_t(32767))), signature);
   for (int i = 0; i < count; ++i) {
-    if (i % decimation == 0) s.held = int16_t(s.buffer[i] & mask);
-    const int16_t warped =
-        int16_t(std::clamp(s.waveshaper.Transform(s.held), int32_t(-32768), int32_t(32767)));
-    const int16_t mixed = stmlib::Mix(s.held, warped, signature);
+    // phase_ persists across calls, so short calls keep a regular hold period
+    // (every decimation factor divides kNativeBlock, as in the firmware).
+    if (phase_ % decimation == 0) s.held = int16_t(s.buffer[i] & mask);
+    phase_ = (phase_ + 1) % kNativeBlock;
+    const int16_t sample = int16_t(float(s.held) * gain_);
     gain_ += (target - gain_) * (1.0f / 16.0f);
     if (gain_ < 1e-7f && target == 0.0f) gain_ = 0.0f;
-    const float v = float(mixed) / 32768.0f * gain_;
+    const int16_t warped =
+        int16_t(std::clamp(s.waveshaper.Transform(sample), int32_t(-32768), int32_t(32767)));
+    const int16_t mixed = stmlib::Mix(sample, warped, signature);
+    const float v = float(int32_t(mixed) - int32_t(rest)) / 32768.0f;
     out[0][offset + i] = v;
     out[1][offset + i] = v;
   }
