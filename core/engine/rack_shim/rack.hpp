@@ -127,16 +127,19 @@ namespace random {
 
 // Rack's random::uniform() (include/random.hpp:125-126) draws from a per-thread xoroshiro128+.
 // Ripples only uses it for 1e-6 V of noise to start self-oscillation (ripples.hpp:193-194), so
-// a per-thread xorshift64 serves; seed() makes renders repeatable in tests. The state is the one
-// per-thread instance behind ::eg13_rack_shim::randomState(), whichever copy of this code runs.
+// a xorshift64 serves; seed() makes renders repeatable in tests. The state is the one behind
+// ::eg13_rack_shim::randomState() (shared by every thread, see rack_prelude.h), whichever copy
+// of this code runs.
 inline void seed(uint64_t s) {
-  ::eg13_rack_shim::randomState() = s != 0 ? s : ::eg13_rack_shim::kRandomSeed;
+  ::eg13_rack_shim::randomState().store(s != 0 ? s : ::eg13_rack_shim::kRandomSeed, std::memory_order_relaxed);
 }
 inline float uniform() {
-  uint64_t& state = ::eg13_rack_shim::randomState();
+  auto& shared = ::eg13_rack_shim::randomState();
+  uint64_t state = shared.load(std::memory_order_relaxed);
   state ^= state << 13;
   state ^= state >> 7;
   state ^= state << 17;
+  shared.store(state, std::memory_order_relaxed);
   return float(state >> 40) * (1.0f / 16777216.0f);
 }
 

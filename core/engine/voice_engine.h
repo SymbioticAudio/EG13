@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 
 namespace eg13 {
@@ -66,6 +67,26 @@ class VoiceEngine {
   // Latency the engine itself adds (e.g. a fixed-block FIFO), in samples at its native rate.
   virtual int nativeLatency() const { return 0; }
 };
+
+// For engines whose scratch buffers hold prepare()'s maxBlock: a call longer than `capacity`
+// (which breaks the process() contract) runs as pieces of at most `capacity` samples through
+// `process(in, out, n)` instead of overrunning, also in release builds. Returns false, doing
+// nothing, when n fits. With no capacity (not prepared) it writes silence.
+template <typename Process>
+bool processInPieces(const float* const* in, float* const* out, int n, int capacity, Process&& process) {
+  if (n <= capacity) return false;
+  if (capacity <= 0) {
+    std::fill(out[0], out[0] + n, 0.0f);
+    std::fill(out[1], out[1] + n, 0.0f);
+    return true;
+  }
+  for (int done = 0; done < n; done += capacity) {
+    const float* pieceIn[2] = {in != nullptr ? in[0] + done : nullptr, in != nullptr ? in[1] + done : nullptr};
+    float* pieceOut[2] = {out[0] + done, out[1] + done};
+    process(in != nullptr ? pieceIn : nullptr, pieceOut, std::min(capacity, n - done));
+  }
+  return true;
+}
 
 inline float clamp01(float x) {
   if (!(x > 0.0f)) return 0.0f;  // also maps NaN to 0

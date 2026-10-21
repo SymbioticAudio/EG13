@@ -74,6 +74,11 @@ void ShelvesEngine::reset() {
 
 void ShelvesEngine::process(const float* const* in, float* const* out, const ParamValues& p,
                             int n) {
+  if (processInPieces(in, out, n, int(rightOut_.size()), [&](const float* const* i2, float* const* o2, int k) {
+        process(i2, o2, p, k);
+      })) {
+    return;
+  }
   // The VCV module reads its knobs every sample (Shelves.cpp:125-136); the model low-passes
   // frequency and Q like the hardware's CV amplifiers (shelves.hpp:370-380). EG13's parameters
   // change at block boundaries, so they ramp across each block instead of stepping. ParamRamp

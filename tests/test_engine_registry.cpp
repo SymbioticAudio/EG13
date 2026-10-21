@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -7,6 +8,11 @@
 
 #include "engine/bypass_engine.h"
 #include "engine/engine_registry.h"
+#include "engine/ripples_engine.h"
+#include "engine/shelves_engine.h"
+#include "engine/svf_engine.h"
+#include "rack.hpp"
+#include "test_helpers.h"
 #include "synth/param_table.h"
 #include "voice/processor_factory.h"
 #include "voice/source_factory.h"
@@ -137,4 +143,50 @@ TEST_CASE("Off passes its input through") {
   REQUIRE(orr == r);
   off.process(nullptr, out, ParamValues{}, 3);
   for (float s : ol) REQUIRE(s == 0.0f);
+}
+
+// The filters' right-channel scratch holds prepare()'s maxBlock. A longer call (a broken caller)
+// is split into maxBlock pieces instead of overrunning it, so it plays as those pieces would.
+TEST_CASE("Stereo filters split a block longer than maxBlock instead of overrunning") {
+  constexpr int kMax = 16;
+  constexpr int kN = 40;
+  std::vector<float> inL(kN), inR(kN);
+  for (int i = 0; i < kN; ++i) {
+    inL[size_t(i)] = std::sin(0.3f * float(i));
+    inR[size_t(i)] = std::cos(0.2f * float(i));
+  }
+  // Renders kN samples in one call, or in calls of at most kMax.
+  auto render = [&](VoiceEngine& e, bool pieces, std::vector<float>& l, std::vector<float>& r) {
+    rack::random::seed(11);  // the Analog Filter's model draws Rack's random noise
+    e.prepare(48000.0, kMax);
+    e.setStereo(true);
+    ParamValues p = test::defaultParams(e.info());
+    std::vector<float> first(kMax);
+    const float* in0[2] = {inL.data(), inR.data()};
+    float* out0[2] = {first.data(), first.data()};
+    e.process(in0, out0, p, kMax);  // snaps the controls; the step below then ramps per call
+    p.p[0] = 0.3f;
+    p.p[1] = 0.6f;
+    l.assign(kN, 0.0f);
+    r.assign(kN, 0.0f);
+    const int step = pieces ? kMax : kN;
+    for (int done = 0; done < kN; done += step) {
+      const float* in[2] = {inL.data() + done, inR.data() + done};
+      float* out[2] = {l.data() + done, r.data() + done};
+      e.process(in, out, p, std::min(step, kN - done));
+    }
+  };
+  RipplesEngine ripples;
+  SvfEngine svf;
+  ShelvesEngine shelves;
+  for (VoiceEngine* e : {static_cast<VoiceEngine*>(&ripples), static_cast<VoiceEngine*>(&svf),
+                         static_cast<VoiceEngine*>(&shelves)}) {
+    INFO(e->info().displayName);
+    std::vector<float> l1, r1, l2, r2;
+    render(*e, false, l1, r1);
+    render(*e, true, l2, r2);
+    REQUIRE(l1 == l2);
+    REQUIRE(r1 == r2);
+    REQUIRE(r1 != l1);  // the right instance ran
+  }
 }

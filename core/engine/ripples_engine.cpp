@@ -62,6 +62,11 @@ void RipplesEngine::reset() {
 
 void RipplesEngine::process(const float* const* in, float* const* out, const ParamValues& p,
                             int n) {
+  if (processInPieces(in, out, n, int(rightOut_.size()), [&](const float* const* i2, float* const* o2, int k) {
+        process(i2, o2, p, k);
+      })) {
+    return;
+  }
   // The VCV module reads its knobs every sample (Ripples.cpp:74-76) and the model low-passes
   // them like the hardware's CV amplifiers (ripples.hpp:155-161). EG13's parameters change at
   // block boundaries, so they ramp across each block instead of stepping. ParamRamp takes

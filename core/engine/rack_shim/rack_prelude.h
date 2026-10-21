@@ -1,10 +1,11 @@
 #pragma once
 
-// What rack.hpp needs from outside itself: the standard and SSE headers, and Rack's per-thread
-// random state. Kept apart so a TU built with Rack's flags can include it at file scope (one
+// What rack.hpp needs from outside itself: the standard and SSE headers, and Rack's random
+// state. Kept apart so a TU built with Rack's flags can include it at file scope (one
 // shared std, SSE and random state) and then rack.hpp inside its own namespace.
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 
@@ -21,10 +22,12 @@ namespace eg13_rack_shim {
 
 constexpr uint64_t kRandomSeed = 0x9E3779B97F4A7C15ull;
 
-// The calling thread's random state for rack::random (rack.hpp), defined once, out of line and
-// without Rack's flags, in rack_random.cpp: every copy of rack.hpp, flagged or not, shares it.
-// It is thread_local; on macOS a thread's thread_local block is allocated (malloc) on its first
-// access, so the first draw on a new audio thread may allocate once (whole-branch review item).
-uint64_t& randomState();
+// The random state for rack::random (rack.hpp), defined once, out of line and without Rack's
+// flags, in rack_random.cpp: every copy of rack.hpp, flagged or not, shares it. Rack keeps one
+// per thread; here it is one lock-free atomic for the process, read and written with relaxed
+// order, because a thread_local is allocated (malloc) on a thread's first access on macOS, which
+// the audio thread must not do. Threads drawing at once may draw the same number; Ripples only
+// uses it for 1e-6 V of start-up noise.
+std::atomic<uint64_t>& randomState();
 
 }  // namespace eg13_rack_shim

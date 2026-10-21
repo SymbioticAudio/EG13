@@ -88,6 +88,11 @@ void SvfEngine::reset() {
 }
 
 void SvfEngine::process(const float* const* in, float* const* out, const ParamValues& p, int n) {
+  if (processInPieces(in, out, n, int(impl_->rightOut.size()), [&](const float* const* i2, float* const* o2, int k) {
+        process(i2, o2, p, k);
+      })) {
+    return;
+  }
   Impl& s = *impl_;
   // Frequency and Q ramp linearly across the block and set the filter every sample, as Plaits'
   // noise engine does (noise_engine.cc:76-91).

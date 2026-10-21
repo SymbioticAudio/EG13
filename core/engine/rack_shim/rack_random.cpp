@@ -3,8 +3,9 @@
 
 namespace eg13_rack_shim {
 
-uint64_t& randomState() {
-  thread_local uint64_t state = kRandomSeed;
+std::atomic<uint64_t>& randomState() {
+  static std::atomic<uint64_t> state{kRandomSeed};  // constant-initialised: no guard, no allocation
+  static_assert(std::atomic<uint64_t>::is_always_lock_free, "the audio thread must not lock");
   return state;
 }
 
