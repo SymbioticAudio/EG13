@@ -148,9 +148,19 @@ TEST_CASE("Ring Mod / Vocoder describes itself") {
   info.params[0].format(info.params[0].defaultValue, buf, sizeof(buf));
   REQUIRE(std::string(buf) == "Analog RM");
   info.params[0].format(1.0f, buf, sizeof(buf));
-  REQUIRE(std::string(buf) == "Vocoder");
-  info.params[0].format(2.5f / 8.0f, buf, sizeof(buf));
-  REQUIRE(std::string(buf) == "Analog RM > Digital RM 50%");
+  REQUIRE(std::string(buf) == "Vocoder (frozen)");
+  // The nine positions, named after what the firmware does there; the text names the nearest.
+  const char* const algorithms[9] = {"Crossfade",  "Fold",    "Analog RM",
+                                     "Digital RM", "XOR",     "Compare",
+                                     "Vocoder",    "Vocoder (long release)", "Vocoder (frozen)"};
+  for (int i = 0; i < 9; ++i) {
+    for (float offset : {-0.45f, 0.0f, 0.45f}) {
+      const float v = std::clamp((float(i) + offset) / 8.0f, 0.0f, 1.0f);
+      info.params[0].format(v, buf, sizeof(buf));
+      INFO("position " << i << " offset " << offset);
+      REQUIRE(std::string(buf) == algorithms[i]);
+    }
+  }
   info.params[4].format(info.params[4].defaultValue, buf, sizeof(buf));
   REQUIRE(std::string(buf) == "Internal Osc");
   info.params[5].format(info.params[5].defaultValue, buf, sizeof(buf));
@@ -197,9 +207,29 @@ TEST_CASE("Ring Mod / Vocoder Carrier and Modulator options keep their order") {
     p.p[5] = v;
     REQUIRE(info.sideSource(1, p) == SideSource(i));
   }
-  REQUIRE(WarpsEngine::carrierIndex(1.0f) == 4);    // the unused steps read as the last option
-  REQUIRE(WarpsEngine::modulatorIndex(1.0f) == 3);
   REQUIRE(WarpsEngine::carrierIndex(std::numeric_limits<float>::quiet_NaN()) == 0);
+}
+
+// Pins today's reading of the unused steps: each, and 1.0, reads as the last option. When an
+// option is appended, the state migration must snap saved values above the old last option's
+// step back to its centre (rule at WarpsEngine::kSelectorSteps), and this test changes with it.
+TEST_CASE("Ring Mod / Vocoder unused selector steps read as the last option") {
+  for (int step = WarpsEngine::kNumCarriers; step < WarpsEngine::kSelectorSteps; ++step) {
+    for (float within : {0.0f, 0.5f, 0.999f}) {
+      const float v = (float(step) + within) / float(WarpsEngine::kSelectorSteps);
+      INFO("carrier step " << step << " value " << v);
+      REQUIRE(WarpsEngine::carrierIndex(v) == WarpsEngine::kNumCarriers - 1);
+    }
+  }
+  for (int step = WarpsEngine::kNumModulators; step < WarpsEngine::kSelectorSteps; ++step) {
+    for (float within : {0.0f, 0.5f, 0.999f}) {
+      const float v = (float(step) + within) / float(WarpsEngine::kSelectorSteps);
+      INFO("modulator step " << step << " value " << v);
+      REQUIRE(WarpsEngine::modulatorIndex(v) == WarpsEngine::kNumModulators - 1);
+    }
+  }
+  REQUIRE(WarpsEngine::carrierIndex(1.0f) == WarpsEngine::kNumCarriers - 1);
+  REQUIRE(WarpsEngine::modulatorIndex(1.0f) == WarpsEngine::kNumModulators - 1);
 }
 
 // The default Carrier Level and Mod Level (owner, 2026-10-20): the drive at which Warps'

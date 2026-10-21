@@ -19,15 +19,25 @@ class WarpsEngine final : public VoiceEngine {
  public:
   static constexpr double kNativeRate = 96000.0;
   static constexpr int kNativeBlock = 60;
-  static constexpr int kNumAlgorithms = 9;       // warps/dsp/parameters.h:43-53
+  // Named positions of the Algorithm knob, every eighth: six cross-modulations
+  // (modulator.cc:438-445), then the vocoder with a lengthening release (modulator.cc:314-318)
+  // that freezes fully clockwise (vocoder.cc:75).
+  static constexpr int kNumAlgorithms = 9;
   static constexpr int kNumOscillatorModes = 3;  // the button's modes, carrier_shape 1..3
   // Carrier and Modulator are append-only option lists read in 8 fixed steps, so adding an
   // option never changes what a saved value means.
+  //
+  // The steps past the last option currently read as the last option (a host may save any
+  // value, 1.0 included). RULE: when an option is appended, the state-schema migration of that
+  // version must snap every saved value above the old last option's step back to the old last
+  // option's centre (optionValue(old last)), so saved routing keeps its meaning.
   static constexpr int kSelectorSteps = 8;
   static constexpr int kNumCarriers = 5;    // Internal Osc, Voice, Source AUX, Input, Other part
   static constexpr int kNumModulators = 4;  // Voice, Source AUX, Input, Other part
   // EG13 ±1.0 = ±5 V into Warps' ±8 V inputs, as VCV converts (Warps.cpp:102-103): 10240 counts.
   // Outputs are read back with the same scale, so a unity path through Warps is unity in EG13.
+  // This departs from VCV, which reads outputs at 32768 counts = 5 V (Warps.cpp:104-105): EG13's
+  // Shaper can therefore emit up to +-3.2 (32768 / 10240), about 10 dB above VCV's output scale.
   static constexpr float kInputScale = 5.0f / 16.0f * 32768.0f;
   // Carrier Level and Mod Level default: unity gain, unsaturated, through Warps' amplifier for a
   // full-scale voice (measured; see test_warps_engine.cpp). Owner decision 2026-10-20.

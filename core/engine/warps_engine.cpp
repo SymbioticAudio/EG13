@@ -12,9 +12,15 @@ namespace eg13 {
 
 namespace {
 
-// Warps' algorithms in knob order (warps/dsp/parameters.h:43-53).
+// What the firmware does at each eighth of the knob. 0..5: the cross-modulation table
+// (modulator.cc:438-445; names after XmodAlgorithm, modulator.h). 6..8: the vocoder (from 0.725,
+// modulator.cc:205-207), its envelope followers' release lengthening with 4 * (a - 0.75)
+// (modulator.cc:314-318; 80 Hz at 6/8, about 3.5 Hz at 7/8, vocoder.cc:70) until they freeze at
+// the end (release > 0.995, vocoder.cc:75), as the module's manual describes.
 const char* const kAlgorithmNames[WarpsEngine::kNumAlgorithms] = {
-    "Crossfade", "Fold", "Analog RM", "Digital RM", "XOR", "Compare", "Spectral", "Morph", "Vocoder"};
+    "Crossfade", "Fold",    "Analog RM",
+    "Digital RM", "XOR",    "Compare",
+    "Vocoder",    "Vocoder (long release)", "Vocoder (frozen)"};
 // Append-only (see kSelectorSteps): never reorder, only add at the end.
 const char* const kCarrierNames[WarpsEngine::kNumCarriers] = {"Internal Osc", "Voice", "Source AUX", "Input",
                                                               "Other part"};
@@ -25,20 +31,11 @@ const char* const kModeShapeNames[WarpsEngine::kNumOscillatorModes] = {"Sine / S
                                                                       "Saw / Noise"};
 const char* const kModeNames[2] = {"Modulation", "Freq shifter"};
 
-// The knob crossfades between adjacent algorithms (modulator.cc:292-311), so the text names the
-// algorithm, or the pair it is between and how far.
+// The knob is continuous (the sound blends between positions); the text names the nearest of
+// the nine positions.
 void formatAlgorithm(float v, char* buf, size_t size) {
-  const float position = clamp01(v) * 8.0f;
-  const int low = std::min(int(position), 8);
-  const float frac = position - float(low);
-  if (low == 8 || frac < 0.05f) {
-    std::snprintf(buf, size, "%s", kAlgorithmNames[low]);
-  } else if (frac > 0.95f) {
-    std::snprintf(buf, size, "%s", kAlgorithmNames[low + 1]);
-  } else {
-    std::snprintf(buf, size, "%s > %s %d%%", kAlgorithmNames[low], kAlgorithmNames[low + 1],
-                  int(std::lround(frac * 100.0f)));
-  }
+  const int nearest = std::min(int(std::lround(clamp01(v) * 8.0f)), WarpsEngine::kNumAlgorithms - 1);
+  std::snprintf(buf, size, "%s", kAlgorithmNames[nearest]);
 }
 void formatCarrier(float v, char* buf, size_t size) {
   std::snprintf(buf, size, "%s", kCarrierNames[WarpsEngine::carrierIndex(v)]);
