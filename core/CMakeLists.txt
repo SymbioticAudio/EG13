@@ -13,6 +13,7 @@ add_library(eg13_core STATIC
   engine/sst_filter_engine.cpp
   engine/svf_engine.cpp
   engine/warps_engine.cpp
+  engine/mod_engine.cpp
   synth/param_table.cpp
   synth/synth.cpp
   state/state.cpp
