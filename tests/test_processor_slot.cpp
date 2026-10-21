@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "alloc_counter.h"
@@ -407,4 +408,22 @@ TEST_CASE("Slot processing, engine switches and stereo changes do not allocate")
     allocations = counter.count();
   }
   REQUIRE(allocations == 0);
+}
+
+// Voice sends Source AUX to the Shaper without delaying it by the Filter latency, which holds
+// only while every Filter has none (voice.cpp asserts it, but Release builds drop the assert).
+TEST_CASE("Every Filter type has zero latency at every host rate") {
+  for (double rate : {44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
+    for (int e = 0; e < kNumFilterEngines; ++e) {
+      INFO("rate " << rate << " filter " << filterEngineInfo(e).displayName);
+      SourceSpec spec = makeFilter(e);
+      NativeRateWrapper wrapper(std::move(spec.engine), spec.nativeRate, spec.nativeBlock);
+      wrapper.prepare(rate, 16);
+      REQUIRE(wrapper.latencySamples() == 0);
+      REQUIRE(wrapper.inputPathLatencySamples() == 0);
+    }
+    ProcessorSlot slot(makeAllFilters());
+    slot.prepare(rate, 16);
+    REQUIRE(slot.latencySamples() == 0);
+  }
 }

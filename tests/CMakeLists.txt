@@ -24,3 +24,7 @@ add_test(NAME "flagged VCV models define symbols only in their rack_flags namesp
   COMMAND ${CMAKE_SOURCE_DIR}/scripts/check-flagged-symbols.sh
     eg13::rack_flags:: $<TARGET_OBJECTS:eg13_vcv_flagged>
     eg13::test::rack_flags:: $<TARGET_OBJECTS:eg13_vcv_flagged_reference>)
+# The check fails closed when the build hands it nothing to check.
+add_test(NAME "flagged symbol check fails on an empty object list"
+  COMMAND ${CMAKE_SOURCE_DIR}/scripts/check-flagged-symbols.sh eg13::rack_flags:: "\;")
+set_tests_properties("flagged symbol check fails on an empty object list" PROPERTIES WILL_FAIL TRUE)

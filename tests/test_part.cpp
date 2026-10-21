@@ -368,6 +368,44 @@ TEST_CASE("An Always-on part starts with its Filter in place, with no fade in fr
   REQUIRE(peak() < 1e-3f);
 }
 
+// Part::applySettings applies Always-on before the engine changes, in one call. A voice that
+// has played (so its Filter slot would fade on a change) and gone idle, then gets Always-on and
+// a new Filter together, starts on the new Filter with no fade in from the old one.
+TEST_CASE("An idle voice given Always-on and a Filter in one call starts on that Filter") {
+  Part part;
+  part.prepare(kRate, kBlock);
+  PartSettings s;
+  s.engine = int(SourceEngine::AudioInput);
+  s.voiceCount = 1;
+  part.applySettings(s);
+  SlotParams p;
+  p.source = test::defaultParams(sourceEngineInfo(int(SourceEngine::AudioInput)));
+  p.filter = test::defaultParams(filterEngineInfo(int(FilterEngine::StateVariable)));
+  p.filter.p[0] = 0.0f;  // SVF low-pass at 20 Hz: a 5 kHz input is about -96 dB
+  std::vector<float> input(9600);
+  for (size_t i = 0; i < input.size(); ++i) input[i] = 0.25f * float(std::sin(6.283185307179586 * 5000.0 * double(i) / kRate));
+  auto peak = [&](size_t from) {
+    std::vector<float> l(input.size()), r(input.size());
+    for (int done = 0; done < int(input.size()); done += kBlock) {
+      const float* in[2] = {input.data() + done, input.data() + done};
+      float* out[2] = {l.data() + done, r.data() + done};
+      part.process(VoiceInputs{in, nullptr}, out, p, std::min(kBlock, int(input.size()) - done));
+    }
+    float m = 0.0f;
+    for (size_t i = from; i < l.size(); ++i) m = std::max(m, std::fabs(l[i]));
+    return m;
+  };
+  part.noteOn(60, 1.0f);
+  REQUIRE(peak(4800) > 0.1f);  // the voice plays through Filter Off
+  part.noteOff(60);
+  for (int i = 0; i < 20 && part.activeVoiceCount() > 0; ++i) peak(0);  // released: it fades and frees
+  REQUIRE(part.activeVoiceCount() == 0);
+  s.alwaysOn = true;
+  s.filterEngine = int(FilterEngine::StateVariable);
+  part.applySettings(s);
+  REQUIRE(peak(0) < 1e-3f);
+}
+
 namespace {
 
 std::vector<SourceSpec> voiceAndSideShapers() {

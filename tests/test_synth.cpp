@@ -991,10 +991,14 @@ TEST_CASE("Switching Filter type while audio plays makes no step") {
 
 namespace {
 
+// What Part B does in renderRingMod: nothing, play its input always on, or play it while a note
+// (sent to the synth) holds.
+enum class PartB { Silent, AlwaysOn, Notes };
+
 // EG13 FX with Part A's Ring Mod set to digital ring modulation, Carrier = Voice (Part A's
-// Audio Input, a 1 kHz sine) and the given Modulator. With partBPlays, Part B plays the same
-// input through Audio Input, always on, heard only by Part A.
-std::vector<float> renderRingMod(PartMode mode, float modulator, bool partBPlays) {
+// Audio Input, a 1 kHz sine) and the given Modulator. Part B plays the same input through
+// Audio Input as `partB` says, heard only by Part A.
+std::vector<float> renderRingMod(PartMode mode, float modulator, PartB partB) {
   Synth synth(PluginKind::Effect);
   synth.setParam(masterId(MasterParam::Mode), double(mode));
   filtersOff(synth);
@@ -1005,12 +1009,13 @@ std::vector<float> renderRingMod(PartMode mode, float modulator, bool partBPlays
   synth.setParam(shaperId(0, 3), 0.5);
   synth.setParam(shaperId(0, 4), WarpsEngine::optionValue(1));  // Carrier: Voice (Part A's input)
   synth.setParam(shaperId(0, 5), modulator);
-  if (partBPlays) {
+  if (partB != PartB::Silent) {
     synth.setParam(paramSpec(sourceEngineParamIndex(1)).id, 4);
-    synth.setParam(partId(1, PartParam::Trigger), 1);
+    synth.setParam(partId(1, PartParam::Trigger), partB == PartB::AlwaysOn ? 1 : 0);
     synth.setParam(partId(1, PartParam::Output), 2);
   }
   synth.prepare(48000.0, kBlock);
+  if (partB == PartB::Notes) synth.noteOn(0, 60, 1.0f);  // Layer: both parts; Single: Part A only
   Stereo in(48000);
   for (size_t i = 0; i < in.l.size(); ++i) {
     in.l[i] = in.r[i] = 0.4f * float(std::sin(6.283185307179586 * 1000.0 * double(i) / 48000.0));
@@ -1035,21 +1040,74 @@ double magnitudeAt(const std::vector<float>& x, double hz) {  // Goertzel from 9
 }  // namespace
 
 TEST_CASE("The Ring Mod modulator takes the part's Input and the other part's output") {
-  const auto input = renderRingMod(PartMode::Layer, WarpsEngine::optionValue(2), false);  // Input: carrier²
+  const auto input = renderRingMod(PartMode::Layer, WarpsEngine::optionValue(2), PartB::Silent);  // Input: carrier²
   REQUIRE(magnitudeAt(input, 2000.0) > 10.0 * magnitudeAt(input, 1000.0));
-  const auto other = renderRingMod(PartMode::Layer, WarpsEngine::optionValue(3), true);  // Part B's copy
+  const auto other = renderRingMod(PartMode::Layer, WarpsEngine::optionValue(3), PartB::AlwaysOn);  // Part B's copy
   REQUIRE(magnitudeAt(other, 2000.0) > 10.0 * magnitudeAt(other, 1000.0));
-  const auto silentB = renderRingMod(PartMode::Layer, WarpsEngine::optionValue(3), false);  // B plays nothing
+  const auto silentB = renderRingMod(PartMode::Layer, WarpsEngine::optionValue(3), PartB::Silent);  // B plays nothing
   REQUIRE(test::rms(silentB, 9600, silentB.size()) < 1e-4);
 }
 
 TEST_CASE("In Single mode the Ring Mod's Other part is silent unless Part B runs on its own") {
-  // Single mode sends no notes to Part B, so its output, and the Other part signal, is silent.
-  const auto silentB = renderRingMod(PartMode::Single, WarpsEngine::optionValue(3), false);
+  // A note reaches Part B in Layer mode, so it plays and feeds Part A's Ring Mod...
+  const auto layerB = renderRingMod(PartMode::Layer, WarpsEngine::optionValue(3), PartB::Notes);
+  REQUIRE(magnitudeAt(layerB, 2000.0) > 10.0 * magnitudeAt(layerB, 1000.0));
+  // ...but Single mode sends Part B no notes, so its output, and the Other part signal, is silent.
+  const auto silentB = renderRingMod(PartMode::Single, WarpsEngine::optionValue(3), PartB::Notes);
   REQUIRE(test::rms(silentB, 9600, silentB.size()) < 1e-4);
   // An Always-on Part B still runs in Single mode (muted in the mix) and feeds Part A.
-  const auto alwaysOnB = renderRingMod(PartMode::Single, WarpsEngine::optionValue(3), true);
+  const auto alwaysOnB = renderRingMod(PartMode::Single, WarpsEngine::optionValue(3), PartB::AlwaysOn);
   REQUIRE(magnitudeAt(alwaysOnB, 2000.0) > 10.0 * magnitudeAt(alwaysOnB, 1000.0));
+}
+
+namespace {
+
+// EG13 FX, Layer mode, heard from Part B only: Part A plays the input (a 1 kHz sine of the given
+// amplitude) and feeds Part B's Ring Mod as its Modulator (Other part, A -> B). Part B's own
+// input is its Carrier (Voice), at the given Carrier Level.
+std::vector<float> renderAToB(float amplitude, float algorithm, float timbre, float carrierLevel, float modLevel) {
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  filtersOff(synth);
+  synth.setParam(partId(0, PartParam::Output), 2);  // Part A: heard only by Part B
+  synth.setParam(paramSpec(sourceEngineParamIndex(1)).id, 4);
+  synth.setParam(partId(1, PartParam::Trigger), 1);
+  synth.setParam(shaperTypeId(1), double(ShaperEngine::RingMod));
+  synth.setParam(shaperId(1, 0), algorithm);
+  synth.setParam(shaperId(1, 1), timbre);
+  synth.setParam(shaperId(1, 2), carrierLevel);
+  synth.setParam(shaperId(1, 3), modLevel);
+  synth.setParam(shaperId(1, 4), WarpsEngine::optionValue(1));  // Carrier: Voice (Part B's input)
+  synth.setParam(shaperId(1, 5), WarpsEngine::optionValue(3));  // Modulator: Other part (Part A)
+  synth.prepare(48000.0, kBlock);
+  Stereo in(48000);
+  for (size_t i = 0; i < in.l.size(); ++i) {
+    in.l[i] = in.r[i] = amplitude * float(std::sin(6.283185307179586 * 1000.0 * double(i) / 48000.0));
+  }
+  Stereo out(48000);
+  run(synth, out, 0, 48000, &in);
+  for (float x : out.l) REQUIRE(std::isfinite(x));
+  return out.l;
+}
+
+}  // namespace
+
+TEST_CASE("The Ring Mod takes the other part from A to B, soft-limited") {
+  // Digital ring modulation of Part B's 1 kHz input by Part A's: the product at 2 kHz, no 1 kHz.
+  const auto product = renderAToB(0.4f, 0.375f, 0.0f, 0.5f, 0.5f);
+  REQUIRE(magnitudeAt(product, 2000.0) > 100.0 * magnitudeAt(product, 1000.0));
+  // Crossfade at full Timbre passes the Modulator alone, linearly at a low Mod Level: so the
+  // output's peak follows the Other part signal. A quiet Part A passes as it is; a loud one
+  // (4.0, i.e. 16 times the quiet one) arrives soft-limited to 1 + 3/4 = 1.75 (7 times).
+  auto peakOf = [](const std::vector<float>& x) {
+    float m = 0.0f;
+    for (size_t i = 9600; i < x.size(); ++i) m = std::max(m, std::fabs(x[i]));
+    return m;
+  };
+  const float quiet = peakOf(renderAToB(0.25f, 0.0f, 1.0f, 0.0f, 0.2f));
+  const float loud = peakOf(renderAToB(4.0f, 0.0f, 1.0f, 0.0f, 0.2f));
+  REQUIRE(quiet > 0.01f);
+  REQUIRE_THAT(double(loud / quiet), Catch::Matchers::WithinAbs(1.75 / 0.25, 0.1));
 }
 
 TEST_CASE("Filter and Shaper switching while playing does not allocate") {

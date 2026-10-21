@@ -35,6 +35,17 @@ constexpr size_t slotStashIndex(SlotKind kind, int part, int engine, int p) {
              : kSourceStashSize + kFilterStashSize +
                    (size_t(part) * size_t(kNumShaperEngines) + size_t(engine)) * kShaperParamCount + size_t(p);
 }
+// The layout covers the stash exactly: each slot's block starts where the previous ends, and the
+// last entry is the last index.
+static_assert(slotStashIndex(SlotKind::Filter, 0, 0, 0) == kSourceStashSize, "Filter block starts after Source");
+static_assert(slotStashIndex(SlotKind::Shaper, 0, 0, 0) == kSourceStashSize + kFilterStashSize,
+              "Shaper block starts after Filter");
+static_assert(slotStashIndex(SlotKind::Source, kNumParts - 1, kNumSourceEngines - 1, int(kSourceParamCount) - 1) ==
+                  kSourceStashSize - 1, "Source block size");
+static_assert(slotStashIndex(SlotKind::Filter, kNumParts - 1, kNumFilterEngines - 1, int(kFilterParamCount) - 1) ==
+                  kSourceStashSize + kFilterStashSize - 1, "Filter block size");
+static_assert(slotStashIndex(SlotKind::Shaper, kNumParts - 1, kNumShaperEngines - 1, int(kShaperParamCount) - 1) ==
+                  kStashSize - 1, "Shaper block size");
 using EngineStash = std::array<float, kStashSize>;
 
 struct HostUpdate {

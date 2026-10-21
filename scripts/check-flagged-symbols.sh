@@ -31,18 +31,33 @@ check() {
   fi
 }
 
+# Fails closed: an OBJECT argument that names no object (empty, or only ';'), or a namespace
+# with no OBJECT after it, means the build passed nothing to check.
+[ $# -gt 0 ] || { echo "no arguments"; exit 1; }
+objects=0
 for arg in "$@"; do
   case "$arg" in
-    *::) namespace=$arg; continue ;;
+    *::)
+      [ -z "$namespace" ] || [ "$objects" -gt 0 ] || { echo "no objects given for $namespace"; exit 1; }
+      namespace=$arg
+      objects=0
+      continue ;;
   esac
   rest=$arg
+  found=0
   while [ -n "$rest" ]; do
     object=${rest%%;*}
     case "$rest" in
       *\;*) rest=${rest#*;} ;;
       *) rest= ;;
     esac
-    [ -n "$object" ] && check "$object"
+    if [ -n "$object" ]; then
+      check "$object"
+      found=$((found + 1))
+    fi
   done
+  [ "$found" -gt 0 ] || { echo "an object argument names no object: '$arg'"; exit 1; }
+  objects=$((objects + found))
 done
+[ -n "$namespace" ] && [ "$objects" -gt 0 ] || { echo "no objects given for ${namespace:-any namespace}"; exit 1; }
 exit $status

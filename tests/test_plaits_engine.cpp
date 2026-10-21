@@ -356,3 +356,28 @@ TEST_CASE("Macro Oscillator AUX does not change the main outputs") {
   REQUIRE(la == lb);
   REQUIRE(ra == rb);
 }
+
+TEST_CASE("Macro Oscillator AUX stays the AUX output at any Aux Mix") {
+  // Aux Mix blends AUX into the main outputs only; the AUX output itself is unchanged.
+  PlaitsEngine a, b;
+  a.setAuxEnabled(true);
+  b.setAuxEnabled(true);
+  for (auto* e : {&a, &b}) {
+    e->prepare(PlaitsEngine::kNativeRate, 512);
+    e->noteOn(57.0f, 1.0f);
+  }
+  const auto p0 = defaultParams(PlaitsEngine::staticInfo());
+  auto p1 = p0;
+  p1.p[7] = 0.6f;
+  std::vector<float> la(4800), ra(4800), xa(4800), lb(4800), rb(4800), xb(4800);
+  float* outA[3] = {la.data(), ra.data(), xa.data()};
+  float* outB[3] = {lb.data(), rb.data(), xb.data()};
+  a.process(nullptr, outA, p0, 4800);
+  b.process(nullptr, outB, p1, 4800);
+  REQUIRE(eg13::test::rms(xa, 0, xa.size()) > 0.01);
+  REQUIRE(xa == xb);
+  // and the main output now carries the AUX: once the 5 ms de-click has settled, out = 0.4 OUT + 0.6 AUX.
+  for (size_t i = 480; i < la.size(); ++i) {
+    REQUIRE(std::fabs(lb[i] - (0.4f * la[i] + 0.6f * xa[i])) <= 1e-5f);
+  }
+}

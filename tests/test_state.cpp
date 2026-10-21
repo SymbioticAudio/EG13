@@ -18,6 +18,18 @@ const uint32_t kModel = params::id(0, params::Slot::Source, 1);
 const uint32_t kTimbre = params::id(0, params::Slot::Source, 3);
 uint32_t partId(int part, PartParam p) { return paramSpec(partParamIndex(part, p)).id; }
 uint32_t masterId(MasterParam m) { return paramSpec(masterParamIndex(m)).id; }
+// Whether stash entry i belongs to an engine the synth has selected: engineStash() reports the
+// live P values there rather than the stored ones.
+bool currentEntry(const Synth& s, size_t i) {
+  for (int k = 0; k < kNumSlotKinds; ++k) {
+    for (int part = 0; part < kNumParts; ++part) {
+      const SlotKind kind = SlotKind(k);
+      const size_t first = slotStashIndex(kind, part, s.engine(kind, part), 0);
+      if (i >= first && i < first + slotParamCount(kind)) return true;
+    }
+  }
+  return false;
+}
 }  // namespace
 
 TEST_CASE("State round-trips every parameter exactly") {
@@ -372,5 +384,113 @@ TEST_CASE("Malformed filterSettings and shaperSettings entries are dropped with 
   REQUIRE(stash[slotStashIndex(SlotKind::Filter, 0, 2, 0)] == 0.4f);  // the valid entry
   REQUIRE(stash[slotStashIndex(SlotKind::Filter, 0, 1, 0)] == defaults[slotStashIndex(SlotKind::Filter, 0, 1, 0)]);
   REQUIRE(stash[slotStashIndex(SlotKind::Shaper, 1, 2, 0)] == defaults[slotStashIndex(SlotKind::Shaper, 1, 2, 0)]);
-  REQUIRE(store.save(s).find("\"9\":[") == std::string::npos);
+  // Nothing else changed: the dropped entries (wrong length, engine 9) left no trace.
+  for (size_t i = 0; i < kStashSize; ++i) {
+    const bool valid = i >= slotStashIndex(SlotKind::Filter, 0, 2, 0) && i <= slotStashIndex(SlotKind::Filter, 0, 2, 3);
+    if (!valid && !currentEntry(s, i)) REQUIRE(stash[i] == defaults[i]);
+  }
+}
+
+TEST_CASE("Filter and Shaper settings: wrong types, out-of-range values and Off") {
+  const EngineStash defaults = Synth::defaultStash();
+  state::StateStore store;
+  SECTION("a non-number element drops the entry") {
+    Synth s(PluginKind::Instrument);
+    REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"filterSettings":{"0":{"1":[0.1,"x",0.3,0.4]}}})") ==
+            state::LoadResult::OkWithWarnings);
+    REQUIRE(s.engineStash()[slotStashIndex(SlotKind::Filter, 0, 1, 0)] == defaults[slotStashIndex(SlotKind::Filter, 0, 1, 0)]);
+  }
+  SECTION("values outside 0..1 clamp") {
+    Synth s(PluginKind::Instrument);
+    REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"filterSettings":{"1":{"3":[-0.5,1.5,0.25,7]}}})") ==
+            state::LoadResult::Ok);
+    const EngineStash stash = s.engineStash();
+    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 3, 0)] == 0.0f);
+    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 3, 1)] == 1.0f);
+    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 3, 2)] == 0.25f);
+    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 3, 3)] == 1.0f);
+  }
+  SECTION("a part that is not an object, or a section that is not an object, is dropped") {
+    Synth s(PluginKind::Instrument);
+    REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"filterSettings":{"0":[0.1,0.2,0.3,0.4]},"shaperSettings":7})") ==
+            state::LoadResult::OkWithWarnings);
+    const EngineStash stash = s.engineStash();
+    for (size_t i = 0; i < kStashSize; ++i) {
+      if (!currentEntry(s, i)) REQUIRE(stash[i] == defaults[i]);
+    }
+  }
+  SECTION("Off's entry (engine 0) loads like any other") {
+    Synth s(PluginKind::Instrument);
+    const std::string eq = std::to_string(paramSpec(shaperEngineParamIndex(1)).id);
+    const std::string json = R"({"schemaVersion":4,"params":{")" + eq + R"(":2},)" +
+                             R"("shaperSettings":{"1":{"0":[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,0,0.5]}}})";
+    REQUIRE(store.load(s, json) == state::LoadResult::Ok);
+    REQUIRE(s.engine(SlotKind::Shaper, 1) == int(ShaperEngine::Eq));
+    REQUIRE(s.engineStash()[slotStashIndex(SlotKind::Shaper, 1, 0, 4)] == 0.5f);
+  }
+}
+
+TEST_CASE("Older projects of both plugins load with Filter and Shaper Off and their P's at 0") {
+  struct Case {
+    PluginKind kind;
+    int schema;
+  };
+  for (const Case c : {Case{PluginKind::Instrument, 1}, Case{PluginKind::Instrument, 3}, Case{PluginKind::Effect, 1},
+                       Case{PluginKind::Effect, 2}, Case{PluginKind::Effect, 3}}) {
+    INFO("schema " << c.schema << (c.kind == PluginKind::Effect ? " EG13 FX" : " EG13"));
+    Synth s(c.kind);
+    state::StateStore store;
+    const std::string json = R"({"schemaVersion":)" + std::to_string(c.schema) + R"(,"params":{}})";
+    REQUIRE(store.load(s, json) == state::LoadResult::Ok);
+    for (int part = 0; part < kNumParts; ++part) {
+      REQUIRE(s.engine(SlotKind::Filter, part) == int(FilterEngine::Off));
+      REQUIRE(s.engine(SlotKind::Shaper, part) == int(ShaperEngine::Off));
+      for (int p = 0; p < int(kFilterParamCount); ++p) REQUIRE(s.param(paramSpec(filterParamIndex(part, p)).id) == 0.0);
+      for (int p = 0; p < int(kShaperParamCount); ++p) REQUIRE(s.param(paramSpec(shaperParamIndex(part, p)).id) == 0.0);
+    }
+  }
+}
+
+TEST_CASE("A schema 4 EG13 FX project saved with Filter Off stays Off") {
+  Synth fx(PluginKind::Effect);
+  fx.setParam(paramSpec(filterEngineParamIndex(0)).id, double(FilterEngine::Off));
+  const std::string json = state::StateStore{}.save(fx);
+  Synth again(PluginKind::Effect);
+  state::StateStore store;
+  REQUIRE(store.load(again, json) == state::LoadResult::Ok);
+  REQUIRE(again.engine(SlotKind::Filter, 0) == int(FilterEngine::Off));
+}
+
+TEST_CASE("Every slot, part and engine's settings round-trip to their own place") {
+  // A distinct value for every stash entry, so a part, engine or P mixed up on the way shows.
+  auto unique = [](size_t i) { return float(std::fmod(double(i + 1) * 0.6180339887498949, 1.0)); };
+  Synth a(PluginKind::Instrument);
+  for (int k = 0; k < kNumSlotKinds; ++k) {
+    const SlotKind kind = SlotKind(k);
+    for (int part = 0; part < kNumParts; ++part) {
+      for (int e = slotEngineCount(kind) - 1; e >= 0; --e) {  // ends on engine 0
+        a.setParam(paramSpec(slotEngineParamIndex(kind, part)).id, double(e));
+        for (int p = 0; p < int(slotParamCount(kind)); ++p) {
+          a.setParam(paramSpec(slotParamIndex(kind, part, p)).id, double(unique(slotStashIndex(kind, part, e, p))));
+        }
+      }
+    }
+  }
+  const std::string json = state::StateStore{}.save(a);
+  Synth b(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.load(b, json) == state::LoadResult::Ok);
+  const EngineStash stash = b.engineStash();
+  for (int k = 0; k < kNumSlotKinds; ++k) {
+    const SlotKind kind = SlotKind(k);
+    for (int part = 0; part < kNumParts; ++part) {
+      REQUIRE(b.engine(kind, part) == 0);
+      for (int e = 0; e < slotEngineCount(kind); ++e) {
+        for (int p = 0; p < int(slotParamCount(kind)); ++p) {
+          const size_t i = slotStashIndex(kind, part, e, p);
+          REQUIRE(stash[i] == unique(i));
+        }
+      }
+    }
+  }
 }

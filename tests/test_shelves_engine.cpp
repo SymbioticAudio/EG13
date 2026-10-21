@@ -322,3 +322,49 @@ TEST_CASE("EQ survives NaN and processing does not allocate") {
   }
   REQUIRE(allocations == 0);
 }
+
+// Every gain at +18 or -18 dB, every Q at 40, every band at the low or high end of its range,
+// with a loud saw-plus-noise input, at 44.1, 48 and 96 kHz, mono and stereo: the output stays
+// finite and bounded (the circuit clips at about +-10.5 V; the down-sampling filter can ring
+// past that briefly, measured at about 4x full scale).
+TEST_CASE("EQ stays finite and bounded at extreme settings") {
+  for (double rate : {44100.0, 48000.0, 96000.0}) {
+    for (float gain : {0.0f, 1.0f}) {
+      for (float freq : {0.0f, 1.0f}) {
+        ParamValues p = test::defaultParams(ShelvesEngine::staticInfo());
+        for (int band : {0, 2, 5, 8}) p.p[band] = freq;  // the four frequencies
+        for (int g : {1, 3, 6, 9}) p.p[g] = gain;        // the four gains
+        p.p[4] = 1.0f;                                   // Mid 1 Q 40
+        p.p[7] = 1.0f;                                   // Mid 2 Q 40
+        ShelvesEngine engine;
+        engine.prepare(rate, 64);
+        engine.setStereo(true);
+        const size_t n = size_t(rate);  // one second
+        std::vector<float> inL(n), inR(n), l(n), r(n);
+        uint32_t seed = 1;
+        for (size_t i = 0; i < n; ++i) {
+          seed = seed * 1664525u + 1013904223u;
+          const float noise = float(seed >> 8) / 8388608.0f - 1.0f;
+          inL[i] = 0.9f * float(2.0 * std::fmod(55.0 * double(i) / rate, 1.0) - 1.0);
+          inR[i] = noise;
+        }
+        for (size_t done = 0; done < n; done += 64) {
+          const int k = int(std::min<size_t>(64, n - done));
+          const float* in[2] = {inL.data() + done, inR.data() + done};
+          float* out[2] = {l.data() + done, r.data() + done};
+          engine.process(in, out, p, k);
+        }
+        float peak = 0.0f;
+        bool finite = true;
+        for (size_t i = 0; i < n; ++i) {
+          finite = finite && std::isfinite(l[i]) && std::isfinite(r[i]);
+          peak = std::max({peak, std::fabs(l[i]), std::fabs(r[i])});
+        }
+        INFO("rate " << rate << " gain " << gain << " freq " << freq << " peak " << peak);
+        REQUIRE(finite);
+        REQUIRE(peak > 0.1f);
+        REQUIRE(peak < 8.0f);
+      }
+    }
+  }
+}
