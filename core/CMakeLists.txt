@@ -8,6 +8,7 @@ add_library(eg13_core STATIC
   engine/native_rate_wrapper.cpp
   engine/ripples_engine.cpp
   engine/sst_filter_engine.cpp
+  engine/svf_engine.cpp
   synth/param_table.cpp
   synth/synth.cpp
   state/state.cpp

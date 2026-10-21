@@ -72,3 +72,9 @@ Controls: **Cutoff** (20 Hz to 20 kHz, default fully open), **Resonance**, **Typ
 - **Character** is the extra control some types have: OB-Xd 4-pole *Morph*, K35 *Continuous* saturation, the Fast SVF shelves' and bell's gain, and the comb filters' variable mix. Other types ignore it.
 - Changing Type takes effect at once and restarts the filter, as switching a filter type on hardware does; it can click on a sounding note.
 - Stereo: left and right always run together inside one filter, at no extra cost.
+
+### State Variable Filter
+
+The clean, digital state-variable filter that the Eurorack modules use inside (no module offers it on its own). Controls: **Cutoff** (20 Hz to 20 kHz, default fully open), **Resonance** (Q 0.5 to 40; the default, Q 0.707, gives a flat passband) and **Mode**: *LP*, *BP* or *HP*. In *BP* mode the peak stays at unity gain whatever the resonance.
+
+Stereo: while the voice is stereo, a second filter runs for the right channel, starting from the left filter's exact state.
