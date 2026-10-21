@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "engine/pot_smoother.h"
 #include "engine/voice_engine.h"
 
 namespace eg13 {
@@ -47,7 +48,7 @@ class ElementsEngine final : public VoiceEngine {
   int model_ = -1;
   // CvScaler-style smoothing of P2..P15: the general pot low-pass and BIND's extra one-pole.
   void smooth(const ParamValues& p, int count);
-  float potLp_[kMaxSlotParams] = {};
+  PotSmoother pots_;  // the general pot low-pass
   float smoothed_[kMaxSlotParams] = {};
   bool snap_ = true;  // the first render after reset jumps straight to the targets
 };

@@ -114,3 +114,67 @@ TEST_CASE("Audio Input does not allocate") {
   }
   REQUIRE(allocations == 0);
 }
+
+TEST_CASE("Audio Input smooths Gain steps without a click") {
+  // Gain is a pure multiplier on the input, so a step at a control-rate boundary is a step
+  // in the output. A 1 ms one-pole on the linear gain turns it into a short ramp.
+  AudioInputEngine engine;
+  const double rate = 48000.0;
+  engine.prepare(rate, 256);
+  ParamValues p = defaults();
+  p.p[1] = 0.0f;  // 1 ms attack
+  engine.noteOn(60.0f, 1.0f);
+  const std::vector<float> dc(4800, 0.25f);
+  const auto settled = run(engine, p, dc);
+  REQUIRE_THAT(settled.back(), Catch::Matchers::WithinAbs(0.25, 1e-6));  // snapped: 0 dB
+
+  ParamValues loud = p;
+  loud.p[0] = 1.0f;  // +12 dB: 3.98x
+  const auto out = run(engine, loud, dc);
+  const float target = 0.25f * std::pow(10.0f, 12.0f / 20.0f);
+  float previous = settled.back();
+  for (size_t i = 0; i < out.size(); ++i) {
+    INFO("sample " << i << " value " << out[i]);
+    REQUIRE(out[i] >= previous);
+    // One 1 ms pole step at 48 kHz moves at most 1 - exp(-1/48) ~ 2.1% of the distance.
+    REQUIRE(out[i] - previous <= 0.021f * (target - 0.25f) + 1e-6f);
+    previous = out[i];
+  }
+  // Converges within a few time constants: e^-5 of the step remains after 5 ms.
+  REQUIRE_THAT(out[240], Catch::Matchers::WithinAbs(target, (target - 0.25f) * 0.0068f + 1e-5f));
+  REQUIRE_THAT(out.back(), Catch::Matchers::WithinAbs(target, 1e-5));
+
+  // reset() snaps the gain on the next render.
+  engine.reset();
+  engine.noteOn(60.0f, 1.0f);
+  const auto again = run(engine, loud, dc);
+  REQUIRE_THAT(again.back(), Catch::Matchers::WithinAbs(target, 1e-5));
+  REQUIRE(engine.smoothedGain() == std::pow(10.0f, 12.0f / 20.0f));
+}
+
+TEST_CASE("Audio Input gain smoothing is independent of block size") {
+  AudioInputEngine a, b;
+  for (auto* e : {&a, &b}) {
+    e->prepare(48000.0, 512);
+    e->noteOn(60.0f, 1.0f);
+  }
+  std::vector<float> in(2048);
+  for (size_t i = 0; i < in.size(); ++i) in[i] = std::sin(0.01f * float(i));
+  ParamValues p = defaults();
+  ParamValues loud = p;
+  loud.p[0] = 0.9f;
+  std::vector<float> la(2048), ra(2048), lb(2048), rb(2048);
+  const float* inA[2] = {in.data(), in.data()};
+  float* outA[2] = {la.data(), ra.data()};
+  a.process(inA, outA, p, 512);
+  const float* inA2[2] = {in.data() + 512, in.data() + 512};
+  float* outA2[2] = {la.data() + 512, ra.data() + 512};
+  a.process(inA2, outA2, loud, 1536);
+  for (int done = 0; done < 2048; done += 16) {
+    const float* inB[2] = {in.data() + done, in.data() + done};
+    float* outB[2] = {lb.data() + done, rb.data() + done};
+    b.process(inB, outB, done < 512 ? p : loud, 16);
+  }
+  REQUIRE(la == lb);
+  REQUIRE(ra == rb);
+}

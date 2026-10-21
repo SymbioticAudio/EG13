@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "alloc_counter.h"
 #include "engine/plaits_engine.h"
 #include "plaits/dsp/voice.h"
 #include "test_helpers.h"
@@ -154,4 +155,115 @@ TEST_CASE("Macro Oscillator setNote changes pitch without a new note") {
   const auto out = render(engine, p, 48000, 512);
   const double f = eg13::test::estimateFrequency(out, 48000.0, 12000, 48000);
   REQUIRE_THAT(f, Catch::Matchers::WithinRel(523.25, 0.01));
+}
+
+TEST_CASE("Macro Oscillator smooths its pots like the firmware") {
+  // Ui::Poll runs once per 12-sample block (plaits.cc:81, dsp.h:51) and each PotController
+  // applies ONE_POLE(value_, pot, c) (pot_controller.h:106): 0.005 for Frequency and
+  // Harmonics, 0.01 for Timbre and Morph (ui.cc:72-79). Decay and LPG Colour are the Morph
+  // and Timbre pots' hidden parameters, so they follow the same 0.01 pole.
+  PlaitsEngine engine;
+  engine.prepare(PlaitsEngine::kNativeRate, 512);
+  std::vector<float> l(12), r(12);
+  float* out[2] = {l.data(), r.data()};
+  eg13::ParamValues p = defaultParams(PlaitsEngine::staticInfo());
+  p.p[2] = 0.0f;  // Timbre
+  engine.process(nullptr, out, p, 12);
+  REQUIRE(engine.smoothedParam(2) == 0.0f);  // first render after reset snaps
+  REQUIRE(engine.smoothedParam(1) == 0.5f);
+
+  eg13::ParamValues step = p;
+  step.p[0] = 0.99f;  // Model: stepped
+  step.p[1] = 1.0f;   // Harmonics 0.5 -> 1
+  step.p[2] = 1.0f;   // Timbre 0 -> 1
+  step.p[3] = 0.0f;   // Morph 0.5 -> 0
+  step.p[4] = 1.0f;   // Frequency 0.5 -> 1
+  step.p[5] = 1.0f;   // Decay 0.5 -> 1
+  step.p[6] = 0.0f;   // LPG Colour 0.5 -> 0
+  step.p[7] = 1.0f;   // Aux Mix: EG13-only, not smoothed
+  engine.process(nullptr, out, step, 12);
+  REQUIRE(engine.smoothedParam(0) == 0.99f);
+  REQUIRE_THAT(engine.smoothedParam(1), Catch::Matchers::WithinAbs(0.5025, 1e-6));
+  REQUIRE_THAT(engine.smoothedParam(2), Catch::Matchers::WithinAbs(0.01, 1e-6));
+  REQUIRE_THAT(engine.smoothedParam(3), Catch::Matchers::WithinAbs(0.495, 1e-6));
+  REQUIRE_THAT(engine.smoothedParam(4), Catch::Matchers::WithinAbs(0.5025, 1e-6));
+  REQUIRE_THAT(engine.smoothedParam(5), Catch::Matchers::WithinAbs(0.505, 1e-6));
+  REQUIRE_THAT(engine.smoothedParam(6), Catch::Matchers::WithinAbs(0.495, 1e-6));
+  REQUIRE(engine.smoothedParam(7) == 1.0f);
+
+  // Gradual: no block moves Timbre more than one 0.01 pole can (0.01 of the full step) or
+  // Frequency more than 0.005 of its step. Time constant: 0.99^n and 0.995^n remain.
+  float timbre = engine.smoothedParam(2);
+  float frequency = engine.smoothedParam(4);
+  for (int block = 2; block <= 2000; ++block) {
+    engine.process(nullptr, out, step, 12);
+    const float t = engine.smoothedParam(2);
+    const float f = engine.smoothedParam(4);
+    INFO("block " << block << " timbre " << t << " frequency " << f);
+    REQUIRE(t >= timbre);
+    REQUIRE(t - timbre <= 0.01f);
+    REQUIRE(f >= frequency);
+    REQUIRE(f - frequency <= 0.5f * 0.005f);
+    if (block == 100) {
+      REQUIRE_THAT(t, Catch::Matchers::WithinAbs(1.0 - std::pow(0.99, 100), 1e-4));
+      REQUIRE_THAT(f, Catch::Matchers::WithinAbs(1.0 - 0.5 * std::pow(0.995, 100), 1e-4));
+    }
+    timbre = t;
+    frequency = f;
+  }
+  REQUIRE(timbre > 0.9999f);
+  REQUIRE(frequency > 0.9999f);
+
+  // reset() snaps again on the next render.
+  engine.reset();
+  engine.process(nullptr, out, step, 12);
+  REQUIRE(engine.smoothedParam(2) == 1.0f);
+  REQUIRE(engine.smoothedParam(3) == 0.0f);
+}
+
+TEST_CASE("Macro Oscillator smoothing is independent of block size") {
+  const auto p = defaultParams(PlaitsEngine::staticInfo());
+  eg13::ParamValues step = p;
+  step.p[1] = 0.9f;
+  step.p[2] = 0.1f;
+  step.p[4] = 0.8f;
+  step.p[5] = 0.2f;
+  PlaitsEngine a, b, c;
+  for (auto* e : {&a, &b, &c}) {
+    e->prepare(PlaitsEngine::kNativeRate, 4096);
+    e->noteOn(60.0f, 1.0f);
+  }
+  auto ra = render(a, p, 1000, 4096);
+  auto rb = render(b, p, 1000, 1);
+  auto rc = render(c, p, 1000, 7);
+  const auto ra2 = render(a, step, 6000, 4096);
+  const auto rb2 = render(b, step, 6000, 1);
+  const auto rc2 = render(c, step, 6000, 7);
+  ra.insert(ra.end(), ra2.begin(), ra2.end());
+  rb.insert(rb.end(), rb2.begin(), rb2.end());
+  rc.insert(rc.end(), rc2.begin(), rc2.end());
+  REQUIRE(ra == rb);
+  REQUIRE(ra == rc);
+  REQUIRE(a.smoothedParam(4) == b.smoothedParam(4));
+}
+
+TEST_CASE("Macro Oscillator processing with moving pots does not allocate") {
+  PlaitsEngine engine;
+  engine.prepare(PlaitsEngine::kNativeRate, 512);
+  std::vector<float> l(512), r(512);
+  float* out[2] = {l.data(), r.data()};
+  eg13::ParamValues p = defaultParams(PlaitsEngine::staticInfo());
+  engine.noteOn(60.0f, 1.0f);
+  engine.process(nullptr, out, p, 512);
+  size_t allocations = 0;
+  {
+    eg13::test::ScopedAllocationCounter counter;
+    for (int block = 0; block < 100; ++block) {
+      p.p[1 + block % 6] = float(block % 7) / 6.0f;
+      if (block == 50) engine.reset();
+      engine.process(nullptr, out, p, 512);
+    }
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
 }

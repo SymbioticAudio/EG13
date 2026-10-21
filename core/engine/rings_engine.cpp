@@ -50,6 +50,25 @@ const EngineInfo kInfo = {"rings", "Resonator", 9, kParams, true};
 constexpr float kMaxKnob = 0.9995f;  // Rings' own clamp for structure, damping, position
 constexpr float kTonic = 60.0f;      // reference the played note is measured from
 
+// Firmware pot smoothing, per 24-sample block: CvScaler::Read runs once per audio block
+// (rings.cc:96, dsp.h:41 kMaxBlockSize = 24) and low-passes every ADC channel with
+// adc_lp_ += lp_coefficient * (value - adc_lp_) (cv_scaler.cc:171); every pot's coefficient
+// is 0.01 (cv_scaler.cc:53-57). The chord is derived from the filtered Structure pot
+// (cv_scaler.cc:217-225), so it follows the smoothed value here too. Model, Exciter and
+// Polyphony are stepped. Spread has no firmware control and is not smoothed. The played
+// note is not touched: Part's NoteFilter already conditions it (part.cc:480-494).
+const float kPotLp[9] = {
+    1.0f,   // Model: stepped
+    0.01f,  // Structure   cv_scaler.cc:54
+    0.01f,  // Brightness  :55
+    0.01f,  // Damping     :56
+    0.01f,  // Position    :57
+    1.0f,   // Exciter: stepped
+    0.01f,  // Frequency   :53 (the transpose pot)
+    1.0f,   // Spread: EG13-only
+    1.0f,   // Polyphony: stepped
+};
+
 }  // namespace
 
 struct RingsEngine::Impl {
@@ -60,7 +79,10 @@ struct RingsEngine::Impl {
   float even[kNativeBlock];
 };
 
-RingsEngine::RingsEngine() : impl_(std::make_unique<Impl>()) { reset(); }
+RingsEngine::RingsEngine()
+    : impl_(std::make_unique<Impl>()), pots_(kPotLp, kInfo.paramCount, kNativeBlock) {
+  reset();
+}
 
 RingsEngine::~RingsEngine() = default;
 
@@ -85,6 +107,10 @@ int RingsEngine::polyphonyVoices(float normalized) {
 
 float RingsEngine::frequencyOffset(float normalized) { return (clamp01(normalized) - 0.5f) * 24.0f; }
 
+float RingsEngine::smoothedParam(int index) const {
+  return index >= 0 && index < kInfo.paramCount ? pots_[index] : 0.0f;
+}
+
 void RingsEngine::prepare(double hostRate, int) {
   pitchOffset_ = float(12.0 * std::log2(kNativeRate / hostRate));
   reset();
@@ -99,6 +125,7 @@ void RingsEngine::reset() {
   polyphony_ = 1;
   strum_ = false;
   model_ = -1;
+  pots_.reset();
 }
 
 void RingsEngine::noteOn(float note, float velocity) {
@@ -132,11 +159,12 @@ void RingsEngine::renderBlock(const float* const* in, const ParamValues& p, floa
     s.part.set_polyphony(polyphony);
     polyphony_ = polyphony;
   }
+  pots_.update(p, count);
   rings::Patch patch;
-  patch.structure = std::min(clamp01(p.p[1]), kMaxKnob);
-  patch.brightness = clamp01(p.p[2]);
-  patch.damping = std::min(clamp01(p.p[3]), kMaxKnob);
-  patch.position = std::min(clamp01(p.p[4]), kMaxKnob);
+  patch.structure = std::min(pots_[1], kMaxKnob);
+  patch.brightness = pots_[2];
+  patch.damping = std::min(pots_[3], kMaxKnob);
+  patch.position = std::min(pots_[4], kMaxKnob);
 
   // Internal: the note-on strike only. Input: the input only. Both: strike plus
   // input. Upstream Rings always feeds `in` to the resonator, and
@@ -156,7 +184,7 @@ void RingsEngine::renderBlock(const float* const* in, const ParamValues& p, floa
   // so with polyphony above 1 earlier strums keep their own pitch; the tonic is
   // shared by every voice.
   state.internal_note = false;
-  state.tonic = kTonic + frequencyOffset(p.p[6]) + pitchOffset_;
+  state.tonic = kTonic + frequencyOffset(pots_[6]) + pitchOffset_;
   state.note = note_ - kTonic;
   state.fm = 0.0f;
   state.chord = std::clamp(int(std::lround(patch.structure * 10.0f)), 0, 10);

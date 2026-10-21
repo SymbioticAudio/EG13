@@ -566,3 +566,116 @@ TEST_CASE("CPU: Resonator at polyphony 1, 2 and 4", "[.benchmark]") {
     synth.setActive(false);
   }
 }
+
+TEST_CASE("Resonator smooths its pots like the firmware") {
+  // CvScaler::Read runs once per 24-sample block (rings.cc:96, dsp.h:41) and low-passes every
+  // pot with adc_lp_ += 0.01 * (pot - adc_lp_) (cv_scaler.cc:53-57, 171): Frequency,
+  // Structure, Brightness, Damping, Position.
+  RingsEngine engine;
+  engine.prepare(RingsEngine::kNativeRate, 256);
+  std::vector<float> l(24), r(24);
+  float* out[2] = {l.data(), r.data()};
+  ParamValues p = defaults();
+  p.p[2] = 0.0f;  // Brightness
+  engine.process(nullptr, out, p, 24);
+  REQUIRE(engine.smoothedParam(2) == 0.0f);  // first render after reset snaps
+  REQUIRE(engine.smoothedParam(1) == 0.5f);
+
+  ParamValues step = p;
+  step.p[0] = 0.99f;  // Model: stepped
+  step.p[1] = 1.0f;   // Structure 0.5 -> 1
+  step.p[2] = 1.0f;   // Brightness 0 -> 1
+  step.p[3] = 0.0f;   // Damping 0.5 -> 0
+  step.p[4] = 1.0f;   // Position 0.5 -> 1
+  step.p[5] = kBoth;  // Exciter: stepped
+  step.p[6] = 1.0f;   // Frequency 0.5 -> 1
+  step.p[7] = 0.0f;   // Spread: EG13-only, not smoothed
+  step.p[8] = 0.99f;  // Polyphony: stepped
+  engine.process(nullptr, out, step, 24);
+  REQUIRE(engine.smoothedParam(0) == 0.99f);
+  REQUIRE_THAT(engine.smoothedParam(1), Catch::Matchers::WithinAbs(0.505, 1e-6));
+  REQUIRE_THAT(engine.smoothedParam(2), Catch::Matchers::WithinAbs(0.01, 1e-6));
+  REQUIRE_THAT(engine.smoothedParam(3), Catch::Matchers::WithinAbs(0.495, 1e-6));
+  REQUIRE_THAT(engine.smoothedParam(4), Catch::Matchers::WithinAbs(0.505, 1e-6));
+  REQUIRE(engine.smoothedParam(5) == kBoth);
+  REQUIRE_THAT(engine.smoothedParam(6), Catch::Matchers::WithinAbs(0.505, 1e-6));
+  REQUIRE(engine.smoothedParam(7) == 0.0f);
+  REQUIRE(engine.smoothedParam(8) == 0.99f);
+
+  // Gradual: no block moves Brightness more than one 0.01 pole can; 0.99^n remains.
+  float previous = engine.smoothedParam(2);
+  for (int block = 2; block <= 2000; ++block) {
+    engine.process(nullptr, out, step, 24);
+    const float v = engine.smoothedParam(2);
+    INFO("block " << block << " value " << v);
+    REQUIRE(v >= previous);
+    REQUIRE(v - previous <= 0.01f);
+    if (block == 100) {
+      REQUIRE_THAT(v, Catch::Matchers::WithinAbs(1.0 - std::pow(0.99, 100), 1e-4));
+    }
+    previous = v;
+  }
+  REQUIRE(previous > 0.9999f);
+
+  // A partial block advances the filter by its share of a native block.
+  RingsEngine c;
+  c.prepare(RingsEngine::kNativeRate, 256);
+  c.process(nullptr, out, p, 24);
+  for (int i = 0; i < 3; ++i) c.process(nullptr, out, step, 8);
+  REQUIRE_THAT(c.smoothedParam(2), Catch::Matchers::WithinAbs(0.01, 1e-6));
+
+  // reset() snaps again on the next render.
+  engine.reset();
+  engine.process(nullptr, out, step, 24);
+  REQUIRE(engine.smoothedParam(2) == 1.0f);
+  REQUIRE(engine.smoothedParam(3) == 0.0f);
+}
+
+TEST_CASE("Resonator smoothing is independent of host block size") {
+  // One call of several native blocks renders exactly what native-block calls render.
+  ParamValues p = defaults();
+  ParamValues step = p;
+  step.p[1] = 0.9f;
+  step.p[2] = 0.1f;
+  step.p[3] = 0.8f;
+  step.p[6] = 0.7f;
+  RingsEngine a, b;
+  for (auto* e : {&a, &b}) {
+    e->prepare(RingsEngine::kNativeRate, 4800);
+    e->noteOn(57.0f, 1.0f);
+  }
+  std::vector<float> al(4800), ar(4800), bl(4800), br(4800);
+  float* outA[2] = {al.data(), ar.data()};
+  a.process(nullptr, outA, p, 240);
+  float* outA2[2] = {al.data() + 240, ar.data() + 240};
+  a.process(nullptr, outA2, step, 4560);
+  for (int done = 0; done < 4800; done += 24) {
+    float* outB[2] = {bl.data() + done, br.data() + done};
+    b.process(nullptr, outB, done < 240 ? p : step, 24);
+  }
+  REQUIRE(al == bl);
+  REQUIRE(ar == br);
+  REQUIRE(a.smoothedParam(2) == b.smoothedParam(2));
+}
+
+TEST_CASE("Resonator processing with moving pots does not allocate") {
+  RingsEngine engine;
+  engine.prepare(RingsEngine::kNativeRate, 256);
+  std::vector<float> l(256), r(256);
+  float* out[2] = {l.data(), r.data()};
+  ParamValues p = defaults();
+  engine.noteOn(60.0f, 1.0f);
+  engine.process(nullptr, out, p, 256);
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int block = 0; block < 100; ++block) {
+      p.p[1 + block % 4] = float(block % 7) / 6.0f;
+      p.p[6] = float(block % 5) / 4.0f;
+      if (block == 50) engine.reset();
+      engine.process(nullptr, out, p, 256);
+    }
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
+}

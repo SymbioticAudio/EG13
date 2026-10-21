@@ -45,7 +45,28 @@ const EngineParamInfo kParams[8] = {
 
 const EngineInfo kInfo = {"plaits", "Macro Oscillator", 8, kParams, false};
 
+// Firmware pot smoothing, per 12-sample block: Ui::Poll runs once per audio block
+// (plaits.cc:81, dsp.h:51 kBlockSize = 12) and each PotController applies
+// ONE_POLE(value_, pot, lp_coefficient) (pot_controller.h:106), coefficients from
+// ui.cc:72-79. Decay and LPG Colour are the hidden parameters of the Morph and Timbre pots:
+// ProcessUIRate copies the same filtered value_ to them (pot_controller.h:127-128), every
+// fourth Poll (ui.cc:477-479); that 4-block hold is not modelled. Model is stepped. Aux Mix
+// has no firmware control (OUT and AUX are separate jacks) and is not smoothed. The played
+// note is not touched: it reaches Plaits as patch.note, outside the V/OCT path.
+const float kPotLp[8] = {
+    1.0f,    // Model: stepped
+    0.005f,  // Harmonics  ui.cc:74
+    0.01f,   // Timbre     ui.cc:76-77
+    0.01f,   // Morph      ui.cc:78-79
+    0.005f,  // Frequency  ui.cc:72-73 (transposition_)
+    0.01f,   // Decay      Morph pot's hidden parameter
+    0.01f,   // LPG Colour Timbre pot's hidden parameter
+    1.0f,    // Aux Mix: EG13-only
+};
+
 }  // namespace
+
+static_assert(PlaitsEngine::kNativeBlock == int(plaits::kBlockSize), "Plaits native block");
 
 struct PlaitsEngine::Impl {
   plaits::Voice voice;
@@ -53,7 +74,10 @@ struct PlaitsEngine::Impl {
   plaits::Voice::Frame frames[plaits::kBlockSize];
 };
 
-PlaitsEngine::PlaitsEngine() : impl_(std::make_unique<Impl>()) { reset(); }
+PlaitsEngine::PlaitsEngine()
+    : impl_(std::make_unique<Impl>()), pots_(kPotLp, kInfo.paramCount, kNativeBlock) {
+  reset();
+}
 
 PlaitsEngine::~PlaitsEngine() = default;
 
@@ -70,6 +94,10 @@ float PlaitsEngine::frequencyOffset(float normalized) {
   return (clamp01(normalized) - 0.5f) * 24.0f;
 }
 
+float PlaitsEngine::smoothedParam(int index) const {
+  return index >= 0 && index < kInfo.paramCount ? pots_[index] : 0.0f;
+}
+
 void PlaitsEngine::prepare(double hostRate, int) {
   pitchOffset_ = float(12.0 * std::log2(kNativeRate / hostRate));
   reset();
@@ -81,6 +109,7 @@ void PlaitsEngine::reset() {
   gate_ = false;
   retrigger_ = false;
   pos_ = plaits::kBlockSize;
+  pots_.reset();
 }
 
 void PlaitsEngine::noteOn(float note, float velocity) {
@@ -93,14 +122,15 @@ void PlaitsEngine::noteOn(float note, float velocity) {
 void PlaitsEngine::noteOff() { gate_ = false; }
 
 void PlaitsEngine::renderBlock(const ParamValues& p) {
+  pots_.update(p, kNativeBlock);
   plaits::Patch patch = {};
-  patch.note = note_ + frequencyOffset(p.p[4]) + pitchOffset_;
-  patch.harmonics = clamp01(p.p[1]);
-  patch.timbre = clamp01(p.p[2]);
-  patch.morph = clamp01(p.p[3]);
+  patch.note = note_ + frequencyOffset(pots_[4]) + pitchOffset_;
+  patch.harmonics = pots_[1];
+  patch.timbre = pots_[2];
+  patch.morph = pots_[3];
   patch.engine = modelIndex(p.p[0]);
-  patch.decay = clamp01(p.p[5]);
-  patch.lpg_colour = clamp01(p.p[6]);
+  patch.decay = pots_[5];
+  patch.lpg_colour = pots_[6];
 
   plaits::Modulations mods = {};
   mods.trigger_patched = true;

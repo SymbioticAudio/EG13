@@ -88,11 +88,9 @@ const Control kControls[16] = {
 constexpr int kFirstSmoothed = 1;
 constexpr int kLastSmoothed = 14;
 
-// The per-block coefficient for a block of `count` native samples.
-float blockCoefficient(float perBlock, int count) {
-  if (count == ElementsEngine::kNativeBlock) return perBlock;
-  return 1.0f - std::pow(1.0f - perBlock, float(count) / float(ElementsEngine::kNativeBlock));
-}
+// The general pot low-pass on P2..P15; Model and Ext In are stepped.
+const float kPotLps[16] = {1.0f,   kPotLp, kPotLp, kPotLp, kPotLp, kPotLp, kPotLp, kPotLp,
+                           kPotLp, kPotLp, kPotLp, kPotLp, kPotLp, kPotLp, kPotLp, 1.0f};
 
 }  // namespace
 
@@ -105,7 +103,10 @@ struct ElementsEngine::Impl {
   float aux[kNativeBlock];
 };
 
-ElementsEngine::ElementsEngine() : impl_(std::make_unique<Impl>()) { reset(); }
+ElementsEngine::ElementsEngine()
+    : impl_(std::make_unique<Impl>()), pots_(kPotLps, kInfo.paramCount, kNativeBlock) {
+  reset();
+}
 
 ElementsEngine::~ElementsEngine() = default;
 
@@ -128,24 +129,17 @@ float ElementsEngine::smoothedParam(int index) const {
 }
 
 void ElementsEngine::smooth(const ParamValues& p, int count) {
-  if (snap_) {
-    for (int i = kFirstSmoothed; i <= kLastSmoothed; ++i) {
-      potLp_[i] = clamp01(p.p[i]);
-      smoothed_[i] = std::min(potLp_[i], kControls[i].max);
-    }
-    snap_ = false;
-    return;
-  }
-  const float potLp = blockCoefficient(kPotLp, count);
+  pots_.update(p, count);  // snaps itself on the first update after reset
   for (int i = kFirstSmoothed; i <= kLastSmoothed; ++i) {
-    potLp_[i] += potLp * (clamp01(p.p[i]) - potLp_[i]);
-    const float value = std::min(potLp_[i], kControls[i].max);
-    if (kControls[i].bindLp < 1.0f) {
-      smoothed_[i] += blockCoefficient(kControls[i].bindLp, count) * (value - smoothed_[i]);
+    const float value = std::min(pots_[i], kControls[i].max);
+    if (!snap_ && kControls[i].bindLp < 1.0f) {
+      smoothed_[i] +=
+          blockCoefficient(kControls[i].bindLp, count, kNativeBlock) * (value - smoothed_[i]);
     } else {
       smoothed_[i] = value;
     }
   }
+  snap_ = false;
 }
 
 void ElementsEngine::prepare(double hostRate, int) {
@@ -167,6 +161,7 @@ void ElementsEngine::reset() {
   deliveredGate_ = false;
   pendingStrike_ = false;
   model_ = -1;
+  pots_.reset();
   snap_ = true;
 }
 

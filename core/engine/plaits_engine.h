@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <memory>
 
+#include "engine/pot_smoother.h"
 #include "engine/voice_engine.h"
 
 namespace eg13 {
@@ -13,6 +14,7 @@ namespace eg13 {
 class PlaitsEngine final : public VoiceEngine {
  public:
   static constexpr int kNumModels = 24;
+  static constexpr int kNativeBlock = 12;  // plaits::kBlockSize
   static constexpr double kNativeRate = 47872.34;  // plaits::kCorrectedSampleRate: the module's real clock, which Plaits' DSP is tuned for
 
   PlaitsEngine();
@@ -30,6 +32,8 @@ class PlaitsEngine final : public VoiceEngine {
   static const EngineInfo& staticInfo();
   static int modelIndex(float normalized);
   static float frequencyOffset(float normalized);
+  // Test hook: the smoothed 0..1 value of P1..P8 (index 0..7) last given to the voice.
+  float smoothedParam(int index) const;
 
  private:
   struct Impl;
@@ -42,6 +46,7 @@ class PlaitsEngine final : public VoiceEngine {
   bool gate_ = false;
   bool retrigger_ = false;
   size_t pos_ = 0;
+  PotSmoother pots_;  // Ui::Poll pot smoothing, once per native block
 };
 
 }  // namespace eg13
