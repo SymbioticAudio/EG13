@@ -63,3 +63,12 @@ Controls: **Frequency** (20 Hz to 20 kHz, default fully open), **Resonance** (de
 - Ripples' FM knob and its CV and Gain inputs are not controls here: modulation comes from EG13's modulation matrix (M4), and the LP4 VCA output is LP4 with a fixed level.
 - Stereo: while the voice is stereo, a second filter runs for the right channel, starting from the left filter's exact state (no jump).
 - EG13 builds the Analog Filter with the same fast-math settings as VCV Rack, so it can differ from a strict build by less than −90 dBFS.
+
+### Classic Filters (sst-filters, the filters of the Surge synthesizer)
+
+Controls: **Cutoff** (20 Hz to 20 kHz, default fully open), **Resonance**, **Type** and **Character**.
+
+- **Type** chooses one of 205 filters: low-, high-, band-pass and notch filters of 12 and 24 dB, ladder models (Legacy, Vintage, Diode), OB-Xd and K35 models, Cutoff Warp and Resonance Warp, the Xpander's pole mixes, Tri-pole, the Fast SVF's shelves and bell, combs, and Sample & Hold. The default is *Vember Classic Lowpass 12 dB Standard*. The list keeps its order in every future version, so a saved type always comes back.
+- **Character** is the extra control some types have: OB-Xd 4-pole *Morph*, K35 *Continuous* saturation, the Fast SVF shelves' and bell's gain, and the comb filters' variable mix. Other types ignore it.
+- Changing Type takes effect at once and restarts the filter, as switching a filter type on hardware does; it can click on a sounding note.
+- Stereo: left and right always run together inside one filter, at no extra cost.
