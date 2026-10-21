@@ -31,6 +31,8 @@
 - Alignment: every engine in a slot is padded to that slot's latency (its largest input-to-output latency). Voice latency = Source latency + Filter slot latency + Shaper slot latency. Switching Filter or Shaper type never moves the output in time, and the plugin reports the total.
 - Signal levels for the VCV-derived adapters (Analog Filter, EQ, Ring Mod / Vocoder inputs): EG13's ±1.0 is ±5 V, VCV's audio level.
 - Every adapter memsets an upstream object before `Init()` when upstream leaves members uninitialised (Warps `Modulator`, as `AudibleInstruments/src/Warps.cpp:61-62` does).
+- Every user-facing behaviour choice is documented in docs/manual in the same task that implements it.
+- The two VCV-model adapters (`core/engine/ripples_engine.cpp`, `core/engine/shelves_engine.cpp`) are compiled with Rack's own optimisation flags, `-O3 -funsafe-math-optimizations` (`VCVRack/Rack compile.mk:17`, `FLAGS += -O3 -funsafe-math-optimizations -fno-omit-frame-pointer`); their fidelity tests compare with the bare model, built without that flag in the test TU, to a tolerance of 1e-5 × max(1, |expected|) (owner, 2026-10-20). Every other engine stays bit-exact.
 - Commits are authored by `Westlee Latta <symbioticaudio@proton.me>` (use `git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit ...`) and end with:
   ```
   Co-Authored-By: <the model that wrote the change> <noreply@anthropic.com>
@@ -44,35 +46,41 @@
   - Classic Filters (sst-filters `filters++` API at `last_cpp_17`): cutoff, resonance, one model + configuration from 205 (`Filter::availableModels()` × `availableModelConfigurations()`), and at most one extra coefficient (`Filter::coefficientsExtraCount` ≤ 1: OB-Xd Morph, K35 Continuous saturation, Fast SVF shelf/bell gain, Comb variable mix). EG13: **Cutoff, Resonance, Type, Character**: 4.
   - State Variable Filter (stmlib `Svf`): **Cutoff, Resonance, Mode (LP / BP / HP)**: 3.
   - Filter slot: **P1–P4** (the spec's count holds).
-  - Ring Mod / Vocoder (Warps, `AudibleInstruments/src/Warps.cpp:6-27`, `warps/cv_scaler.cc:123-174`, `warps/ui.cc` easter egg): Algorithm (continuous over nine algorithms, `warps/dsp/parameters.h:43-53`), Timbre, Level 1, Level 2, internal oscillator shape button, the frequency-shifter easter egg. EG13 adds the spec's modulator selector and the oscillator's pitch offset: **Algorithm, Timbre, Carrier Level, Mod Level, Modulator, Osc Pitch, Osc Shape, Mode (Modulation / Frequency shifter)**: 8.
+  - Ring Mod / Vocoder (Warps, `AudibleInstruments/src/Warps.cpp:6-27`, `warps/cv_scaler.cc:123-174`, `warps/ui.cc` easter egg): Algorithm (continuous over nine algorithms, `warps/dsp/parameters.h:43-53`), Timbre, Level 1, Level 2, the internal-oscillator button (off, or one of three oscillator modes: `carrier_shape` 0..3, `Warps.cpp:68-69`), the frequency-shifter easter egg. EG13 replaces the patch cables with two selectors and adds the oscillator's pitch offset: **Algorithm, Timbre, Carrier Level, Mod Level, Carrier (Internal Osc / Voice / Source AUX / Input / Other part), Modulator (Voice / Source AUX / Input / Other part), Osc Pitch, Osc Shape (the button's three modes), Mode (Modulation / Frequency shifter)**: 9.
   - EQ (Shelves, `AudibleInstruments/src/Shelves.cpp:16-53`): ten knobs (high shelf freq/gain, two parametric freq/gain/Q, low shelf freq/gain), the −6 dB input pre-gain option (`Shelves.cpp:61,107,123`), six filter-tap outputs (P1/P2 HP/BP/LP). EG13: the ten knobs, **Input Pad**, **Output (EQ or one of the six taps)**: 12.
   - Shaper slot: **P1–P12** (raised from 6; new IDs `id(part, Slot::Shaper, 7..12)`, nothing renumbered).
 - **Knob mappings** follow the VCV ports (spec §3.3): Ripples `freq_knob = p` (20 Hz·1000^p, `Ripples.cpp:36,75`), `res_knob = p`; Shelves `freq_knob = p`, `gain_knob = 2p − 1` (±18 dB, `Shelves.cpp:130-133`), `q_knob = p` (Q 0.5..40, `Shelves.cpp:135-136`); Warps `modulation_algorithm = p` (`Warps.cpp:80`), `modulation_parameter = p` (`:91`), `channel_drive[i] = p` (`:78-79`), easter-egg `frequency_shift_pot = p` and `phase_shift = algorithm` (`:93-95`). Classic Filters and the SVF have no VCV port: their Cutoff uses the same 20 Hz·1000^p curve as the Analog Filter so one modulation amount means the same sweep in every filter; the SVF's Q is 0.5·80^p (Shelves' Q range, `shelves.hpp:31-32`).
-- **Defaults** (cited in each engine): VCV defaults except where noted. Analog Filter fully open (`Ripples.cpp:36`), resonance 0. Classic Filters and SVF Cutoff fully open too, so choosing a filter does not jump the level. SVF Resonance defaults to Q = 0.707 (flat passband). Ring Mod / Vocoder Algorithm defaults to the analog ring modulator (2/8) rather than VCV's crossfade (`Warps.cpp:43`): the engine is named Ring Mod. Levels default to 1.0 as in VCV (`Warps.cpp:46-47`), which drives Warps' saturating amplifier hard.
+- **Defaults** (cited in each engine): VCV defaults except where noted. Analog Filter fully open (`Ripples.cpp:36`), resonance 0. Classic Filters and SVF Cutoff fully open too, so choosing a filter does not jump the level. SVF Resonance defaults to Q = 0.707 (flat passband). Ring Mod / Vocoder Algorithm defaults to the analog ring modulator (2/8) rather than VCV's crossfade (`Warps.cpp:43`): the engine is named Ring Mod. Carrier = Internal Osc with Modulator = Voice (owner, 2026-10-20, provisional: the common hardware patch, a cable into MODULATOR with the internal oscillator on). These defaults live only in the engine's `EngineInfo` parameter defaults; changing one later is a one-line edit that affects new patches only. Once M7's factory presets exist, such a change would need those presets re-saved, not a state migration. Carrier Level and Mod Level default to 0.47 rather than VCV's 1.0 (`Warps.cpp:46-47`), owner 2026-10-20: measured during planning, 0.47 is where Warps' `SaturatingAmplifier` (`warps/dsp/modulator.h:53-115`) passes a full-scale EG13 voice (a 1 kHz sine at ±1.0, i.e. ±10240 counts) at unity gain (+0.03 dB, interpolated between +0.22 dB at 0.48 and −0.17 dB at 0.46) with 0.06 % THD; at 1.0 it adds +12 dB and 38 % THD. The ranges are unchanged, so turning the levels up still gives the saturated character. Task 8 pins the measurement in a test.
 - **Plugin defaults:** the instrument starts with Filter Off and Shaper Off. EG13 FX's Part A starts with Filter = Analog Filter (spec §6's FX init patch; M2 deferred its filter to M3). Modulation of Filter P1 and the instrument init patch arrive with the matrix in M4. Documents older than schema 4 load with Filter and Shaper Off, so M2 projects keep their sound.
 - **Stereo when needed (§5.1), exactly:** each `ProcessorSlot` checks its input every call (≤ 16 samples). It is stereo from the first block in which any L sample differs from its R sample, and mono again after 50 ms (`kStereoHoldSeconds`) in which L == R exactly (silence counts as mono). The engine's right-channel instance runs only while stereo. When stereo starts, an engine whose state can be copied (Analog Filter, SVF, EQ) gives the right instance the left instance's state, so the right channel continues seamlessly; Warps (self-referencing buffers, cannot be copied) resets its right instance and fades its output in from the left output over 10 ms (`kStereoFadeSeconds`). When stereo stops, the right output fades back to the left output over 10 ms, then the right instance stops. While mono, the right output is the left output. Classic Filters runs L and R as two lanes of one SIMD register: the right lane costs nothing extra and, fed identical samples while mono, holds exactly the left lane's state, so it needs no transition.
-- **Ring Mod / Vocoder routing:** carrier = the voice signal into Warps' carrier input (channel 1); the modulator goes into channel 2. The modulator is mono: Source AUX (Plaits AUX, Rings' even output; other sources their main output summed to mono), Input (the part's Input as routed by its Input source setting, summed to mono), Other part (the other part's output, summed to mono; A→B without delay, B→A through the existing 64-sample feed, both soft-limited as in M2), or the internal oscillator: an upstream `warps::Oscillator` (sine / triangle / saw / pulse / noise, `warps/dsp/parameters.h:35-41`) at the voice pitch plus Osc Pitch (±24 st), fed in as if a ±5 V oscillator were patched. Frequency-shifter mode is Warps' easter egg (`warps/dsp/modulator.cc:69-186`) with its own quadrature sine; there the voice goes into channel 2, the input the easter egg shifts (`modulator.cc:140-145`), and Algorithm sets the shift, Timbre the up/down sideband mix, Carrier Level the feedback and Mod Level the dry/wet, as on the module.
+- **Ring Mod / Vocoder routing, as on the module (owner, 2026-10-20, provisional; to be revisited during patching).** Warps has two inputs, CARRIER (channel 1) and MODULATOR (channel 2); `Parameters::carrier_shape` is the internal-oscillator button: 0 takes the carrier from the CARRIER jack, 1..3 replace it with the internal oscillator (`modulator.cc:209-286`), whose waveform Warps picks per algorithm region from the mode: cross-modulation sine / triangle / saw, vocoder saw / pulse / noise (`modulator.cc:233-237`), at `Parameters::note` (`modulator.cc:246,256,267,273`; the module derives it from the LEVEL 1 pot and V/OCT, `cv_scaler.cc:149-173`). With the oscillator on, Warps skips the carrier channel's amplifier, so LEVEL 1 has no effect (`modulator.cc:215`), and reads the CARRIER jack as the oscillator's FM input (`modulator.cc:228-231`). EG13 replaces the cables with two selectors:
+  - **Carrier:** *Internal Osc* sets `carrier_shape = 1 + Osc Shape` with `note` = the voice's pitch + Osc Pitch (±24 st; at 96 kHz, Warps' own rate, no correction, where VCV adds one at other rates, `Warps.cpp:97`) and leaves CARRIER silent (it would only be the oscillator's FM; v1 has no audio-rate FM, spec §6). *Voice*, *Source AUX*, *Input* and *Other part* set `carrier_shape = 0` and feed that signal into CARRIER. Osc Pitch and Osc Shape only matter with Internal Osc (documented in the manual).
+  - **Modulator** (MODULATOR): *Voice*, *Source AUX*, *Input*, *Other part*. Voice stays the default whatever the Carrier; Carrier = Voice with Modulator = Voice is self-modulation, allowed and harmless.
+  - The signals: *Voice* is what reaches the Shaper from this voice's Source → Filter, per channel (each stereo instance gets its own channel). *Source AUX* is Plaits' AUX or Rings' even output (other sources their main output), *Input* the part's Input as its Input source routes it (§2.3), *Other part* the other part's post-FX output (A→B without delay, B→A through the 64-sample feed, soft-limited as in M2); these three are mono (L+R)/2 and reach the engine as side inputs `in[2]` (CARRIER) and `in[3]` (MODULATOR), through the wrapper's input conversion, from per-voice buffers, without allocation. An absent Input or Other part reads as silence.
+  - Both selectors are append-only option lists read in 8 fixed steps, and a test pins their order, so options can be added later without changing what saved projects mean.
+  - **Mode = Frequency shifter** is the easter egg (`modulator.cc:69-186`), which uses the same two channels and `carrier_shape`: with Internal Osc, its quadrature oscillator shifts channel 2 (+ channel 1, silent here) by the frequency Algorithm sets (`modulator.cc:78-98,140-145`): the classic frequency shifter of the Modulator signal (the voice by default); with any other Carrier, the CARRIER signal is split into I/Q with Algorithm as the phase shift and single-sideband multiplied with the Modulator (`modulator.cc:99-119`). Timbre is the up/down sideband mix, Carrier Level the feedback and Mod Level the dry/wet, as on the module.
+  - Warps' output is read back with the input's scaling (±10240 counts = EG13 ±1.0), so a unity path through Warps is unity in EG13.
 - **Algorithm is continuous**, as Warps' big knob (adjacent algorithms crossfade, `modulator.cc:292-311`); its text names the algorithm or the pair it is between. The spec's "mode menu" becomes the card's detent list in M6.
 - **Analog Filter polarity:** Ripples' output amplifiers invert (`ripples.hpp:95-97`); the adapter restores the input's polarity so Dry and processed signals add rather than cancel.
 - **Engine change while sounding:** the slot keeps the old engine running with its last parameters, holds it alone for the slot latency (the new engine's first output arrives then) and crossfades linearly to the new engine over 10 ms (`kSlotFadeSeconds`). Changing Classic Filters' Type or a mode/output selector inside one engine is immediate, as on the hardware.
 - **Voice freeing:** spec §5.2's silence rule is measured at the Shaper input (plus the Shaper slot latency to flush it), because Warps' internal oscillator keeps the Shaper output alive after the note has died (crossfade/fold algorithms pass the modulator). M4's Amp will gate the output.
-- **Latency:** the Shaper slot's latency is the Warps wrapper's input path (≈ 270 samples, 5.6 ms at 48 kHz, measured during planning with r8brain 7.6) plus Warps' 60-sample block FIFO (30 samples at 48 kHz); Filter slot latency is 0. So the instrument reports ≈ 521 samples (10.9 ms) and EG13 FX ≈ 791 samples (16.5 ms) at 48 kHz (M2: 4.6 / 10.2 ms). Planning also confirmed M2's wrapper reports its input-path latency to within one sample of the measured delay for a 96 kHz, 60-sample engine. Task 15 measures and documents the real figures.
-- **CPU (measured during planning on an M1, -O3, per instance):** Ripples model 1.31 % of a core at 48 kHz, Shelves 1.07 %, Warps cross-modulation 0.45 % and vocoder 1.09 % at 96 kHz, sst Vintage Ladder stereo 1.37 %. A 2 × 8 stereo chain of Modal Synth → Analog Filter → Vocoder therefore costs about 90 % of a core, above the spec's 50 % budget. Task 15 measures the full Source × Filter × Shaper matrix; see Open owner decisions.
+- **Latency:** the Shaper slot's latency is the Warps wrapper's input path (≈ 270 samples, 5.6 ms at 48 kHz, measured during planning with r8brain 7.6) plus Warps' 60-sample block FIFO (30 samples at 48 kHz); Filter slot latency is 0. So the instrument reports ≈ 521 samples (10.9 ms) and EG13 FX ≈ 791 samples (16.5 ms) at 48 kHz (M2: 4.6 / 10.2 ms). Planning also confirmed M2's wrapper reports its input-path latency to within one sample of the measured delay for a 96 kHz, 60-sample engine. Owner decision (2026-10-20): this constant slot latency is accepted for v1 and documented in the README, the manual and spec §3.2. Task 15 measures and documents the real figures.
+- **CPU (measured during planning on an M1, -O3, per instance):** Ripples model 1.31 % of a core at 48 kHz, Shelves 1.07 %, Warps cross-modulation 0.45 % and vocoder 1.09 % at 96 kHz, sst Vintage Ladder stereo 1.37 %. A 2 × 8 stereo chain of Modal Synth → Analog Filter → Vocoder therefore costs about 90 % of a core, above the spec's 50 % budget. Owner decision (2026-10-20): the 50 % budget applies to chains whose Source is mono; the stereo worst case is measured and documented, not held to the budget. The VCV models are built with Rack's flags (−30 % measured, see Global Constraints). Task 15 measures the full matrix in both cases.
 
-## Open owner decisions
+## Owner decisions (2026-10-20)
 
-These are product choices this plan cannot make. The plan implements the recommendation; each is a small, local change if the owner decides otherwise.
+Taken on the first draft of this plan; Task 1 records them in the spec and the manual.
 
-1. **CPU budget for the stereo worst case.** Spec §10's 50 % holds for mono chains but not for 16 stereo voices of Modal Synth → Analog Filter → Vocoder (≈ 90 %). Options: (a) keep fidelity and state the budget for mono-source chains, documenting the stereo worst case; (b) compile the two VCV models with Rack's own `-O3 -funsafe-math-optimizations` (`Rack/compile.mk:17`; measured −30 %) and drop their bit-exact tests to a 1e-5 tolerance; (c) run the Analog Filter and EQ mono-summed. **Recommendation: (a), and (b) if the owner wants the headroom.** Task 15 reports the matrix and REQUIREs the budget; if it fails it reports BLOCKED with the table.
-2. **Latency cost of Warps' 96 kHz rate.** Constant slot latency means every patch pays the Shaper slot's ≈ 6 ms even with Shaper Off. Options: (a) accept; (b) give the 96 kHz ↔ 48 kHz conversion a short integer-ratio path later. **Recommendation: (a) for v1.**
-3. **What the internal oscillator modulates.** The spec says carrier = voice and lists the internal oscillator as a modulator, which this plan implements. On the module the internal oscillator replaces the *carrier* (`modulator.cc:227-286`), so the classic "vocode an oscillator with your voice" patch needs the opposite routing; with the spec's routing the vocoder with the internal oscillator only tilts the voice's spectrum. Ring mod, fold and the other cross-modulations are unaffected. **Recommendation: keep the spec's routing; vocoding uses Input or Other part, as in spec §2.3's speech-vocodes-pad example.**
-4. **Warps Level defaults.** VCV's default 1.0 drives the saturating amplifier to a near-square carrier. **Recommendation: keep VCV's default for fidelity; revisit with the M7 factory presets.**
+1. **CPU budget:** 50 % of one M1 core for 2 × 8 voices of the heaviest chain *with a mono Source*. The stereo worst case (≈ 90 % estimated before the flag change) is measured, printed and documented, not asserted. The Ripples and Shelves models are compiled with Rack's `-O3 -funsafe-math-optimizations`; their fidelity tests use a 1e-5 tolerance.
+2. **Latency:** the constant slot latency is accepted for v1: about 10.9 ms (instrument) and 16.5 ms (EG13 FX) at 48 kHz.
+3. **Warps routing (provisional; to be revisited during patching):** a Carrier selector (Internal Osc / Voice / Source AUX / Input / Other part) and a Modulator selector (Voice / Source AUX / Input / Other part); defaults Internal Osc and Voice. Both option lists are append-only and pinned by a test; the defaults live only in the engine's parameter defaults. Spec §4's Ring Mod / Vocoder row is rewritten accordingly in Task 1.
+4. **Warps levels:** both default to 0.47, the measured unity-gain, unsaturated point of Warps' amplifier; ranges unchanged.
 
 ## Review Focus
 
 1. **Changing Filter or Shaper type while notes sound or while the selector is automated:** no click, no timing shift, P values swap to the new engine's last settings and the host shows them. Pinned in Task 10 ("switching engines while sounding crossfades without a step") and Task 13 ("switching Filter type keeps the output aligned in time").
 2. **Sources that go stereo and back (Rings Spread, Modal Synth, stereo Audio Input) through every Filter and Shaper:** the stereo image passes through and the switch between one and two instances makes no jump. Pinned in Task 3 ("StereoLink start and stop are continuous"), Task 5 ("stereo starts without a jump"), Task 10 ("a real filter goes stereo and back without a jump").
-3. **Ring Mod / Vocoder modulator sources with nothing on them** (Input with no sidechain, Other part silent or in Single mode, Source AUX on an engine without AUX): silence or the documented fallback, never garbage or NaN. Pinned in Task 11 ("absent modulator sources give silence").
+3. **Ring Mod / Vocoder modulator sources with nothing on them** (Input with no sidechain, Other part silent or in Single mode, Source AUX on an engine without AUX), for either Warps input: silence or the documented fallback, never garbage or NaN. Pinned in Task 11 ("absent modulator sources give silence").
 4. **Old projects:** M2 (schema 3) and older instrument and FX projects open with Filter and Shaper Off and the same sound. Pinned in Task 14 ("Schema 3 projects load with Filter and Shaper Off and pass audio as before").
 5. **Host rates other than 48 kHz and odd host block sizes**, especially 96 kHz where Warps runs bypassed through its block FIFO: in tune, finite, aligned. Pinned in Task 8 ("through the wrapper at 44.1, 48 and 96 kHz with odd host blocks").
 
@@ -90,7 +98,7 @@ cmake/sst.cmake                           eg13_sst: sst-filters + sst-basic-bloc
 CMakeLists.txt                            include the two new cmake files
 core/CMakeLists.txt                       new sources; link eg13_vcv, eg13_sst
 core/engine/rack_shim/rack.hpp            minimal Rack SDK stand-in for the two VCV models
-core/engine/voice_engine.h                EngineInfo hasAux/usesSide/sideParam; SideSource; setStereo,
+core/engine/voice_engine.h                EngineInfo hasAux/sideInputs/sideSource; SideSource; setStereo,
                                           setAuxEnabled, nativeLatency
 core/engine/native_rate_wrapper.h|.cpp    up to 3 channels (side in, AUX out); engine latency
 core/engine/pot_smoother.h                + ParamRamp
@@ -118,14 +126,20 @@ tests/data/classic_filter_types.txt       frozen Classic Filters type order
 tests/test_*.cpp                          per task
 docs/superpowers/specs/2026-10-20-eg13-design.md   §1.2, §2.1, §7.1 amendments
 README.md                                 engines, latency, CPU, credits
+docs/manual/index.md                      the user manual: contents
+docs/manual/engines.md                    one section per engine
+docs/manual/parts-and-routing.md          parts, voices, slots, input source, engine switching, defaults
+docs/manual/latency.md                    latency figures and why
+docs/manual/smoothing.md                  how each engine smooths its controls
+docs/manual/limitations.md                known limitations
 ```
 
 ---
-### Task 1: Third-party DSP: submodules, build, Rack stand-in, spec amendment
+### Task 1: Third-party DSP, spec amendments and the user manual
 
 **Files:**
 - Modify: `.gitmodules` (via `git submodule add`), `CMakeLists.txt`, `cmake/eurorack.cmake`, `core/CMakeLists.txt`, `tests/CMakeLists.txt`, `docs/superpowers/specs/2026-10-20-eg13-design.md`, `README.md`
-- Create: `third_party/AudibleInstruments`, `third_party/sst-filters`, `third_party/sst-basic-blocks`, `third_party/simde` (submodules), `cmake/vcv.cmake`, `cmake/sst.cmake`, `core/engine/rack_shim/rack.hpp`
+- Create: `third_party/AudibleInstruments`, `third_party/sst-filters`, `third_party/sst-basic-blocks`, `third_party/simde` (submodules), `cmake/vcv.cmake`, `cmake/sst.cmake`, `core/engine/rack_shim/rack.hpp`, `docs/manual/index.md`, `docs/manual/engines.md`, `docs/manual/parts-and-routing.md`, `docs/manual/latency.md`, `docs/manual/smoothing.md`, `docs/manual/limitations.md`
 - Test: `tests/test_third_party_smoke.cpp`
 
 **Interfaces:**
@@ -154,7 +168,7 @@ Do not initialise AudibleInstruments' own nested `eurorack` submodule locally: E
 
 Verify the licences you are about to rely on and record nothing new if they match: `head -5 third_party/AudibleInstruments/LICENSE.md` (GPL-3.0-or-later for `src/`), `head -2 third_party/sst-filters/LICENSE` and `third_party/sst-basic-blocks/LICENSE` (GNU GPL v3), `head -3 third_party/simde/COPYING` (MIT). If any differs, stop and report BLOCKED.
 
-- [ ] **Step 2: Amend the spec (licences, layout, Shaper slot size)**
+- [ ] **Step 2: Amend the spec (licences, layout, Shaper slot size, latency, Ring Mod / Vocoder routing, CPU budget)**
 
 In `docs/superpowers/specs/2026-10-20-eg13-design.md`:
 
@@ -174,7 +188,35 @@ In `docs/superpowers/specs/2026-10-20-eg13-design.md`:
 §7.1, replace `- Shaper: type, P1–P6` with:
 
 ```markdown
-- Shaper: type, P1–P12 (raised from 6, M3 2026-10-20: the EQ needs its ten knobs, its −6 dB input pad and the choice among its six filter-tap outputs; Ring Mod / Vocoder uses eight)
+- Shaper: type, P1–P12 (raised from 6, M3 2026-10-20: the EQ needs its ten knobs, its −6 dB input pad and the choice among its six filter-tap outputs; Ring Mod / Vocoder uses nine)
+```
+
+§3.2, append to the paragraph that ends "so switching engines never shifts timing.":
+
+```markdown
+Owner decision (2026-10-20): this constant latency is accepted for v1. With the Ring Mod / Vocoder's 96 kHz engine in every Shaper slot it is about 10.9 ms (instrument) and 16.5 ms (EG13 FX) at 48 kHz.
+```
+
+§4, replace the Ring Mod / Vocoder row's Notes cell (from "Mode menu shows all Warps algorithms." to the end of the cell) with:
+
+```markdown
+All Warps algorithms (a continuous Algorithm knob, as on the module) plus its frequency shifter. Owner decision 2026-10-20 (provisional; to be revisited during patching): Warps' two inputs are chosen by two selectors. **Carrier**: Internal Osc (the module's internal oscillator, tracking the voice's pitch plus an offset, with its three oscillator modes) / Voice / Source AUX / Input / other part. **Modulator**: Voice / Source AUX / Input / other part. Defaults: Carrier Internal Osc, Modulator Voice. Option lists are append-only.
+```
+
+and replace the list under "Ring Mod / Vocoder modulator sources:" with (the heading line becomes "Ring Mod / Vocoder input sources (Carrier and Modulator):"):
+
+```markdown
+- **Voice:** the signal reaching the Shaper from this voice's Source → Filter (Carrier = Voice with Modulator = Voice is self-modulation, allowed).
+- **Internal Osc** (Carrier only): Warps' internal oscillator.
+- **Source AUX:** the Source's secondary output (Macro Oscillator AUX, Resonator even partials); other sources fall back to their main output.
+- **Input:** §2.3.
+- **Other part:** the other part's output, A→B with no delay, B→A through the fixed 64-sample feed, soft-limited (§2.3).
+```
+
+§10, replace the **CPU benchmark** bullet's budget sentence with:
+
+```markdown
+Budget (owner, 2026-10-20): 2 × 8 voices of the heaviest chain *with a mono Source* run below 50% of one M1 performance core at 48 kHz, 128-sample blocks; the stereo worst case is measured and documented, not held to the budget.
 ```
 
 - [ ] **Step 3: Write the failing smoke test (`tests/test_third_party_smoke.cpp`)**
@@ -576,17 +618,179 @@ In "Credits and licences", after the Eurorack DSP line, add:
 - simde (SIMD Everywhere): MIT licence.
 ```
 
+- [ ] **Step 8a: Start the user manual (`docs/manual/`)**
+
+The manual documents every user-facing behaviour choice in plain, musician-facing words (Global Constraints). This step backfills M2's choices (from the spec, the M2 plan and its ledger `.superpowers/sdd/2026-10-20-m2-sources/progress.md`); each later task adds its own. Create these six files with exactly this content.
+
+`docs/manual/index.md`:
+
+````markdown
+# EG13 manual
+
+EG13 is a two-part synthesizer (and, as EG13 FX, an audio effect) built from the open-source Eurorack firmware by Émilie Gillet. Each part plays up to eight voices. Each voice runs a **Source**, then a **Filter**, then a **Shaper**.
+
+This manual describes how EG13 behaves, including the choices it makes where the original modules leave things open.
+
+- [Engines](engines.md): every Source, Filter and Shaper engine and its controls.
+- [Parts and routing](parts-and-routing.md): parts, voices, the engine slots, the Input source, engine switching and the default patches.
+- [Latency](latency.md): how much delay EG13 reports and why.
+- [Smoothing](smoothing.md): how each engine reacts when you move a control.
+- [Known limitations](limitations.md).
+````
+
+`docs/manual/engines.md`:
+
+````markdown
+# Engines
+
+Every engine shows its controls as P1, P2, … in the host. A slot has more parameters than most engines use: the unused ones are named "(unused)" and show "-". The Source slot has 16 parameters.
+
+## Sources
+
+### Macro Oscillator (based on Plaits)
+
+Controls: **Model** (24 models, from Virtual analog to Hi-hat), **Harmonics**, **Timbre**, **Morph**, **Frequency** (±12 semitones), **Decay**, **LPG Colour** and **Aux Mix**.
+
+- Each note triggers the model and opens its low-pass gate with the note's velocity.
+- Decay and LPG Colour are the settings that Plaits keeps behind its Morph and Timbre knobs.
+- **Aux Mix** blends the module's AUX output into the main output (0 % = OUT only). The AUX output can also feed the Ring Mod / Vocoder's carrier or modulator (*Source AUX*), whatever Aux Mix is set to.
+- The output is mono.
+
+### Digital Oscillator (based on Braids)
+
+Controls: **Shape** (47 shapes), **Timbre**, **Color**, **Frequency** (±12 semitones), **Signature**, **Bit Depth** (2 to 16 bits) and **Sample Rate** (4 kHz to 96 kHz).
+
+- Braids' own envelope and quantizer are not exposed; EG13's envelopes replace them.
+- A level follows each note's gate and velocity, before the Signature waveshaper as on the module, so velocity also changes how hard the waveshaper is driven.
+- The output is mono.
+
+### Modal Synth (based on Elements)
+
+All 16 panel controls: **Model** (Modal, String, Strings), **Contour**, **Bow**, **Blow**, **Strike**, **Flow**, **Mallet**, **Bow Timbre**, **Blow Timbre**, **Strike Timbre**, **Geometry**, **Brightness**, **Damping**, **Position**, **Space** and **Ext In**.
+
+- **Ext In** routes the part's Input like the module's two EXT IN jacks: *Off*, *Blow*, *Strike* or *Both* (default *Strike*).
+  - *Blow* feeds the Input into the blow exciter. That exciter is gated by the exciter envelope, so with *Blow* the Input is silent until you hold a note, as on the hardware.
+  - *Strike* excites the resonator directly, with or without a note.
+- The output is stereo; Space sets its width.
+- Controls are smoothed as in the firmware, so some move slowly: Space and Position take about half a second to settle after a jump ([Smoothing](smoothing.md)).
+- In the instrument, sound excited by the Input arrives up to about 6 ms after the Dry signal ([Latency](latency.md)).
+
+### Resonator (based on Rings)
+
+Controls: **Model** (Modal, Sympathetic, String, FM Voice, Sympathetic Q, String + Reverb), **Structure**, **Brightness**, **Damping**, **Position**, **Exciter**, **Frequency** (±12 semitones), **Spread** and **Polyphony**.
+
+- **Exciter:** *Internal* (each note strums the resonator), *Input* (the part's Input excites it; notes only set the pitch), or *Both*.
+- **Polyphony** 1, 2 or 4: with more than one voice, earlier strums keep ringing at their own pitch while new ones start.
+- **Spread** 0 folds the module's odd and even outputs to mono, the way the module does when only OUT is patched. Spread 1 puts the odd output on the left and the even output on the right.
+- The played note reaches the Resonator as the module's V/OCT input against a tonic of C4 plus **Frequency**.
+  - With the Sympathetic String model at Structure below about 1/7, the strings drone at that tonic, as on the hardware with V/OCT patched.
+  - Small pitch bends pass through Rings' own note filter, so they are smoothed.
+  - Moving **Frequency** glides briefly rather than jumping.
+- The Resonator responds to the Input even before the first note (useful in EG13 FX).
+- Its even output can also feed the Ring Mod / Vocoder's carrier or modulator (*Source AUX*).
+
+### Audio Input
+
+Plays the part's Input through each voice: notes open a gate with **Attack** (1 ms to 2 s) and **Release** (5 ms to 5 s); **Gain** sets the level (−24 to +12 dB). The Input is stereo when the host sends stereo.
+````
+
+`docs/manual/parts-and-routing.md`:
+
+````markdown
+# Parts and routing
+
+## Parts and voices
+
+EG13 has two parts, A and B. Each plays up to eight voices. Each voice runs Source → Filter → Shaper. Every engine of every slot is ready in every voice, so changing an engine never loads anything.
+
+The master **Mode** decides which notes reach which part: *Single* (only A plays), *Layer* (both play every note), *Split* (A below the split note, B from it up) or *Multi* (each part on its own MIDI channel). In Single mode Part B is silent but still runs, so it can feed Part A (see below).
+
+## Engine switching
+
+Each engine remembers its own settings in each part. Switching Source from Macro Oscillator to Digital Oscillator and back brings back the Macro Oscillator exactly as you left it. The host's parameters change to the new engine's values; this change is not recorded as automation.
+
+Switching the **Source** engine is a hard cut: the old engine stops at once, and a held note restarts on the new engine after the plugin's latency.
+
+## Input and Input source
+
+The plugin's audio input (the instrument's sidechain, or EG13 FX's main input) is the **Input**. When nothing is connected, the Input is silent. Each part has an **Input source** setting:
+
+- *External*: the plugin's Input.
+- *Other part*: the other part's output.
+- *Both*: the two summed.
+
+Part A runs before Part B. B therefore hears A with no extra delay, while A hears B 64 samples later (or one host block, if the host's blocks are shorter). Every signal fed from one part to the other passes through a soft limiter: it is untouched up to full scale and never exceeds twice full scale, so a loop between the parts cannot run away.
+
+Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second output) or to *Other part only*. With *Other part only* the part is not heard; it only feeds the other part.
+
+**Dry** mixes the Input into the main output, delayed by the plugin's latency so it lines up with the processed sound.
+
+## Default patches
+
+- **EG13:** Part A with the Macro Oscillator.
+- **EG13 FX:**
+  - Part A plays the Input through **Audio Input**, with Trigger set to *Always on*, so it processes audio with no MIDI.
+  - Dry is 0 and the master level is 100 %.
+````
+
+`docs/manual/latency.md`:
+
+````markdown
+# Latency
+
+Each engine runs at its module's own sample rate and is converted to and from the host's rate. Conversion takes time, and EG13 reports that time to the host so the host can compensate.
+
+EG13 reports **one fixed latency**, and every engine is delayed to match the slowest one. That way changing engines never moves your sound in time. The cost is that a patch pays for the slowest engine even when that engine isn't in use.
+
+| Plugin | 44.1 kHz | 48 kHz | 96 kHz |
+|---|---|---|---|
+| EG13 (note onsets aligned) | 152 samples | 221 samples (4.6 ms) | 441 samples |
+| EG13 FX (input aligned with Dry) | 428 samples | 491 samples (10.2 ms) | 981 samples |
+
+The Modal Synth's 32 kHz engine sets these figures.
+
+- **EG13** aligns note onsets. Sound that the Input excites through the Modal Synth or Resonator therefore arrives up to about 6 ms after the Dry signal.
+- **EG13 FX** aligns the processed Input exactly with Dry.
+````
+
+`docs/manual/smoothing.md`:
+
+````markdown
+# Smoothing
+
+When a control jumps (an automation step, or a modulation change), each engine follows it the way its original module would: some smooth it, some don't.
+
+- **Macro Oscillator:** Harmonics, Timbre, Morph, Frequency, Decay and LPG Colour follow Plaits' knob filter: Timbre, Morph, Decay and LPG Colour settle in about 25 ms (time constant), Harmonics and Frequency in about 50 ms. Model switches at once. Aux Mix is EG13's own control; a 5 ms fade removes clicks.
+- **Digital Oscillator:** no smoothing, as on the hardware (Braids reads its knobs directly). Fast automation of Timbre or Color can therefore zipper.
+- **Modal Synth:** Elements' firmware filters. Most controls have a time constant of about 50 ms; Flow, Mallet and Geometry are a little slower, and Position and Space take about half a second to settle. Model and Ext In switch at once.
+- **Resonator:** Rings' knob filter (time constant about 50 ms) on Structure, Brightness, Damping, Position and Frequency (so Frequency glides briefly). Model, Exciter and Polyphony switch at once. Spread is EG13's own control; a 5 ms fade removes clicks.
+- **Audio Input:** Gain has a 1 ms fade. Attack and Release are times, so they need none.
+
+After a reset, or when a voice starts from silence, every control starts at its current value with no glide.
+````
+
+`docs/manual/limitations.md`:
+
+````markdown
+# Known limitations
+
+- **Levels and headroom:** EG13 does not yet manage gain between voices and parts. Sixteen loud voices can peak well above full scale (5 to 13 times, measured on chords). Keep the master level down until gain staging lands with the modulation milestone (M4).
+- **Resonator velocity:** a new note's velocity rescales the whole Resonator output, including voices still ringing, which can click (fixed in M4).
+- **Modal Synth input:** the firmware's noise gate on the external input is not ported.
+- **Part B in Single mode** still runs and uses CPU, so it can feed Part A.
+````
+
 - [ ] **Step 9: Commit**
 
 ```bash
 git add .gitmodules third_party/AudibleInstruments third_party/sst-filters third_party/sst-basic-blocks third_party/simde \
   CMakeLists.txt cmake/vcv.cmake cmake/sst.cmake cmake/eurorack.cmake core/CMakeLists.txt core/engine/rack_shim \
-  tests/CMakeLists.txt tests/test_third_party_smoke.cpp docs/superpowers/specs/2026-10-20-eg13-design.md README.md
-git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "Third-party DSP for M3: Warps, VCV Ripples/Shelves, sst-filters; Shaper P1-P12 in the spec"
+  tests/CMakeLists.txt tests/test_third_party_smoke.cpp docs/superpowers/specs/2026-10-20-eg13-design.md README.md docs/manual
+git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "Third-party DSP for M3; spec amendments; user manual with M2's behaviour"
 ```
 
 ---
-### Task 2: Engine plumbing: side input, AUX output, engine latency, stereo hook
+### Task 2: Engine plumbing: side inputs, AUX output, engine latency, stereo hook
 
 **Files:**
 - Modify: `core/engine/voice_engine.h`, `core/engine/native_rate_wrapper.h`, `core/engine/native_rate_wrapper.cpp`, `tests/alloc_counter.h`, `tests/alloc_counter.cpp`, `tests/test_engines.h`
@@ -595,12 +799,12 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 **Interfaces:**
 - Consumes: M2 `VoiceEngine`, `NativeRateWrapper`.
 - Produces:
-  - `EngineInfo` gains three members with defaults (existing initialisers stay valid): `bool hasAux = false;` (Source: `process()` also writes `out[2]` once `setAuxEnabled(true)`), `bool usesSide = false;` (Filter/Shaper: `process()` reads `in[2]`, a mono side signal that may be `nullptr`), `int sideParam = -1;` (P index of the side-source selector).
-  - `enum class SideSource : int { Internal = 0, SourceAux = 1, Input = 2, OtherPart = 3 };` and `SideSource sideSourceOf(float normalized)` (stepped quarters, NaN → Internal).
+  - `EngineInfo` gains three members with defaults (existing initialisers stay valid): `bool hasAux = false;` (Source: `process()` also writes `out[2]` once `setAuxEnabled(true)`), `int sideInputs = 0;` (Filter/Shaper: `process()` also reads `in[2] .. in[1 + sideInputs]`, mono side signals that may each be `nullptr`; at most 2), `SideSourceFn sideSource = nullptr;` (which signal each side input takes, from the engine's parameters).
+  - `enum class SideSource : int { Voice = 0, SourceAux = 1, Input = 2, OtherPart = 3, None = 4 };`, `using SideSourceFn = SideSource (*)(int input, const ParamValues& p);` and `SideSource sideSourceOf(float normalized)` (stepped quarters Voice / Source AUX / Input / Other part, NaN → Voice). `Voice` means the engine uses its own input (the voice) and `None` that it makes the signal itself; the Voice passes `nullptr` for both.
   - `VoiceEngine` gains `virtual void setStereo(bool) {}` (Filter/Shaper: run the right instance only while true), `virtual void setAuxEnabled(bool) {}` (main thread, before `prepare`), `virtual int nativeLatency() const { return 0; }` (engine-internal latency in native samples).
-  - `NativeRateWrapper::kMaxChannels = 3`. It converts `in[0..1]` plus `in[2]` when the engine `usesSide`, and `out[0..1]` plus `out[2]` when the engine `hasAux` and aux is enabled. Its latencies include `nativeLatency()` converted to host samples. `setStereo` and `setAuxEnabled` are forwarded to the engine.
+  - `NativeRateWrapper::kMaxChannels = 4`. It converts `in[0..1]` plus `in[2 .. 1 + sideInputs]`, and `out[0..1]` plus `out[2]` when the engine `hasAux` and aux is enabled. Its latencies include `nativeLatency()` converted to host samples. `setStereo` and `setAuxEnabled` are forwarded to the engine.
   - `test::ScopedAllocationCounter::bytes()` (bytes requested); aligned `operator new` is counted too.
-  - Test engines in `tests/test_engines.h`: `SideEchoEngine` (out L = side, out R = in L), `AuxImpulseEngine` (impulse into AUX at note-on), `FixedLatencyEngine` (delays in L by 60 native samples and reports `nativeLatency() == 60`), `StereoProbeEngine` (records the last `setStereo`).
+  - Test engines in `tests/test_engines.h`: `SideEchoEngine` (two side inputs, sources picked by P1 and P2 as `sideSourceOf` quarters; out L = side 1, out R = side 2), `AuxImpulseEngine` (impulse into AUX at note-on), `FixedLatencyEngine` (delays in L by 60 native samples and reports `nativeLatency() == 60`), `StereoProbeEngine` (records the last `setStereo`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -623,7 +827,8 @@ TEST_CASE("ScopedAllocationCounter counts bytes and aligned allocations") {
 Append to `tests/test_engines.h`, before the closing `}  // namespace eg13::test`:
 
 ```cpp
-// Uses input and a side input: out L = side (zeros when absent), out R = input L.
+// Uses input and two side inputs: out L = side 1, out R = side 2 (zeros when absent). P1 and P2
+// pick each side input's source (SideSource quarters).
 class SideEchoEngine final : public VoiceEngine {
  public:
   void prepare(double, int) override {}
@@ -634,11 +839,12 @@ class SideEchoEngine final : public VoiceEngine {
   void process(const float* const* in, float* const* out, const ParamValues&, int n) override {
     for (int i = 0; i < n; ++i) {
       out[0][i] = in && in[2] ? in[2][i] : 0.0f;
-      out[1][i] = in ? in[0][i] : 0.0f;
+      out[1][i] = in && in[3] ? in[3][i] : 0.0f;
     }
   }
+  static SideSource source(int input, const ParamValues& p) { return sideSourceOf(p.p[input]); }
   const EngineInfo& info() const override {
-    static const EngineInfo kInfo = {"sideecho", "Side echo", 0, nullptr, true, false, true, 0};
+    static const EngineInfo kInfo = {"sideecho", "Side echo", 0, nullptr, true, false, 2, source};
     return kInfo;
   }
 };
@@ -661,7 +867,7 @@ class AuxImpulseEngine final : public VoiceEngine {
     }
   }
   const EngineInfo& info() const override {
-    static const EngineInfo kInfo = {"auximpulse", "AUX impulse", 0, nullptr, false, true, false, -1};
+    static const EngineInfo kInfo = {"auximpulse", "AUX impulse", 0, nullptr, false, true, 0, nullptr};
     return kInfo;
   }
 
@@ -693,7 +899,7 @@ class FixedLatencyEngine final : public VoiceEngine {
     }
   }
   const EngineInfo& info() const override {
-    static const EngineInfo kInfo = {"fixedlatency", "Fixed latency", 0, nullptr, true, false, false, -1};
+    static const EngineInfo kInfo = {"fixedlatency", "Fixed latency", 0, nullptr, true, false, 0, nullptr};
     return kInfo;
   }
 
@@ -721,7 +927,7 @@ class StereoProbeEngine final : public VoiceEngine {
     }
   }
   const EngineInfo& info() const override {
-    static const EngineInfo kInfo = {"stereoprobe", "Stereo probe", 0, nullptr, true, false, false, -1};
+    static const EngineInfo kInfo = {"stereoprobe", "Stereo probe", 0, nullptr, true, false, 0, nullptr};
     return kInfo;
   }
   bool stereo() const { return stereo_; }
@@ -738,23 +944,25 @@ Append to `tests/test_native_rate_wrapper.cpp`:
 ```cpp
 namespace {
 
-struct ThreeChannels {
-  std::vector<float> c[3];
-  explicit ThreeChannels(size_t n) {
+struct Channels {
+  std::vector<float> c[4];
+  explicit Channels(size_t n) {
     for (auto& v : c) v.assign(n, 0.0f);
   }
 };
 
-// Runs a wrapper over three-channel input (nullable side) and three-channel output.
-ThreeChannels runThree(NativeRateWrapper& w, const ThreeChannels& in, bool side, int chunk) {
+// Runs a wrapper over four-channel input (L, R, side 1, side 2; the sides nullable) and
+// three-channel output (L, R, AUX).
+Channels runAll(NativeRateWrapper& w, const Channels& in, bool sides, int chunk) {
   const size_t n = in.c[0].size();
-  ThreeChannels out(n);
+  Channels out(n);
   const ParamValues p;
   for (size_t done = 0; done < n;) {
     const int count = int(std::min<size_t>(size_t(chunk), n - done));
-    const float* i3[3] = {in.c[0].data() + done, in.c[1].data() + done, side ? in.c[2].data() + done : nullptr};
+    const float* i4[4] = {in.c[0].data() + done, in.c[1].data() + done, sides ? in.c[2].data() + done : nullptr,
+                          sides ? in.c[3].data() + done : nullptr};
     float* o3[3] = {out.c[0].data() + done, out.c[1].data() + done, out.c[2].data() + done};
-    w.process(i3, o3, p, count);
+    w.process(i4, o3, p, count);
     done += size_t(count);
   }
   return out;
@@ -768,21 +976,21 @@ int peakAt(const std::vector<float>& x) {
 }  // namespace
 
 TEST_CASE("sideSourceOf steps in quarters") {
-  REQUIRE(sideSourceOf(0.0f) == SideSource::Internal);
+  REQUIRE(sideSourceOf(0.0f) == SideSource::Voice);
   REQUIRE(sideSourceOf(0.26f) == SideSource::SourceAux);
   REQUIRE(sideSourceOf(0.5f) == SideSource::Input);
   REQUIRE(sideSourceOf(1.0f) == SideSource::OtherPart);
-  REQUIRE(sideSourceOf(std::nanf("")) == SideSource::Internal);
+  REQUIRE(sideSourceOf(std::nanf("")) == SideSource::Voice);
 }
 
-TEST_CASE("The side input is converted with the same latency as the main input") {
+TEST_CASE("Side inputs are converted with the input path's latency") {
   for (double rate : {44100.0, 48000.0}) {
     NativeRateWrapper w(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
     w.prepare(rate, 256);
-    ThreeChannels in(8000);
-    in.c[0][3000] = 1.0f;  // main L -> out R
-    in.c[2][3000] = 1.0f;  // side -> out L
-    const auto out = runThree(w, in, true, 256);
+    Channels in(8000);
+    in.c[2][3000] = 1.0f;  // side 1 -> out L
+    in.c[3][3000] = 1.0f;  // side 2 -> out R
+    const auto out = runAll(w, in, true, 256);
     INFO("rate " << rate << " input latency " << w.inputLatencySamples());
     REQUIRE(peakAt(out.c[0]) == peakAt(out.c[1]));
     REQUIRE(std::abs(peakAt(out.c[0]) - 3000 - w.inputLatencySamples()) <= 4);
@@ -790,13 +998,15 @@ TEST_CASE("The side input is converted with the same latency as the main input")
   }
 }
 
-TEST_CASE("A missing side input reads as silence") {
+TEST_CASE("Missing side inputs read as silence") {
   NativeRateWrapper w(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
   w.prepare(48000.0, 256);
-  ThreeChannels in(4000);
+  Channels in(4000);
   for (auto& s : in.c[2]) s = 0.5f;
-  const auto out = runThree(w, in, false, 256);
+  for (auto& s : in.c[3]) s = 0.5f;
+  const auto out = runAll(w, in, false, 256);
   for (float s : out.c[0]) REQUIRE(s == 0.0f);
+  for (float s : out.c[1]) REQUIRE(s == 0.0f);
 }
 
 TEST_CASE("AUX is converted like the main outputs") {
@@ -809,9 +1019,9 @@ TEST_CASE("AUX is converted like the main outputs") {
     REQUIRE(aux.latencySamples() == main.latencySamples());
     aux.noteOn(60.0f, 1.0f);
     main.noteOn(60.0f, 1.0f);
-    ThreeChannels silent(2000);
-    const auto a = runThree(aux, silent, false, 100);
-    const auto m = runThree(main, silent, false, 100);
+    Channels silent(2000);
+    const auto a = runAll(aux, silent, false, 100);
+    const auto m = runAll(main, silent, false, 100);
     REQUIRE(peakAt(a.c[2]) == peakAt(m.c[0]));
     for (float s : a.c[0]) REQUIRE(s == 0.0f);
   }
@@ -822,9 +1032,9 @@ TEST_CASE("An engine's own latency is added to the wrapper's") {
   bypassed.prepare(96000.0, 256);
   REQUIRE(bypassed.inputLatencySamples() == 60);
   REQUIRE(bypassed.latencySamples() == 60);
-  ThreeChannels in(2000);
+  Channels in(2000);
   in.c[0][500] = 1.0f;
-  REQUIRE(peakAt(runThree(bypassed, in, false, 37).c[0]) == 560);
+  REQUIRE(peakAt(runAll(bypassed, in, false, 37).c[0]) == 560);
 
   NativeRateWrapper fixed(std::make_unique<test::FixedLatencyEngine>(), 96000.0, 60);
   NativeRateWrapper echo(std::make_unique<test::EchoEngine>(), 96000.0, 60);
@@ -844,12 +1054,12 @@ TEST_CASE("setStereo reaches the wrapped engine") {
   REQUIRE_FALSE(raw->stereo());
 }
 
-TEST_CASE("Three-channel conversion does not allocate") {
+TEST_CASE("Four-channel conversion does not allocate") {
   NativeRateWrapper w(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
   w.prepare(44100.0, 256);
   w.setExtraDelay(11);
   std::vector<float> a(256, 0.25f), l(256), r(256), x(256);
-  const float* in[3] = {a.data(), a.data(), a.data()};
+  const float* in[4] = {a.data(), a.data(), a.data(), a.data()};
   float* out[3] = {l.data(), r.data(), x.data()};
   const ParamValues p;
   w.process(in, out, p, 256);
@@ -858,6 +1068,7 @@ TEST_CASE("Three-channel conversion does not allocate") {
     test::ScopedAllocationCounter counter;
     for (int block = 0; block < 100; ++block) {
       in[2] = block % 3 ? a.data() : nullptr;
+      in[3] = block % 5 ? a.data() : nullptr;
       w.process(in, out, p, 256);
     }
     allocations = counter.count();
@@ -889,6 +1100,14 @@ struct ParamValues {
 
 using ParamFormatter = void (*)(float normalized, char* buf, size_t size);
 
+// Where a side input of a Filter/Shaper engine (the Ring Mod / Vocoder's CARRIER and MODULATOR)
+// takes its signal from. Voice: the engine uses its own input, the voice. None: the engine makes
+// the signal itself (Warps' internal oscillator). The Voice passes nullptr for both.
+enum class SideSource : int { Voice = 0, SourceAux = 1, Input = 2, OtherPart = 3, None = 4 };
+
+// For side input `input` (0-based), the source the engine's parameters select.
+using SideSourceFn = SideSource (*)(int input, const ParamValues& p);
+
 struct EngineParamInfo {
   const char* name;
   float defaultValue;
@@ -902,12 +1121,9 @@ struct EngineInfo {
   const EngineParamInfo* params;
   bool usesInput;           // the engine reads in[0], in[1] of process()
   bool hasAux = false;      // Source: also writes out[2], the module's AUX output, once enabled
-  bool usesSide = false;    // Filter/Shaper: also reads in[2], a mono side signal (nullable)
-  int sideParam = -1;       // P index of the side-source selector (SideSource), -1 = none
+  int sideInputs = 0;       // Filter/Shaper: also reads in[2] .. in[1 + sideInputs] (each nullable), <= 2
+  SideSourceFn sideSource = nullptr;  // which signal each side input takes
 };
-
-// Where a side-input engine (Ring Mod / Vocoder) takes its side signal from. Stepped quarters.
-enum class SideSource : int { Internal = 0, SourceAux = 1, Input = 2, OtherPart = 3 };
 
 // Per-voice sound generator or processor (Source, Filter, Shaper slots).
 class VoiceEngine {
@@ -920,7 +1136,8 @@ class VoiceEngine {
   virtual void noteOff() = 0;
   virtual void setNote(float note) = 0;  // pitch change without a new note (glide, bend)
   // out[0], out[1]: n samples each (and out[2] for an enabled AUX), n <= the maxBlock given to
-  // prepare(). in may be nullptr; in[2] exists for usesSide engines and may be nullptr.
+  // prepare(). in may be nullptr; in[2] .. in[1 + sideInputs] exist for engines with side inputs
+  // and may each be nullptr.
   virtual void process(const float* const* in, float* const* out, const ParamValues& p,
                        int n) = 0;
   virtual const EngineInfo& info() const = 0;
@@ -969,14 +1186,14 @@ namespace eg13 {
 // At the native rate it is a bit-exact pass-through. Notes and parameters
 // reach the engine at native block boundaries (the hardware's control rate).
 // nativeRate <= 0 runs the engine at the host rate.
-// Channels: in[0], in[1] (+ in[2], the side input, for usesSide engines); out[0], out[1]
+// Channels: in[0], in[1] (+ in[2], in[3], the engine's side inputs); out[0], out[1]
 // (+ out[2], AUX, for hasAux engines with AUX enabled). Every channel is converted alike, so
 // they stay sample-aligned.
 class NativeRateWrapper final : public VoiceEngine {
  public:
   // ~2.3 ms for Plaits-rate engines; up to ~4.6 ms for 32 kHz engines (r8brain 7.6, measured).
   static constexpr double kTransitionBandPercent = 30.0;
-  static constexpr int kMaxChannels = 3;
+  static constexpr int kMaxChannels = 4;  // inputs L, R and two side inputs; outputs L, R, AUX
 
   NativeRateWrapper(std::unique_ptr<VoiceEngine> inner, double nativeRate, int nativeBlock);
   ~NativeRateWrapper() override;
@@ -1016,7 +1233,7 @@ class NativeRateWrapper final : public VoiceEngine {
   bool bypass_ = true;
   bool usesInput_ = false;
   bool auxEnabled_ = false;
-  int inChannels_ = 0;   // 0, 2, or 3 with the side input
+  int inChannels_ = 0;   // 0, or 2 + the engine's side inputs
   int outChannels_ = 2;  // 2, or 3 with AUX
   int latency_ = 0;
   int inputLatency_ = 0;
@@ -1083,7 +1300,7 @@ void NativeRateWrapper::prepare(double hostRate, int maxBlock) {
   inner_->prepare(native, bypass_ ? std::max(maxBlock, nativeBlock_) : nativeBlock_);
   const EngineInfo& info = inner_->info();
   usesInput_ = info.usesInput;
-  inChannels_ = usesInput_ ? (info.usesSide ? 3 : 2) : 0;
+  inChannels_ = usesInput_ ? 2 + std::clamp(info.sideInputs, 0, 2) : 0;
   outChannels_ = info.hasAux && auxEnabled_ ? 3 : 2;
   latency_ = 0;
   inputLatency_ = 0;
@@ -1192,9 +1409,9 @@ void NativeRateWrapper::process(const float* const* in, float* const* out, const
 void NativeRateWrapper::pushInput(const float* const* in, int n) {
   const size_t capacity = inputFifo_[0].size();
   int produced = 0;
-  double* converted[kMaxChannels] = {nullptr, nullptr, nullptr};
+  double* converted[kMaxChannels] = {nullptr, nullptr, nullptr, nullptr};
   for (int ch = 0; ch < inChannels_; ++ch) {
-    const float* src = in != nullptr ? in[ch] : nullptr;  // in[2] may be absent (no side signal)
+    const float* src = in != nullptr ? in[ch] : nullptr;  // a side input may be absent
     for (int i = 0; i < n; ++i) inputScratch_[size_t(i)] = src != nullptr ? double(src[i]) : 0.0;
     produced = inputResampler_[ch]->process(inputScratch_.data(), n, converted[ch]);
   }
@@ -1220,7 +1437,7 @@ void NativeRateWrapper::pushInput(const float* const* in, int n) {
 }
 
 void NativeRateWrapper::renderNativeBlock(const ParamValues& p) {
-  const float* nativeIn[kMaxChannels] = {nullptr, nullptr, nullptr};
+  const float* nativeIn[kMaxChannels] = {nullptr, nullptr, nullptr, nullptr};
   if (usesInput_) {
     const size_t capacity = inputFifo_[0].size();
     const size_t take = std::min(inputSize_, size_t(nativeBlock_));
@@ -1234,7 +1451,7 @@ void NativeRateWrapper::renderNativeBlock(const ParamValues& p) {
     inputRead_ = (inputRead_ + take) % capacity;
     inputSize_ -= take;
   }
-  float* native[kMaxChannels] = {native_[0].data(), native_[1].data(), native_[2].data()};
+  float* native[kMaxChannels] = {native_[0].data(), native_[1].data(), native_[2].data(), native_[3].data()};
   inner_->process(usesInput_ ? nativeIn : nullptr, native, p, nativeBlock_);
   int produced = 0;
   for (int ch = 0; ch < outChannels_; ++ch) {
@@ -1343,14 +1560,14 @@ void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { std::f
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build --preset mac --target EG13_all eg13_tests && ctest --preset mac`
-Expected: all tests pass (every M2 test unchanged: two-channel engines take the same path as before). If "The side input is converted with the same latency as the main input" is off by more than 4 samples, report the measured peak positions and `inputLatencySamples()` as BLOCKED rather than widening the tolerance.
+Expected: all tests pass (every M2 test unchanged: two-channel engines take the same path as before). If "Side inputs are converted with the input path's latency" is off by more than 4 samples, report the measured peak positions and `inputLatencySamples()` as BLOCKED rather than widening the tolerance.
 
 - [ ] **Step 8: Commit**
 
 ```bash
 git add core/engine/voice_engine.h core/engine/native_rate_wrapper.h core/engine/native_rate_wrapper.cpp \
   tests/alloc_counter.h tests/alloc_counter.cpp tests/test_engines.h tests/test_native_rate_wrapper.cpp tests/test_alloc_counter.cpp
-git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "NativeRateWrapper: side input, AUX output and engine latency; stereo hook"
+git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "NativeRateWrapper: side inputs, AUX output and engine latency; stereo hook"
 ```
 
 ---
@@ -1892,7 +2109,7 @@ and to the private members after `bool retrigger_ = false;`:
 In `core/engine/plaits_engine.cpp`, change the info line to:
 
 ```cpp
-const EngineInfo kInfo = {"plaits", "Macro Oscillator", 8, kParams, false, true, false, -1};
+const EngineInfo kInfo = {"plaits", "Macro Oscillator", 8, kParams, false, true, 0, nullptr};
 ```
 
 and in `PlaitsEngine::process`, after `out[1][i] = s;`, add:
@@ -1918,7 +2135,7 @@ and to the private members after `int polyphony_ = 1;`:
 In `core/engine/rings_engine.cpp`, change the info line to:
 
 ```cpp
-const EngineInfo kInfo = {"rings", "Resonator", 9, kParams, true, true, false, -1};
+const EngineInfo kInfo = {"rings", "Resonator", 9, kParams, true, true, 0, nullptr};
 ```
 
 and in `RingsEngine::renderBlock`, inside the final loop after the `out[1][offset + i] = ...;` line, add:
@@ -1944,6 +2161,7 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 ### Task 5: Analog Filter (VCV Ripples model)
 
 **Files:**
+- Manual: `docs/manual/engines.md`, `docs/manual/smoothing.md` (same commit)
 - Create: `core/engine/ripples_engine.h`, `core/engine/ripples_engine.cpp`
 - Modify: `core/CMakeLists.txt` (add `engine/ripples_engine.cpp`)
 - Test: `tests/test_ripples_engine.cpp`
@@ -2012,6 +2230,13 @@ float delivered(const ripples::RipplesEngine::Frame& f, int mode) {
   return -v / RipplesEngine::kVolts;
 }
 
+// The adapter is built with Rack's own -funsafe-math-optimizations (Rack compile.mk:17), this
+// test without it, so they agree to 1e-5 rather than bit for bit (owner, 2026-10-20). Planning
+// measured at most 3.9e-6 over a second at Resonance 0.7.
+bool nearModel(float actual, float expected) {
+  return std::fabs(actual - expected) <= 1e-5f * std::max(1.0f, std::fabs(expected));
+}
+
 }  // namespace
 
 TEST_CASE("Analog Filter describes itself") {
@@ -2020,7 +2245,7 @@ TEST_CASE("Analog Filter describes itself") {
   REQUIRE(std::string(info.displayName) == "Analog Filter");
   REQUIRE(info.paramCount == 3);
   REQUIRE(info.usesInput);
-  REQUIRE_FALSE(info.usesSide);
+  REQUIRE(info.sideInputs == 0);
   const char* const names[3] = {"Frequency", "Resonance", "Mode"};
   for (int i = 0; i < 3; ++i) REQUIRE(std::string(info.params[i].name) == names[i]);
   REQUIRE(info.params[0].defaultValue == 1.0f);  // Ripples.cpp:36: fully open
@@ -2040,7 +2265,7 @@ TEST_CASE("Analog Filter describes itself") {
   REQUIRE(RipplesEngine::modeIndex(std::numeric_limits<float>::quiet_NaN()) == 0);
 }
 
-TEST_CASE("Analog Filter matches the VCV Ripples model sample for sample") {
+TEST_CASE("Analog Filter matches the VCV Ripples model to 1e-5") {
   for (double rate : {44100.0, 48000.0, 96000.0}) {
     for (int mode = 0; mode < 3; ++mode) {
       RipplesEngine engine;
@@ -2062,7 +2287,7 @@ TEST_CASE("Analog Filter matches the VCV Ripples model sample for sample") {
       for (size_t i = 0; i < in.size(); ++i) {
         f.input = in[i] * RipplesEngine::kVolts;
         ref.process(f);
-        REQUIRE(out.l[i] == delivered(f, mode));
+        REQUIRE(nearModel(out.l[i], delivered(f, mode)));
         REQUIRE(out.r[i] == out.l[i]);
       }
     }
@@ -2107,7 +2332,7 @@ TEST_CASE("Analog Filter ramps Frequency and Resonance across each block") {
     }
     f.input = in[size_t(i)] * RipplesEngine::kVolts;
     ref.process(f);
-    REQUIRE(out[size_t(i)] == delivered(f, 0));
+    REQUIRE(nearModel(out[size_t(i)], delivered(f, 0)));
   }
 }
 
@@ -2131,7 +2356,7 @@ TEST_CASE("Analog Filter snaps to its parameters after reset") {
   for (size_t i = 0; i < in.size(); ++i) {
     f.input = in[i] * RipplesEngine::kVolts;
     ref.process(f);
-    REQUIRE(out.l[i] == delivered(f, 0));
+    REQUIRE(nearModel(out.l[i], delivered(f, 0)));
   }
 }
 
@@ -2159,7 +2384,7 @@ TEST_CASE("Analog Filter Mode switches at once (stepped, not smoothed)") {
   for (int i = 0; i < 32; ++i) {
     f.input = in[size_t(i)] * RipplesEngine::kVolts;
     ref.process(f);
-    REQUIRE(out[size_t(i)] == delivered(f, i < 16 ? 0 : 2));
+    REQUIRE(nearModel(out[size_t(i)], delivered(f, i < 16 ? 0 : 2)));
   }
 }
 
@@ -2369,7 +2594,7 @@ const EngineParamInfo kParams[3] = {
     {"Mode", 0.5f / 3.0f, formatMode},
 };
 
-const EngineInfo kInfo = {"ripples", "Analog Filter", 3, kParams, true, false, false, -1};
+const EngineInfo kInfo = {"ripples", "Analog Filter", 3, kParams, true, false, 0, nullptr};
 
 // Ripples' output amplifiers invert (ripples.hpp:95-97: kLP2Gain, kLP4Gain, kBP2Gain < 0). EG13
 // restores the input's polarity so Dry and processed signals add rather than cancel.
@@ -2448,17 +2673,50 @@ void RipplesEngine::process(const float* const* in, float* const* out, const Par
 }  // namespace eg13
 ```
 
-Add `engine/ripples_engine.cpp` to the `add_library(eg13_core ...)` list in `core/CMakeLists.txt`.
+Add `engine/ripples_engine.cpp` to the `add_library(eg13_core ...)` list in `core/CMakeLists.txt`, and after the `target_compile_options` line add:
+
+```cmake
+# The VCV models are built as Rack builds its plugins (VCVRack/Rack compile.mk:17:
+# "FLAGS += -O3 -funsafe-math-optimizations -fno-omit-frame-pointer"; Release already has -O3):
+# about 30 % faster, measured during planning. Owner decision 2026-10-20.
+set_source_files_properties(engine/ripples_engine.cpp PROPERTIES COMPILE_OPTIONS "-funsafe-math-optimizations")
+```
+
+- [ ] **Step 4a: Document the Analog Filter in the manual**
+
+Append to `docs/manual/engines.md`:
+
+````markdown
+## Filters
+
+Every voice has a Filter slot after its Source. **Off** passes the sound through unchanged. All filters' first control is the cutoff, on the same scale (20 Hz to 20 kHz), so one modulation amount sweeps every filter alike. Every filter starts fully open, so choosing one does not change the level.
+
+### Analog Filter (the VCV model of Ripples)
+
+Controls: **Frequency** (20 Hz to 20 kHz, default fully open), **Resonance** (default 0) and **Mode**: *LP4* (24 dB/octave low-pass), *LP2* (12 dB low-pass) or *BP2* (12 dB band-pass).
+
+- A circuit model of the analog filter, including its gentle saturation; at full Resonance it self-oscillates.
+- The module's output amplifiers invert the signal; EG13 turns it back, so the filtered sound adds to the Dry signal instead of cancelling it.
+- Ripples' FM knob and its CV and Gain inputs are not controls here: modulation comes from EG13's modulation matrix (M4), and the LP4 VCA output is LP4 with a fixed level.
+- Stereo: while the voice is stereo, a second filter runs for the right channel, starting from the left filter's exact state (no jump).
+````
+
+Append to `docs/manual/smoothing.md`:
+
+````markdown
+- **Analog Filter:** the VCV module reads its knobs every sample; EG13 moves Frequency and Resonance in a straight line across each 16-sample control block, so a step glides over a third of a millisecond. Mode switches at once.
+````
+
 
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build --preset mac --target eg13_tests && ctest --preset mac -R "Analog Filter"`
-Expected: all pass. Then `ctest --preset mac` (all) and the Docker command: all pass. If the sample-for-sample test differs only on Linux, report the first differing index and both values as BLOCKED (do not loosen it).
+Expected: all pass. Then `ctest --preset mac` (all) and the Docker command: all pass. If the 1e-5 comparison fails on any platform, report the first differing index and both values as BLOCKED (do not loosen it).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add core/engine/ripples_engine.h core/engine/ripples_engine.cpp core/CMakeLists.txt tests/test_ripples_engine.cpp
+git add core/engine/ripples_engine.h core/engine/ripples_engine.cpp core/CMakeLists.txt tests/test_ripples_engine.cpp docs/manual
 git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "Analog Filter: VCV Ripples model, ramped knobs, stereo when needed"
 ```
 
@@ -2466,6 +2724,7 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 ### Task 6: Classic Filters (sst-filters)
 
 **Files:**
+- Manual: `docs/manual/engines.md`, `docs/manual/smoothing.md` (same commit)
 - Create: `core/engine/sst_filter_engine.h`, `core/engine/sst_filter_engine.cpp`, `tests/data/classic_filter_types.txt`
 - Modify: `core/CMakeLists.txt` (add `engine/sst_filter_engine.cpp`)
 - Test: `tests/test_sst_filter_engine.cpp`
@@ -3074,7 +3333,7 @@ const EngineParamInfo kParams[4] = {
     {"Character", 0.5f, formatPercent01},
 };
 
-const EngineInfo kInfo = {"sst", "Classic Filters", 4, kParams, true, false, false, -1};
+const EngineInfo kInfo = {"sst", "Classic Filters", 4, kParams, true, false, 0, nullptr};
 
 }  // namespace
 
@@ -3180,6 +3439,27 @@ void SstFilterEngine::process(const float* const* in, float* const* out, const P
 
 Add `engine/sst_filter_engine.cpp` to the `add_library(eg13_core ...)` list in `core/CMakeLists.txt`.
 
+- [ ] **Step 5a: Document Classic Filters in the manual**
+
+Append to `docs/manual/engines.md`:
+
+````markdown
+### Classic Filters (sst-filters, the filters of the Surge synthesizer)
+
+Controls: **Cutoff** (20 Hz to 20 kHz, default fully open), **Resonance**, **Type** and **Character**.
+
+- **Type** chooses one of 205 filters: low-, high-, band-pass and notch filters of 12 and 24 dB, ladder models (Legacy, Vintage, Diode), OB-Xd and K35 models, Cutoff Warp and Resonance Warp, the Xpander's pole mixes, Tri-pole, the Fast SVF's shelves and bell, combs, and Sample & Hold. The default is *Vember Classic Lowpass 12 dB Standard*. The list keeps its order in every future version, so a saved type always comes back.
+- **Character** is the extra control some types have: OB-Xd 4-pole *Morph*, K35 *Continuous* saturation, the Fast SVF shelves' and bell's gain, and the comb filters' variable mix. Other types ignore it.
+- Changing Type takes effect at once and restarts the filter, as switching a filter type on hardware does; it can click on a sounding note.
+- Stereo: left and right always run together inside one filter, at no extra cost.
+````
+
+Append to `docs/manual/smoothing.md`:
+
+````markdown
+- **Classic Filters:** as in Surge, the filter's coefficients move smoothly across each 16-sample control block. Type switches at once.
+````
+
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build --preset mac --target eg13_tests && ctest --preset mac -R "Classic Filters"`
@@ -3189,7 +3469,7 @@ Expected: all pass. Then the full suite and the Docker command: all pass.
 
 ```bash
 git add core/engine/sst_filter_engine.h core/engine/sst_filter_engine.cpp core/CMakeLists.txt \
-  tests/test_sst_filter_engine.cpp tests/data/classic_filter_types.txt
+  tests/test_sst_filter_engine.cpp tests/data/classic_filter_types.txt docs/manual
 git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "Classic Filters: sst-filters' 205 types with a frozen type order"
 ```
 
@@ -3197,6 +3477,7 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 ### Task 7: State Variable Filter (stmlib Svf)
 
 **Files:**
+- Manual: `docs/manual/engines.md`, `docs/manual/smoothing.md` (same commit)
 - Create: `core/engine/svf_engine.h`, `core/engine/svf_engine.cpp`
 - Modify: `core/CMakeLists.txt` (add `engine/svf_engine.cpp`)
 - Test: `tests/test_svf_engine.cpp`
@@ -3521,7 +3802,7 @@ const EngineParamInfo kParams[3] = {
     {"Mode", 0.5f / 3.0f, formatMode},
 };
 
-const EngineInfo kInfo = {"svf", "State Variable Filter", 3, kParams, true, false, false, -1};
+const EngineInfo kInfo = {"svf", "State Variable Filter", 3, kParams, true, false, 0, nullptr};
 
 float run(stmlib::Svf& f, int mode, float x) {
   if (mode == 0) return f.Process<stmlib::FILTER_MODE_LOW_PASS>(x);
@@ -3591,6 +3872,24 @@ void SvfEngine::process(const float* const* in, float* const* out, const ParamVa
 
 Add `engine/svf_engine.cpp` to `core/CMakeLists.txt`.
 
+- [ ] **Step 4a: Document the State Variable Filter in the manual**
+
+Append to `docs/manual/engines.md`:
+
+````markdown
+### State Variable Filter
+
+The clean, digital state-variable filter that the Eurorack modules use inside (no module offers it on its own). Controls: **Cutoff** (20 Hz to 20 kHz, default fully open), **Resonance** (Q 0.5 to 40; the default, Q 0.707, gives a flat passband) and **Mode**: *LP*, *BP* or *HP*. In *BP* mode the peak stays at unity gain whatever the resonance.
+
+Stereo: while the voice is stereo, a second filter runs for the right channel, starting from the left filter's exact state.
+````
+
+Append to `docs/manual/smoothing.md`:
+
+````markdown
+- **State Variable Filter:** Cutoff and Resonance move in a straight line across each 16-sample control block, as in the Macro Oscillator's own filters. Mode switches at once.
+````
+
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build --preset mac --target eg13_tests && ctest --preset mac -R "State Variable Filter"`
@@ -3599,7 +3898,7 @@ Expected: all pass. Then the full suite.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add core/engine/svf_engine.h core/engine/svf_engine.cpp core/CMakeLists.txt tests/test_svf_engine.cpp
+git add core/engine/svf_engine.h core/engine/svf_engine.cpp core/CMakeLists.txt tests/test_svf_engine.cpp docs/manual
 git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "State Variable Filter: stmlib Svf with LP / BP / HP"
 ```
 
@@ -3608,12 +3907,15 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 
 **Files:**
 - Create: `core/engine/warps_engine.h`, `core/engine/warps_engine.cpp`
-- Modify: `core/CMakeLists.txt` (add `engine/warps_engine.cpp`)
+- Modify: `core/CMakeLists.txt` (add `engine/warps_engine.cpp`), `docs/manual/engines.md`, `docs/manual/smoothing.md`
 - Test: `tests/test_warps_engine.cpp`
 
 **Interfaces:**
 - Consumes: `PotSmoother` (M2), `StereoLink`, formatters (Task 3), `SideSource`, `sideSourceOf`, `nativeLatency` (Task 2), Warps sources in `eg13_eurorack` (Task 1).
-- Produces: `class WarpsEngine final : public VoiceEngine` ("Ring Mod / Vocoder", id `"warps"`, `usesInput`, `usesSide`, `sideParam = 4`): `static constexpr double kNativeRate = 96000.0; static constexpr int kNativeBlock = 60; static constexpr int kNumAlgorithms = 9; static constexpr float kInputScale; static const EngineInfo& staticInfo(); static float oscillatorOffset(float); static int oscillatorShape(float); static bool shifterMode(float); static short toShort(float); float smoothedParam(int) const; bool rightRuns() const; int nativeLatency() const override` (= 60). P1 Algorithm, P2 Timbre, P3 Carrier Level, P4 Mod Level, P5 Modulator (SideSource quarters), P6 Osc Pitch, P7 Osc Shape, P8 Mode. Inputs: `in[0]`, `in[1]` carrier (voice) L/R, `in[2]` mono modulator (nullable). Output is delayed by exactly 60 native samples.
+- Produces: `class WarpsEngine final : public VoiceEngine` ("Ring Mod / Vocoder", id `"warps"`, `usesInput`, `sideInputs = 2`, `sideSource` = the Carrier and Modulator selectors): `static constexpr double kNativeRate = 96000.0; static constexpr int kNativeBlock = 60; static constexpr int kNumAlgorithms = 9; static constexpr int kNumOscillatorModes = 3; static constexpr int kSelectorSteps = 8; static constexpr int kNumCarriers = 5; static constexpr int kNumModulators = 4; static constexpr float kInputScale = 10240.0f; static constexpr float kDefaultLevel = 0.47f; static const EngineInfo& staticInfo(); static int carrierIndex(float); static int modulatorIndex(float); static float optionValue(int); static float oscillatorOffset(float); static int oscillatorMode(float); static bool shifterMode(float); static short toShort(float); static float fromShort(short); float smoothedParam(int) const; bool rightRuns() const; int nativeLatency() const override` (= 60).
+  - P1 Algorithm, P2 Timbre, P3 Carrier Level, P4 Mod Level, P5 Carrier (Internal Osc / Voice / Source AUX / Input / Other part), P6 Modulator (Voice / Source AUX / Input / Other part), P7 Osc Pitch (±24 st), P8 Osc Shape (the module's three oscillator modes), P9 Mode (Modulation / Frequency shifter).
+  - Carrier and Modulator are append-only option lists: each is read in 8 fixed steps (`kSelectorSteps`, option i at `(i + 0.5) / 8`), so adding an option later never changes what a saved value means. A test pins both orders. Their defaults (Internal Osc, Voice) live only in `kParams`: changing one later is a one-line edit that affects new patches only (once M7's factory presets exist, those presets would need re-saving; no state migration).
+  - Inputs: `in[0]`, `in[1]` the voice L/R ("Voice": the signal reaching the Shaper from this voice's Source → Filter); `in[2]` the carrier side signal and `in[3]` the modulator side signal (Source AUX / Input / Other part; each nullable = silence). Output is delayed by exactly 60 native samples.
 
 - [ ] **Step 1: Write the failing tests (`tests/test_warps_engine.cpp`)**
 
@@ -3634,7 +3936,6 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 #include "engine/warps_engine.h"
 #include "test_helpers.h"
 #include "warps/dsp/modulator.h"
-#include "warps/dsp/oscillator.h"
 
 using namespace eg13;
 
@@ -3645,9 +3946,16 @@ constexpr int kN = WarpsEngine::kNativeBlock;
 
 ParamValues defaults() { return test::defaultParams(WarpsEngine::staticInfo()); }
 
-constexpr float kInternal = 0.5f / 4.0f;
-constexpr float kInput = 2.5f / 4.0f;
-constexpr float kShifter = 0.75f;
+// Carrier and Modulator options (eighths, append-only).
+constexpr float kCarrierOsc = 0.5f / 8.0f;
+constexpr float kCarrierVoice = 1.5f / 8.0f;
+constexpr float kCarrierAux = 2.5f / 8.0f;
+constexpr float kCarrierInput = 3.5f / 8.0f;
+constexpr float kCarrierOther = 4.5f / 8.0f;
+constexpr float kModVoice = 0.5f / 8.0f;
+constexpr float kModAux = 1.5f / 8.0f;
+constexpr float kModInput = 2.5f / 8.0f;
+constexpr float kModOther = 3.5f / 8.0f;
 
 std::vector<float> sine(size_t n, double hz, double rate, float amp = 0.5f) {
   std::vector<float> x(n);
@@ -3659,12 +3967,16 @@ struct Stereo {
   std::vector<float> l, r;
 };
 
-Stereo run(VoiceEngine& e, const std::vector<float>& carrierL, const std::vector<float>& carrierR,
-           const std::vector<float>* side, const ParamValues& p, int chunk = kN) {
-  Stereo s{std::vector<float>(carrierL.size()), std::vector<float>(carrierL.size())};
-  for (size_t done = 0; done < carrierL.size();) {
-    const int count = int(std::min<size_t>(size_t(chunk), carrierL.size() - done));
-    const float* in[3] = {carrierL.data() + done, carrierR.data() + done, side ? side->data() + done : nullptr};
+// carrierSide / modulatorSide: what the Voice would deliver to the side inputs (nullable).
+Stereo run(VoiceEngine& e, const std::vector<float>& voiceL, const std::vector<float>& voiceR,
+           const std::vector<float>* carrierSide, const std::vector<float>* modulatorSide, const ParamValues& p,
+           int chunk = kN) {
+  Stereo s{std::vector<float>(voiceL.size()), std::vector<float>(voiceL.size())};
+  for (size_t done = 0; done < voiceL.size();) {
+    const int count = int(std::min<size_t>(size_t(chunk), voiceL.size() - done));
+    const float* in[4] = {voiceL.data() + done, voiceR.data() + done,
+                          carrierSide ? carrierSide->data() + done : nullptr,
+                          modulatorSide ? modulatorSide->data() + done : nullptr};
     float* out[2] = {s.l.data() + done, s.r.data() + done};
     e.process(in, out, p, count);
     done += size_t(count);
@@ -3676,16 +3988,17 @@ struct Settings {
   float algorithm, timbre, level1, level2;
 };
 
-// Upstream Warps as the adapter drives it, block by block: carrier into channel 1 and
-// modulator into channel 2 (or, in shifter mode, the carrier into channel 2).
-std::vector<float> reference(const std::vector<float>& carrier, const std::vector<float>& modulator,
-                             const Settings& s, bool shifter) {
+// Upstream Warps driven as the adapter drives it, block by block: carrierJack into channel 1
+// (CARRIER), modulatorJack into channel 2 (MODULATOR), the internal-oscillator button as
+// carrierShape (0 = off), the easter egg as shifter.
+std::vector<float> reference(const std::vector<float>& carrierJack, const std::vector<float>& modulatorJack,
+                             const Settings& s, int carrierShape, bool shifter, float note = 60.0f) {
   auto m = std::make_unique<warps::Modulator>();
   std::memset(static_cast<void*>(m.get()), 0, sizeof(warps::Modulator));
   m->Init(float(kRate));
-  std::vector<float> out(carrier.size());
+  std::vector<float> out(carrierJack.size());
   warps::ShortFrame in[kN], o[kN];
-  for (size_t b = 0; b + kN <= carrier.size(); b += kN) {
+  for (size_t b = 0; b + kN <= carrierJack.size(); b += kN) {
     warps::Parameters* w = m->mutable_parameters();
     w->channel_drive[0] = s.level1;
     w->channel_drive[1] = s.level2;
@@ -3694,27 +4007,28 @@ std::vector<float> reference(const std::vector<float>& carrier, const std::vecto
     w->frequency_shift_pot = s.algorithm;
     w->frequency_shift_cv = 0.0f;
     w->phase_shift = s.algorithm;
-    w->note = 60.0f;
-    w->carrier_shape = shifter ? 1 : 0;
+    w->note = note;
+    w->carrier_shape = carrierShape;
     m->set_easter_egg(shifter);
     for (int i = 0; i < kN; ++i) {
-      in[i].l = shifter ? short(0) : WarpsEngine::toShort(carrier[b + size_t(i)]);
-      in[i].r = WarpsEngine::toShort(shifter ? carrier[b + size_t(i)] : modulator[b + size_t(i)]);
+      in[i].l = WarpsEngine::toShort(carrierJack[b + size_t(i)]);
+      in[i].r = WarpsEngine::toShort(modulatorJack[b + size_t(i)]);
     }
     m->Process(in, o, kN);
-    for (int i = 0; i < kN; ++i) out[b + size_t(i)] = float(o[i].l) / 32768.0f;
+    for (int i = 0; i < kN; ++i) out[b + size_t(i)] = WarpsEngine::fromShort(o[i].l);
   }
   return out;
 }
 
-ParamValues with(const Settings& s, float modulator, float mode) {
+ParamValues with(const Settings& s, float carrier, float modulator, bool shifter) {
   ParamValues p = defaults();
   p.p[0] = s.algorithm;
   p.p[1] = s.timbre;
   p.p[2] = s.level1;
   p.p[3] = s.level2;
-  p.p[4] = modulator;
-  p.p[7] = mode;
+  p.p[4] = carrier;
+  p.p[5] = modulator;
+  p.p[8] = shifter ? 0.75f : 0.25f;
   return p;
 }
 
@@ -3738,16 +4052,19 @@ TEST_CASE("Ring Mod / Vocoder describes itself") {
   const auto& info = WarpsEngine::staticInfo();
   REQUIRE(std::string(info.id) == "warps");
   REQUIRE(std::string(info.displayName) == "Ring Mod / Vocoder");
-  REQUIRE(info.paramCount == 8);
+  REQUIRE(info.paramCount == 9);
   REQUIRE(info.usesInput);
-  REQUIRE(info.usesSide);
-  REQUIRE(info.sideParam == 4);
-  const char* const names[8] = {"Algorithm", "Timbre", "Carrier Level", "Mod Level",
-                                "Modulator", "Osc Pitch", "Osc Shape", "Mode"};
-  for (int i = 0; i < 8; ++i) REQUIRE(std::string(info.params[i].name) == names[i]);
-  REQUIRE(sideSourceOf(info.params[4].defaultValue) == SideSource::Internal);
-  REQUIRE(WarpsEngine::oscillatorShape(info.params[6].defaultValue) == 0);
-  REQUIRE_FALSE(WarpsEngine::shifterMode(info.params[7].defaultValue));
+  REQUIRE(info.sideInputs == 2);
+  REQUIRE(info.sideSource != nullptr);
+  const char* const names[9] = {"Algorithm", "Timbre",    "Carrier Level", "Mod Level", "Carrier",
+                                "Modulator", "Osc Pitch", "Osc Shape",     "Mode"};
+  for (int i = 0; i < 9; ++i) REQUIRE(std::string(info.params[i].name) == names[i]);
+  REQUIRE(info.params[2].defaultValue == WarpsEngine::kDefaultLevel);
+  REQUIRE(info.params[3].defaultValue == WarpsEngine::kDefaultLevel);
+  REQUIRE(WarpsEngine::carrierIndex(info.params[4].defaultValue) == 0);    // Internal Osc
+  REQUIRE(WarpsEngine::modulatorIndex(info.params[5].defaultValue) == 0);  // Voice
+  REQUIRE(WarpsEngine::oscillatorMode(info.params[7].defaultValue) == 0);
+  REQUIRE_FALSE(WarpsEngine::shifterMode(info.params[8].defaultValue));
   char buf[64];
   info.params[0].format(info.params[0].defaultValue, buf, sizeof(buf));
   REQUIRE(std::string(buf) == "Analog RM");
@@ -3755,70 +4072,200 @@ TEST_CASE("Ring Mod / Vocoder describes itself") {
   REQUIRE(std::string(buf) == "Vocoder");
   info.params[0].format(2.5f / 8.0f, buf, sizeof(buf));
   REQUIRE(std::string(buf) == "Analog RM > Digital RM 50%");
-  info.params[4].format(kInput, buf, sizeof(buf));
-  REQUIRE(std::string(buf) == "Input");
-  info.params[5].format(0.75f, buf, sizeof(buf));
+  info.params[4].format(info.params[4].defaultValue, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Internal Osc");
+  info.params[5].format(info.params[5].defaultValue, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Voice");
+  info.params[6].format(0.75f, buf, sizeof(buf));
   REQUIRE(std::string(buf) == "+12.0 st");
-  info.params[7].format(kShifter, buf, sizeof(buf));
+  info.params[7].format(2.5f / 3.0f, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Saw / Noise");
+  info.params[8].format(0.75f, buf, sizeof(buf));
   REQUIRE(std::string(buf) == "Freq shifter");
-  REQUIRE(WarpsEngine::toShort(1.0f) == 10240);  // ±1.0 = ±5 V of Warps' ±8 V
+  REQUIRE(WarpsEngine::toShort(1.0f) == 10240);  // ±1.0 = ±5 V of Warps' ±8 V inputs
+  REQUIRE(WarpsEngine::fromShort(10240) == 1.0f);
   REQUIRE(WarpsEngine::toShort(10.0f) == 32767);
   REQUIRE(WarpsEngine::toShort(-10.0f) == -32768);
   REQUIRE(WarpsEngine::toShort(std::numeric_limits<float>::quiet_NaN()) == 0);
 }
 
-TEST_CASE("Ring Mod / Vocoder matches upstream Warps bit for bit, one block late") {
-  const auto carrier = sine(kN * 200, 440.0, kRate);
-  const auto modulator = sine(kN * 200, 130.0, kRate, 0.4f);
+// The Carrier and Modulator option lists are append-only: saved projects store the selector
+// value, so these orders and the 8-step reading must never change (owner, 2026-10-20: the routing
+// is provisional; options may be added, never moved).
+TEST_CASE("Ring Mod / Vocoder Carrier and Modulator options keep their order") {
+  const auto& info = WarpsEngine::staticInfo();
+  REQUIRE(WarpsEngine::kSelectorSteps == 8);
+  const char* const carriers[5] = {"Internal Osc", "Voice", "Source AUX", "Input", "Other part"};
+  const SideSource carrierSources[5] = {SideSource::None, SideSource::Voice, SideSource::SourceAux,
+                                        SideSource::Input, SideSource::OtherPart};
+  const char* const modulators[4] = {"Voice", "Source AUX", "Input", "Other part"};
+  char buf[64];
+  ParamValues p = defaults();
+  for (int i = 0; i < 5; ++i) {
+    const float v = WarpsEngine::optionValue(i);
+    REQUIRE(v == (float(i) + 0.5f) / 8.0f);
+    REQUIRE(WarpsEngine::carrierIndex(v) == i);
+    info.params[4].format(v, buf, sizeof(buf));
+    REQUIRE(std::string(buf) == carriers[i]);
+    p.p[4] = v;
+    REQUIRE(info.sideSource(0, p) == carrierSources[i]);
+  }
+  for (int i = 0; i < 4; ++i) {
+    const float v = WarpsEngine::optionValue(i);
+    REQUIRE(WarpsEngine::modulatorIndex(v) == i);
+    info.params[5].format(v, buf, sizeof(buf));
+    REQUIRE(std::string(buf) == modulators[i]);
+    p.p[5] = v;
+    REQUIRE(info.sideSource(1, p) == SideSource(i));
+  }
+  REQUIRE(WarpsEngine::carrierIndex(1.0f) == 4);    // the unused steps read as the last option
+  REQUIRE(WarpsEngine::modulatorIndex(1.0f) == 3);
+  REQUIRE(WarpsEngine::carrierIndex(std::numeric_limits<float>::quiet_NaN()) == 0);
+}
+
+// The default Carrier Level and Mod Level (owner, 2026-10-20): the drive at which Warps'
+// SaturatingAmplifier (warps/dsp/modulator.h:53-115) passes a full-scale EG13 voice, a 1 kHz sine
+// at ±1.0 (±10240 counts, the adapter's input scaling), at unity gain without saturating. Method:
+// drive the upstream amplifier alone with limit 1 (cross-modulation), measure the fundamental and
+// harmonics 2..9 over 0.5 s after 0.5 s of settling. Planning measured +0.03 dB and 0.06 % THD at
+// 0.47 (+0.22 dB at 0.48, -0.17 dB at 0.46); 1.0 gives +12 dB and 38 % THD.
+TEST_CASE("Default levels pass a full-scale voice through Warps' amplifier at unity, unsaturated") {
+  auto measure = [](float drive, double* gainDb, double* thd) {
+    warps::SaturatingAmplifier amplifier;
+    std::memset(static_cast<void*>(&amplifier), 0, sizeof(amplifier));
+    amplifier.Init();
+    const int n = 96000;
+    std::vector<float> y(size_t(n));
+    short in[kN];
+    float out[kN], raw[kN];
+    for (int b = 0; b < n / kN; ++b) {
+      for (int i = 0; i < kN; ++i) {
+        in[i] = WarpsEngine::toShort(float(std::sin(6.283185307179586 * 1000.0 * double(b * kN + i) / kRate)));
+      }
+      std::memset(raw, 0, sizeof(raw));
+      amplifier.Process(drive, 1.0f, in, out, raw, 1, kN);
+      for (int i = 0; i < kN; ++i) y[size_t(b * kN + i)] = out[i];
+    }
+    auto amplitude = [&](double f) { return 2.0 * magnitudeAt(y, kRate, 48000, 96000, f) / 24000.0; };
+    const double fundamental = amplitude(1000.0);
+    double harmonics = 0.0;
+    for (int h = 2; h <= 9; ++h) harmonics += amplitude(1000.0 * h) * amplitude(1000.0 * h);
+    *gainDb = 20.0 * std::log10(fundamental / (10240.0 / 32768.0));
+    *thd = std::sqrt(harmonics) / fundamental;
+  };
+  double gain = 0.0, thd = 0.0;
+  measure(WarpsEngine::kDefaultLevel, &gain, &thd);
+  INFO("default " << WarpsEngine::kDefaultLevel << ": " << gain << " dB, THD " << 100.0 * thd << " %");
+  REQUIRE(std::fabs(gain) < 0.25);
+  REQUIRE(thd < 0.001);
+  measure(1.0f, &gain, &thd);  // the range still reaches the saturated character
+  REQUIRE(thd > 0.1);
+}
+
+TEST_CASE("Ring Mod / Vocoder with an external carrier matches upstream Warps bit for bit, one block late") {
+  const auto voice = sine(kN * 200, 440.0, kRate);
+  const auto side = sine(kN * 200, 130.0, kRate, 0.4f);
   for (float algorithm : {0.0f, 0.25f, 0.4f, 0.5f, 0.6f, 0.72f, 0.8f, 1.0f}) {
     const Settings s{algorithm, 0.3f, 0.7f, 0.9f};
     WarpsEngine engine;
     engine.prepare(kRate, 256);
-    const Stereo out = run(engine, carrier, carrier, &modulator, with(s, kInput, 0.25f));
-    const auto expected = reference(carrier, modulator, s, false);
+    const Stereo out = run(engine, voice, voice, nullptr, &side, with(s, kCarrierVoice, kModInput, false));
+    const auto expected = reference(voice, side, s, 0, false);  // voice on CARRIER, side on MODULATOR
     INFO("algorithm " << algorithm);
     for (size_t i = 0; i < size_t(kN); ++i) REQUIRE(out.l[i] == 0.0f);
     for (size_t i = 0; i + kN < out.l.size(); ++i) REQUIRE(out.l[i + kN] == expected[i]);
   }
 }
 
-TEST_CASE("Ring Mod / Vocoder frequency shifter matches Warps' easter egg") {
-  const auto carrier = sine(kN * 200, 1000.0, kRate);
-  const Settings s{0.9f, 0.6f, 0.2f, 0.8f};
-  WarpsEngine engine;
-  engine.prepare(kRate, 256);
-  const Stereo out = run(engine, carrier, carrier, nullptr, with(s, kInput, kShifter));
-  const auto expected = reference(carrier, carrier, s, true);
-  for (size_t i = 0; i + kN < out.l.size(); ++i) REQUIRE(out.l[i + kN] == expected[i]);
+TEST_CASE("Each Carrier option drives Warps' carrier input") {
+  const auto voice = sine(kN * 100, 440.0, kRate);
+  const auto carrierSide = sine(kN * 100, 700.0, kRate, 0.3f);
+  const auto modulatorSide = sine(kN * 100, 130.0, kRate, 0.4f);
+  const std::vector<float> silent(voice.size(), 0.0f);
+  const Settings s{0.375f, 0.2f, 0.6f, 0.6f};  // digital ring modulation
+  struct Case {
+    float carrier;
+    const std::vector<float>* jack;  // what must reach CARRIER
+    int carrierShape;
+  } cases[] = {{kCarrierOsc, &silent, 1},       {kCarrierVoice, &voice, 0},        {kCarrierAux, &carrierSide, 0},
+               {kCarrierInput, &carrierSide, 0}, {kCarrierOther, &carrierSide, 0}};
+  for (const Case& c : cases) {
+    WarpsEngine engine;
+    engine.prepare(kRate, 256);
+    engine.noteOn(57.0f, 1.0f);
+    const Stereo out = run(engine, voice, voice, &carrierSide, &modulatorSide, with(s, c.carrier, kModInput, false));
+    const auto expected = reference(*c.jack, modulatorSide, s, c.carrierShape, false, 57.0f);
+    INFO("carrier option " << WarpsEngine::carrierIndex(c.carrier));
+    for (size_t i = 0; i + kN < out.l.size(); ++i) REQUIRE(out.l[i + kN] == expected[i]);
+  }
 }
 
-TEST_CASE("Ring Mod / Vocoder internal oscillator is Warps' oscillator at the note plus Osc Pitch") {
-  const auto carrier = sine(kN * 100, 440.0, kRate);
-  const Settings s{0.375f, 0.4f, 0.8f, 0.6f};
-  ParamValues p = with(s, kInternal, 0.25f);
-  p.p[5] = 0.75f;  // +12 st
-  p.p[6] = 2.5f / 5.0f;  // saw
-  WarpsEngine engine;
-  engine.prepare(kRate, 256);
-  engine.noteOn(57.0f, 1.0f);
-  const Stereo out = run(engine, carrier, carrier, nullptr, p);
-  warps::Oscillator osc;
-  osc.Init(float(kRate));
-  std::vector<float> modulator(carrier.size());
-  float fm[kN] = {};
-  for (size_t b = 0; b < carrier.size(); b += kN) {
-    osc.Render(warps::OSCILLATOR_SHAPE_SAW, 57.0f + 12.0f, fm, modulator.data() + b, kN);
+TEST_CASE("Each Modulator option drives Warps' modulator input") {
+  const auto voice = sine(kN * 100, 440.0, kRate);
+  const auto modulatorSide = sine(kN * 100, 130.0, kRate, 0.4f);
+  const Settings s{0.375f, 0.2f, 0.6f, 0.6f};
+  struct Case {
+    float modulator;
+    const std::vector<float>* jack;  // what must reach MODULATOR
+  } cases[] = {{kModVoice, &voice}, {kModAux, &modulatorSide}, {kModInput, &modulatorSide}, {kModOther, &modulatorSide}};
+  for (const Case& c : cases) {
+    WarpsEngine engine;
+    engine.prepare(kRate, 256);
+    const Stereo out = run(engine, voice, voice, nullptr, &modulatorSide, with(s, kCarrierVoice, c.modulator, false));
+    const auto expected = reference(voice, *c.jack, s, 0, false);  // Voice + Voice: self-modulation
+    INFO("modulator option " << WarpsEngine::modulatorIndex(c.modulator));
+    for (size_t i = 0; i + kN < out.l.size(); ++i) REQUIRE(out.l[i + kN] == expected[i]);
   }
-  const auto expected = reference(carrier, modulator, s, false);
-  for (size_t i = 0; i + kN < out.l.size(); ++i) REQUIRE(out.l[i + kN] == expected[i]);
+}
+
+TEST_CASE("Ring Mod / Vocoder's Internal Osc carrier is Warps' oscillator at the note plus Osc Pitch") {
+  const auto voice = sine(kN * 120, 220.0, kRate);
+  for (int mode = 0; mode < WarpsEngine::kNumOscillatorModes; ++mode) {
+    for (float algorithm : {0.25f, 0.6f, 0.8f, 1.0f}) {
+      const Settings s{algorithm, 0.4f, 0.8f, 0.6f};
+      ParamValues p = with(s, kCarrierOsc, kModVoice, false);
+      p.p[6] = 0.75f;                           // +12 st
+      p.p[7] = (float(mode) + 0.5f) / 3.0f;
+      WarpsEngine engine;
+      engine.prepare(kRate, 256);
+      engine.noteOn(57.0f, 1.0f);
+      const Stereo out = run(engine, voice, voice, nullptr, nullptr, p);
+      // CARRIER silent (it would be the oscillator's FM), MODULATOR = the voice, button mode + 1.
+      const std::vector<float> silent(voice.size(), 0.0f);
+      const auto expected = reference(silent, voice, s, 1 + mode, false, 57.0f + 12.0f);
+      INFO("mode " << mode << " algorithm " << algorithm);
+      for (size_t i = 0; i + kN < out.l.size(); ++i) REQUIRE(out.l[i + kN] == expected[i]);
+    }
+  }
+}
+
+TEST_CASE("Ring Mod / Vocoder frequency shifter matches Warps' easter egg, internal and external carrier") {
+  const auto voice = sine(kN * 200, 1000.0, kRate);
+  const auto side = sine(kN * 200, 300.0, kRate, 0.4f);
+  const Settings s{0.9f, 0.6f, 0.2f, 0.8f};
+  const std::vector<float> silent(voice.size(), 0.0f);
+  {
+    WarpsEngine engine;
+    engine.prepare(kRate, 256);
+    const Stereo out = run(engine, voice, voice, nullptr, nullptr, with(s, kCarrierOsc, kModVoice, true));
+    const auto expected = reference(silent, voice, s, 1, true);
+    for (size_t i = 0; i + kN < out.l.size(); ++i) REQUIRE(out.l[i + kN] == expected[i]);
+  }
+  {
+    WarpsEngine engine;
+    engine.prepare(kRate, 256);
+    const Stereo out = run(engine, voice, voice, nullptr, &side, with(s, kCarrierVoice, kModInput, true));
+    const auto expected = reference(voice, side, s, 0, true);
+    for (size_t i = 0; i + kN < out.l.size(); ++i) REQUIRE(out.l[i + kN] == expected[i]);
+  }
 }
 
 TEST_CASE("Ring Mod / Vocoder digital ring modulation makes sum and difference tones") {
-  const auto carrier = sine(96000, 1000.0, kRate);
-  const auto modulator = sine(96000, 300.0, kRate);
+  const auto voice = sine(96000, 1000.0, kRate);
+  const auto side = sine(96000, 300.0, kRate);
   WarpsEngine engine;
   engine.prepare(kRate, 256);
-  const Stereo out = run(engine, carrier, carrier, &modulator, with({0.375f, 0.0f, 0.5f, 0.5f}, kInput, 0.25f));
+  const Stereo out = run(engine, voice, voice, nullptr, &side, with({0.375f, 0.0f, 0.5f, 0.5f}, kCarrierVoice, kModInput, false));
   const double sum = magnitudeAt(out.l, kRate, 9600, 96000, 1300.0);
   const double difference = magnitudeAt(out.l, kRate, 9600, 96000, 700.0);
   const double carrierLeak = magnitudeAt(out.l, kRate, 9600, 96000, 1000.0);
@@ -3828,23 +4275,23 @@ TEST_CASE("Ring Mod / Vocoder digital ring modulation makes sum and difference t
 }
 
 TEST_CASE("Ring Mod / Vocoder internal oscillator tracks the note with its offset") {
-  ParamValues p = with({0.0f, 0.99f, 0.5f, 0.5f}, kInternal, 0.25f);  // crossfade to the modulator (1.0 reads past lut_xfade_in)
-  p.p[5] = 0.75f;                                                     // +12 st
+  ParamValues p = with({0.0f, 0.0f, 0.5f, 0.5f}, kCarrierOsc, kModInput, false);  // crossfade: all carrier
+  p.p[6] = 0.75f;                                                                  // +12 st
   WarpsEngine engine;
   engine.prepare(kRate, 256);
   engine.noteOn(57.0f, 1.0f);  // A3 + 12 st = 440 Hz
   const std::vector<float> silent(96000, 0.0f);
-  const Stereo out = run(engine, silent, silent, nullptr, p);
+  const Stereo out = run(engine, silent, silent, nullptr, nullptr, p);
   REQUIRE_THAT(test::estimateFrequency(out.l, kRate, 9600, 96000), Catch::Matchers::WithinRel(440.0, 0.003));
 }
 
-TEST_CASE("Ring Mod / Vocoder frequency shifter moves the carrier by Warps' shift") {
+TEST_CASE("Ring Mod / Vocoder frequency shifter moves the voice by Warps' shift") {
   // Algorithm 0.9: 2|0.9 - 0.5| = 0.8 > 0.4, so 4 * 2^(180 * 0.4 / 12) = 256 Hz (modulator.cc:79-95).
-  ParamValues p = with({0.9f, 0.98f, 0.0f, 1.0f}, kInput, kShifter);
+  ParamValues p = with({0.9f, 0.98f, 0.0f, 1.0f}, kCarrierOsc, kModVoice, true);
   WarpsEngine engine;
   engine.prepare(kRate, 256);
-  const auto carrier = sine(96000, 1000.0, kRate);
-  const Stereo out = run(engine, carrier, carrier, nullptr, p);
+  const auto voice = sine(96000, 1000.0, kRate);
+  const Stereo out = run(engine, voice, voice, nullptr, nullptr, p);
   const double peak = test::peakFrequency(out.l, kRate, 9600, 96000, 200.0, 3000.0);
   INFO("peak " << peak);
   REQUIRE(std::fabs(std::fabs(peak - 1000.0) - 256.0) < 3.0);
@@ -3853,10 +4300,8 @@ TEST_CASE("Ring Mod / Vocoder frequency shifter moves the carrier by Warps' shif
 TEST_CASE("Ring Mod / Vocoder with an absent modulator is silent") {
   WarpsEngine engine;
   engine.prepare(kRate, 256);
-  const auto carrier = sine(9600, 440.0, kRate);
-  ParamValues p = defaults();  // analog ring modulation
-  p.p[4] = kInput;             // but nothing on the input
-  const Stereo out = run(engine, carrier, carrier, nullptr, p);
+  const auto voice = sine(9600, 440.0, kRate);
+  const Stereo out = run(engine, voice, voice, nullptr, nullptr, with({0.25f, 0.5f, 0.47f, 0.47f}, kCarrierVoice, kModInput, false));
   REQUIRE(test::rms(out.l, 0, out.l.size()) < 1e-4);
 }
 
@@ -3866,33 +4311,35 @@ TEST_CASE("Ring Mod / Vocoder smooths its pots like the firmware") {
   const std::vector<float> block(kN, 0.1f);
   ParamValues p = defaults();
   p.p[0] = 0.25f;
-  run(engine, block, block, nullptr, p);
+  run(engine, block, block, nullptr, nullptr, p);
   REQUIRE(engine.smoothedParam(0) == 0.25f);  // snapped after reset
   p.p[0] = 0.75f;
-  p.p[4] = kInput;  // stepped: immediate
-  run(engine, block, block, nullptr, p);
+  p.p[5] = kModInput;  // stepped: immediate
+  p.p[6] = 1.0f;       // Osc Pitch: the note pot's 0.1
+  run(engine, block, block, nullptr, nullptr, p);
   REQUIRE_THAT(engine.smoothedParam(0), Catch::Matchers::WithinAbs(0.25f + 0.0264f * 0.5f, 1e-6));
-  REQUIRE(engine.smoothedParam(4) == kInput);
-  for (int i = 0; i < 400; ++i) run(engine, block, block, nullptr, p);
+  REQUIRE(engine.smoothedParam(5) == kModInput);
+  REQUIRE_THAT(engine.smoothedParam(6), Catch::Matchers::WithinAbs(0.5f + 0.1f * 0.5f, 1e-6));
+  for (int i = 0; i < 400; ++i) run(engine, block, block, nullptr, nullptr, p);
   REQUIRE_THAT(engine.smoothedParam(0), Catch::Matchers::WithinAbs(0.75f, 1e-4));
   engine.reset();
   p.p[0] = 0.1f;
-  run(engine, block, block, nullptr, p);
+  run(engine, block, block, nullptr, nullptr, p);
   REQUIRE(engine.smoothedParam(0) == 0.1f);
 }
 
-TEST_CASE("Ring Mod / Vocoder runs its second modulator only for a stereo carrier, fading it in") {
+TEST_CASE("Ring Mod / Vocoder runs its second modulator only for a stereo voice, fading it in") {
   WarpsEngine engine;
   engine.prepare(kRate, 256);
   const auto l = sine(kN * 40, 440.0, kRate);
   const auto r = sine(kN * 40, 660.0, kRate);
   const auto m = sine(kN * 40, 110.0, kRate);
-  ParamValues p = with({0.375f, 0.0f, 0.6f, 0.6f}, kInput, 0.25f);
-  const Stereo mono = run(engine, l, r, &m, p);
+  const ParamValues p = with({0.375f, 0.0f, 0.6f, 0.6f}, kCarrierVoice, kModInput, false);
+  const Stereo mono = run(engine, l, r, nullptr, &m, p);
   REQUIRE_FALSE(engine.rightRuns());
   REQUIRE(mono.l == mono.r);
   engine.setStereo(true);
-  const Stereo stereo = run(engine, l, r, &m, p);
+  const Stereo stereo = run(engine, l, r, nullptr, &m, p);
   REQUIRE(engine.rightRuns());
   // The right output starts on the left output and fades to its own instance over 10 ms.
   for (size_t i = 0; i < size_t(kN); ++i) REQUIRE(stereo.r[i] == stereo.l[i]);  // still the old block
@@ -3905,11 +4352,11 @@ TEST_CASE("Ring Mod / Vocoder through the wrapper at 44.1, 48 and 96 kHz with od
     NativeRateWrapper wrapped(std::make_unique<WarpsEngine>(), WarpsEngine::kNativeRate, WarpsEngine::kNativeBlock);
     wrapped.prepare(rate, 256);
     if (rate == kRate) REQUIRE(wrapped.inputLatencySamples() == kN);
-    ParamValues p = with({0.0f, 0.99f, 0.5f, 0.5f}, kInternal, 0.25f);
-    p.p[5] = 0.75f;
+    ParamValues p = with({0.0f, 0.0f, 0.5f, 0.5f}, kCarrierOsc, kModInput, false);
+    p.p[6] = 0.75f;
     wrapped.noteOn(57.0f, 1.0f);
     const std::vector<float> silent(size_t(rate), 0.0f);
-    const Stereo out = run(wrapped, silent, silent, nullptr, p, 37);
+    const Stereo out = run(wrapped, silent, silent, nullptr, nullptr, p, 37);
     for (float s : out.l) REQUIRE(std::isfinite(s));
     INFO("rate " << rate);
     REQUIRE_THAT(test::estimateFrequency(out.l, rate, size_t(rate * 0.1), size_t(rate)),
@@ -3918,34 +4365,37 @@ TEST_CASE("Ring Mod / Vocoder through the wrapper at 44.1, 48 and 96 kHz with od
 }
 
 TEST_CASE("Ring Mod / Vocoder output does not depend on the host block size at 96 kHz") {
-  const auto carrier = sine(kN * 50, 440.0, kRate);
-  const auto modulator = sine(kN * 50, 97.0, kRate);
-  const ParamValues p = with({0.6f, 0.5f, 0.7f, 0.7f}, kInput, 0.25f);
+  const auto voice = sine(kN * 50, 440.0, kRate);
+  const auto side = sine(kN * 50, 97.0, kRate);
+  const ParamValues p = with({0.6f, 0.5f, 0.7f, 0.7f}, kCarrierAux, kModInput, false);
   NativeRateWrapper a(std::make_unique<WarpsEngine>(), kRate, kN), b(std::make_unique<WarpsEngine>(), kRate, kN);
   a.prepare(kRate, 256);
   b.prepare(kRate, 256);
-  REQUIRE(run(a, carrier, carrier, &modulator, p, 60).l == run(b, carrier, carrier, &modulator, p, 37).l);
+  REQUIRE(run(a, voice, voice, &side, &side, p, 60).l == run(b, voice, voice, &side, &side, p, 37).l);
 }
 
-TEST_CASE("Ring Mod / Vocoder survives NaN and every algorithm stays bounded") {
-  const auto carrier = sine(kN * 40, 440.0, kRate, 2.0f);  // driven hard
-  const auto modulator = sine(kN * 40, 97.0, kRate, 2.0f);
+TEST_CASE("Ring Mod / Vocoder survives NaN and every algorithm stays within Warps' range") {
+  const auto voice = sine(kN * 40, 440.0, kRate, 2.0f);  // driven hard
+  const auto side = sine(kN * 40, 97.0, kRate, 2.0f);
+  const float limit = 32768.0f / WarpsEngine::kInputScale;  // Warps' 16-bit output, read back
   ParamValues bad;
   for (float& v : bad.p) v = std::numeric_limits<float>::quiet_NaN();
   {
     WarpsEngine engine;
     engine.prepare(kRate, 256);
-    for (float s : run(engine, carrier, carrier, &modulator, bad).l) REQUIRE(std::isfinite(s));
+    for (float s : run(engine, voice, voice, &side, &side, bad).l) REQUIRE(std::isfinite(s));
   }
   for (int step = 0; step <= 32; ++step) {
-    for (float mode : {0.25f, kShifter}) {
-      WarpsEngine engine;
-      engine.prepare(kRate, 256);
-      engine.setStereo(true);
-      const Stereo out = run(engine, carrier, modulator, &modulator, with({float(step) / 32.0f, 0.7f, 1.0f, 1.0f}, kInput, mode));
-      for (size_t i = 0; i < out.l.size(); ++i) {
-        REQUIRE(std::fabs(out.l[i]) <= 1.0f);
-        REQUIRE(std::fabs(out.r[i]) <= 1.0f);
+    for (float carrier : {kCarrierOsc, kCarrierVoice}) {
+      for (bool shifter : {false, true}) {
+        WarpsEngine engine;
+        engine.prepare(kRate, 256);
+        engine.setStereo(true);
+        const Stereo out = run(engine, voice, side, nullptr, &side, with({float(step) / 32.0f, 0.7f, 1.0f, 1.0f}, carrier, kModInput, shifter));
+        for (size_t i = 0; i < out.l.size(); ++i) {
+          REQUIRE(std::fabs(out.l[i]) <= limit);
+          REQUIRE(std::fabs(out.r[i]) <= limit);
+        }
       }
     }
   }
@@ -3955,7 +4405,7 @@ TEST_CASE("Ring Mod / Vocoder processing does not allocate") {
   WarpsEngine engine;
   engine.prepare(kRate, 256);
   std::vector<float> l(kN, 0.2f), r(kN, -0.2f), m(kN, 0.1f), ol(kN), orr(kN);
-  const float* in[3] = {l.data(), r.data(), m.data()};
+  const float* in[4] = {l.data(), r.data(), m.data(), m.data()};
   float* out[2] = {ol.data(), orr.data()};
   ParamValues p = defaults();
   engine.process(in, out, p, kN);
@@ -3965,9 +4415,10 @@ TEST_CASE("Ring Mod / Vocoder processing does not allocate") {
     for (int block = 0; block < 400; ++block) {
       engine.setStereo(block % 100 < 50);
       p.p[0] = float(block % 9) / 8.0f;
-      p.p[4] = float(block % 4) / 4.0f + 0.1f;
-      p.p[6] = float(block % 5) / 5.0f + 0.1f;
-      p.p[7] = block % 7 == 0 ? 0.75f : 0.25f;
+      p.p[4] = WarpsEngine::optionValue(block % 5);
+      p.p[5] = WarpsEngine::optionValue(block % 4);
+      p.p[7] = float(block % 3) / 3.0f + 0.1f;
+      p.p[8] = block % 7 == 0 ? 0.75f : 0.25f;
       engine.process(in, out, p, block % 2 ? kN : 17);
     }
     engine.reset();
@@ -3998,15 +4449,27 @@ namespace eg13 {
 // Adapter for the upstream Warps modulator, shown as "Ring Mod / Vocoder". Runs at Warps' rate
 // and block size (96 kHz, 60 samples: warps.cc:91,97,100) behind a one-block FIFO, so any
 // host block size works; the FIFO's 60 native samples are its nativeLatency().
-// Carrier = the voice, into Warps' channel 1; modulator, into channel 2 = the side input
-// (in[2]) or the internal oscillator, per P5. Mode = Frequency shifter runs Warps' easter egg.
+// As on the module (owner, 2026-10-20, provisional): Carrier picks the CARRIER input, either
+// Warps' internal oscillator (the module's button; at the voice's pitch plus Osc Pitch) or a
+// signal: the voice, or side input in[2]. Modulator picks the MODULATOR input: the voice, or
+// side input in[3].
 class WarpsEngine final : public VoiceEngine {
  public:
   static constexpr double kNativeRate = 96000.0;
   static constexpr int kNativeBlock = 60;
-  static constexpr int kNumAlgorithms = 9;  // warps/dsp/parameters.h:43-53
-  // EG13 ±1.0 = ±5 V into Warps' ±8 V inputs, as VCV converts (Warps.cpp:102-103).
+  static constexpr int kNumAlgorithms = 9;       // warps/dsp/parameters.h:43-53
+  static constexpr int kNumOscillatorModes = 3;  // the button's modes, carrier_shape 1..3
+  // Carrier and Modulator are append-only option lists read in 8 fixed steps, so adding an
+  // option never changes what a saved value means.
+  static constexpr int kSelectorSteps = 8;
+  static constexpr int kNumCarriers = 5;    // Internal Osc, Voice, Source AUX, Input, Other part
+  static constexpr int kNumModulators = 4;  // Voice, Source AUX, Input, Other part
+  // EG13 ±1.0 = ±5 V into Warps' ±8 V inputs, as VCV converts (Warps.cpp:102-103): 10240 counts.
+  // Outputs are read back with the same scale, so a unity path through Warps is unity in EG13.
   static constexpr float kInputScale = 5.0f / 16.0f * 32768.0f;
+  // Carrier Level and Mod Level default: unity gain, unsaturated, through Warps' amplifier for a
+  // full-scale voice (measured; see test_warps_engine.cpp). Owner decision 2026-10-20.
+  static constexpr float kDefaultLevel = 0.47f;
 
   WarpsEngine();
   ~WarpsEngine() override;
@@ -4023,11 +4486,15 @@ class WarpsEngine final : public VoiceEngine {
   const EngineInfo& info() const override;
 
   static const EngineInfo& staticInfo();
-  static float oscillatorOffset(float normalized);  // P6: -24..+24 semitones
-  static int oscillatorShape(float normalized);     // P7 fifths: sine, triangle, saw, pulse, noise
-  static bool shifterMode(float normalized);        // P8 halves: modulation / frequency shifter
+  static int carrierIndex(float normalized);    // P5 -> 0..4 (0 = Internal Osc)
+  static int modulatorIndex(float normalized);  // P6 -> 0..3 (0 = Voice)
+  static float optionValue(int index);          // the centre of option index's step
+  static float oscillatorOffset(float normalized);  // P7: -24..+24 semitones
+  static int oscillatorMode(float normalized);      // P8 thirds: 0..2 (carrier_shape 1..3)
+  static bool shifterMode(float normalized);        // P9 halves: modulation / frequency shifter
   static short toShort(float x);                    // EG13 sample -> Warps' 16-bit input
-  float smoothedParam(int index) const;             // test hook: pot-filtered P1..P8
+  static float fromShort(short x);                  // Warps' 16-bit output -> EG13 sample
+  float smoothedParam(int index) const;             // test hook: pot-filtered P1..P9
   bool rightRuns() const { return link_.rightRuns(); }
 
  private:
@@ -4057,7 +4524,6 @@ class WarpsEngine final : public VoiceEngine {
 
 #include "engine/param_format.h"
 #include "warps/dsp/modulator.h"
-#include "warps/dsp/oscillator.h"
 
 namespace eg13 {
 
@@ -4066,8 +4532,14 @@ namespace {
 // Warps' algorithms in knob order (warps/dsp/parameters.h:43-53).
 const char* const kAlgorithmNames[WarpsEngine::kNumAlgorithms] = {
     "Crossfade", "Fold", "Analog RM", "Digital RM", "XOR", "Compare", "Spectral", "Morph", "Vocoder"};
-const char* const kModulatorNames[4] = {"Internal osc", "Source AUX", "Input", "Other part"};
-const char* const kShapeNames[5] = {"Sine", "Triangle", "Saw", "Pulse", "Noise"};
+// Append-only (see kSelectorSteps): never reorder, only add at the end.
+const char* const kCarrierNames[WarpsEngine::kNumCarriers] = {"Internal Osc", "Voice", "Source AUX", "Input",
+                                                              "Other part"};
+const char* const kModulatorNames[WarpsEngine::kNumModulators] = {"Voice", "Source AUX", "Input", "Other part"};
+// The button's three modes name the oscillator's waveform in the cross-modulation and vocoder
+// regions (carrier_shape - 1 and + 1, modulator.cc:233-237; OscillatorShape, parameters.h:35-41).
+const char* const kModeShapeNames[WarpsEngine::kNumOscillatorModes] = {"Sine / Saw", "Triangle / Pulse",
+                                                                      "Saw / Noise"};
 const char* const kModeNames[2] = {"Modulation", "Freq shifter"};
 
 // The knob crossfades between adjacent algorithms (modulator.cc:292-311), so the text names the
@@ -4085,39 +4557,55 @@ void formatAlgorithm(float v, char* buf, size_t size) {
                   int(std::lround(frac * 100.0f)));
   }
 }
+void formatCarrier(float v, char* buf, size_t size) {
+  std::snprintf(buf, size, "%s", kCarrierNames[WarpsEngine::carrierIndex(v)]);
+}
 void formatModulator(float v, char* buf, size_t size) {
-  std::snprintf(buf, size, "%s", kModulatorNames[int(sideSourceOf(v))]);
+  std::snprintf(buf, size, "%s", kModulatorNames[WarpsEngine::modulatorIndex(v)]);
 }
 void formatPitch(float v, char* buf, size_t size) { formatSemitones(WarpsEngine::oscillatorOffset(v), buf, size); }
 void formatShape(float v, char* buf, size_t size) {
-  std::snprintf(buf, size, "%s", kShapeNames[WarpsEngine::oscillatorShape(v)]);
+  std::snprintf(buf, size, "%s", kModeShapeNames[WarpsEngine::oscillatorMode(v)]);
 }
 void formatMode(float v, char* buf, size_t size) {
   std::snprintf(buf, size, "%s", kModeNames[WarpsEngine::shifterMode(v) ? 1 : 0]);
 }
 
-// Defaults: Timbre 0.5 and both Levels 1.0, as VCV (Warps.cpp:44,46-47). Algorithm starts on
-// the analog ring modulator (2/8), the engine's namesake; VCV starts on crossfade (Warps.cpp:43).
-// Modulator: the internal oscillator (spec §4), a sine at the voice's pitch.
-const EngineParamInfo kParams[8] = {
+// Defaults: Timbre 0.5 as VCV (Warps.cpp:44). Algorithm on the analog ring modulator (2/8), the
+// engine's namesake (VCV starts on crossfade, Warps.cpp:43). Levels at the measured unity point
+// (VCV 1.0, Warps.cpp:46-47). Carrier Internal Osc and Modulator Voice: the common hardware patch,
+// a signal into MODULATOR with the internal oscillator on (owner, 2026-10-20, provisional). These
+// defaults live only here: changing one is a one-line edit that affects new patches only.
+const EngineParamInfo kParams[9] = {
     {"Algorithm", 2.0f / 8.0f, formatAlgorithm},
     {"Timbre", 0.5f, formatPercent01},
-    {"Carrier Level", 1.0f, formatPercent01},
-    {"Mod Level", 1.0f, formatPercent01},
-    {"Modulator", 0.5f / 4.0f, formatModulator},
+    {"Carrier Level", WarpsEngine::kDefaultLevel, formatPercent01},
+    {"Mod Level", WarpsEngine::kDefaultLevel, formatPercent01},
+    {"Carrier", 0.5f / float(WarpsEngine::kSelectorSteps), formatCarrier},
+    {"Modulator", 0.5f / float(WarpsEngine::kSelectorSteps), formatModulator},
     {"Osc Pitch", 0.5f, formatPitch},
-    {"Osc Shape", 0.5f / 5.0f, formatShape},
+    {"Osc Shape", 0.5f / 3.0f, formatShape},
     {"Mode", 0.25f, formatMode},
 };
 
-const EngineInfo kInfo = {"warps", "Ring Mod / Vocoder", 8, kParams, true, false, true, 4};
+// Side input 0 feeds CARRIER, side input 1 MODULATOR. Internal Osc needs no signal (None) and
+// Voice is the engine's own input; the Voice delivers the rest (Source AUX, Input, Other part).
+SideSource warpsSideSource(int input, const ParamValues& p) {
+  if (input == 0) {
+    const int carrier = WarpsEngine::carrierIndex(p.p[4]);
+    return carrier == 0 ? SideSource::None : SideSource(carrier - 1);
+  }
+  return SideSource(WarpsEngine::modulatorIndex(p.p[5]));
+}
+
+const EngineInfo kInfo = {"warps", "Ring Mod / Vocoder", 9, kParams, true, false, 2, warpsSideSource};
 
 // Firmware pot smoothing, once per 60-sample block: CvScaler::Read runs once per audio block
 // (warps.cc:63-70) and BIND low-passes each pot by 0.33 * 0.08 (cv_scaler.cc:65-75, 125-128).
-// The oscillator pitch follows the LEVEL 1 pot's note filter, 0.1 (cv_scaler.cc:159-160).
-// Modulator, Osc Shape and Mode are stepped. Within each block Warps interpolates its own
-// parameters (ParameterInterpolator and ProcessXmod, modulator.cc:157-201).
-const float kPotLp[8] = {0.0264f, 0.0264f, 0.0264f, 0.0264f, 1.0f, 0.1f, 1.0f, 1.0f};
+// Osc Pitch follows the LEVEL 1 pot's note filter, 0.1 (cv_scaler.cc:159-160). Carrier,
+// Modulator, Osc Shape and Mode are stepped (the button, ui.cc). Within each block Warps interpolates
+// its own parameters (ParameterInterpolator and ProcessXmod, modulator.cc:157-201).
+const float kPotLp[9] = {0.0264f, 0.0264f, 0.0264f, 0.0264f, 1.0f, 1.0f, 0.1f, 1.0f, 1.0f};
 
 void initModulator(warps::Modulator& m) {
   std::memset(static_cast<void*>(&m), 0, sizeof(m));  // Init leaves members unset (Warps.cpp:61)
@@ -4128,13 +4616,10 @@ void initModulator(warps::Modulator& m) {
 
 struct WarpsEngine::Impl {
   warps::Modulator modulator[2];  // left, right (the right runs only while stereo)
-  warps::Oscillator oscillator;
   warps::ShortFrame in[kNativeBlock];
   warps::ShortFrame out[kNativeBlock];
-  float pending[3][kNativeBlock];  // the block being collected: carrier L, carrier R, side
+  float pending[4][kNativeBlock];  // the block being collected: voice L, voice R, carrier side, modulator side
   float ready[2][kNativeBlock];    // the last processed block, played while the next fills
-  float osc[kNativeBlock];
-  float fm[kNativeBlock];          // zeros: nothing modulates the internal oscillator
 };
 
 WarpsEngine::WarpsEngine()
@@ -4151,7 +4636,17 @@ const EngineInfo& WarpsEngine::info() const { return kInfo; }
 
 float WarpsEngine::oscillatorOffset(float normalized) { return (clamp01(normalized) - 0.5f) * 48.0f; }
 
-int WarpsEngine::oscillatorShape(float normalized) { return stepIndex(normalized, 5); }
+int WarpsEngine::oscillatorMode(float normalized) { return stepIndex(normalized, kNumOscillatorModes); }
+
+int WarpsEngine::carrierIndex(float normalized) {
+  return std::min(stepIndex(normalized, kSelectorSteps), kNumCarriers - 1);
+}
+
+int WarpsEngine::modulatorIndex(float normalized) {
+  return std::min(stepIndex(normalized, kSelectorSteps), kNumModulators - 1);
+}
+
+float WarpsEngine::optionValue(int index) { return (float(index) + 0.5f) / float(kSelectorSteps); }
 
 bool WarpsEngine::shifterMode(float normalized) { return clamp01(normalized) >= 0.5f; }
 
@@ -4162,6 +4657,8 @@ short WarpsEngine::toShort(float x) {
   if (v >= 32767.0f) return 32767;
   return short(int(v));  // truncation, like VCV's (int) cast (Warps.cpp:102-103)
 }
+
+float WarpsEngine::fromShort(short x) { return float(x) / kInputScale; }
 
 float WarpsEngine::smoothedParam(int index) const {
   return index >= 0 && index < kInfo.paramCount ? pots_[index] : 0.0f;
@@ -4175,10 +4672,8 @@ void WarpsEngine::prepare(double, int) {
 void WarpsEngine::reset() {
   Impl& s = *impl_;
   initModulator(s.modulator[0]);  // modulator[1] is initialised whenever stereo starts
-  s.oscillator.Init(float(kNativeRate));
   std::memset(s.pending, 0, sizeof(s.pending));
   std::memset(s.ready, 0, sizeof(s.ready));
-  std::memset(s.fm, 0, sizeof(s.fm));
   fill_ = 0;
   pots_.reset();
   link_.reset();
@@ -4190,6 +4685,7 @@ void WarpsEngine::process(const float* const* in, float* const* out, const Param
     s.pending[0][fill_] = in != nullptr ? in[0][i] : 0.0f;
     s.pending[1][fill_] = in != nullptr ? in[1][i] : 0.0f;
     s.pending[2][fill_] = in != nullptr && in[2] != nullptr ? in[2][i] : 0.0f;
+    s.pending[3][fill_] = in != nullptr && in[3] != nullptr ? in[3][i] : 0.0f;
     out[0][i] = s.ready[0][fill_];
     out[1][i] = s.ready[1][fill_];
     if (++fill_ == kNativeBlock) {
@@ -4202,43 +4698,47 @@ void WarpsEngine::process(const float* const* in, float* const* out, const Param
 void WarpsEngine::renderBlock(const ParamValues& p) {
   Impl& s = *impl_;
   pots_.update(p, kNativeBlock);
-  const bool shifter = shifterMode(p.p[7]);
-  const bool internal = sideSourceOf(p.p[4]) == SideSource::Internal;
+  const bool shifter = shifterMode(p.p[8]);
+  const int carrier = carrierIndex(p.p[4]);
+  const bool internal = carrier == 0;
+  const bool voiceCarries = carrier == 1;
+  const bool voiceModulates = modulatorIndex(p.p[5]) == 0;
   // Warps' modulator keeps pointers into itself (filter_bank.h:70, sample_rate_converter.h:279),
   // so its state cannot be copied: the right instance starts fresh and fades in.
   if (link_.request(stereo_, false) == StereoLink::Start::ResetRight) initModulator(s.modulator[1]);
   const int instances = link_.rightRuns() ? 2 : 1;
-  if (!shifter && internal) {
-    s.oscillator.Render(warps::OscillatorShape(oscillatorShape(p.p[6])),
-                        note_ + oscillatorOffset(pots_[5]), s.fm, s.osc, kNativeBlock);
-  }
   for (int c = 0; c < instances; ++c) {
     warps::Modulator& m = s.modulator[c];
     warps::Parameters* w = m.mutable_parameters();
     // VCV's mapping (Warps.cpp:78-95): each knob straight to its parameter.
-    w->channel_drive[0] = pots_[2];
+    w->channel_drive[0] = pots_[2];  // no effect with the oscillator on (modulator.cc:215)
     w->channel_drive[1] = pots_[3];
     w->modulation_algorithm = pots_[0];
     w->modulation_parameter = pots_[1];
     w->frequency_shift_pot = pots_[0];
     w->frequency_shift_cv = 0.0f;
     w->phase_shift = pots_[0];
-    w->note = 60.0f;  // unused: the carrier is never Warps' own oscillator here
-    w->carrier_shape = shifter ? 1 : 0;
+    // The internal oscillator's pitch: the module takes it from the LEVEL 1 pot and V/OCT
+    // (cv_scaler.cc:149-173); EG13 plays it at the voice's pitch plus Osc Pitch. Warps runs at
+    // its own 96 kHz here, so no rate correction (VCV adds one at other rates, Warps.cpp:97).
+    w->note = note_ + oscillatorOffset(pots_[6]);
+    // The button: 0 takes the carrier from the CARRIER input; 1..3 replace it with the internal
+    // oscillator in one of three modes (modulator.cc:209-286; Warps.cpp:68-69). In the easter egg
+    // a non-zero value selects its quadrature oscillator (modulator.cc:78-98).
+    w->carrier_shape = internal ? 1 + oscillatorMode(p.p[7]) : 0;  // only Internal Osc uses P7, P8
     m.set_easter_egg(shifter);
     for (int i = 0; i < kNativeBlock; ++i) {
       const float voice = s.pending[c][i];
-      if (shifter) {
-        // The easter egg shifts channel 2 with its own quadrature sine (modulator.cc:78-98,140-145).
-        s.in[i].l = 0;
-        s.in[i].r = toShort(voice);
-      } else {
-        s.in[i].l = toShort(voice);  // carrier
-        s.in[i].r = toShort(internal ? s.osc[i] : s.pending[2][i]);  // modulator, as a ±5 V signal
-      }
+      // CARRIER: this channel's voice or the carrier side signal, with the oscillator off. With
+      // it on, the module reads this jack as the oscillator's FM (modulator.cc:228-231) and, in
+      // the easter egg, adds it to the shifted signal (:143-145); v1 has no audio-rate FM (spec
+      // §6), so it is silent then.
+      s.in[i].l = internal ? short(0) : toShort(voiceCarries ? voice : s.pending[2][i]);
+      // MODULATOR: this channel's voice, or the modulator side signal.
+      s.in[i].r = toShort(voiceModulates ? voice : s.pending[3][i]);
     }
     m.Process(s.in, s.out, kNativeBlock);
-    for (int i = 0; i < kNativeBlock; ++i) s.ready[c][i] = float(s.out[i].l) / 32768.0f;
+    for (int i = 0; i < kNativeBlock; ++i) s.ready[c][i] = fromShort(s.out[i].l);
   }
   link_.mix(s.ready[0], s.ready[1], s.ready[1], kNativeBlock);
 }
@@ -4248,22 +4748,59 @@ void WarpsEngine::renderBlock(const ParamValues& p) {
 
 Add `engine/warps_engine.cpp` to `core/CMakeLists.txt`.
 
-- [ ] **Step 5: Run the tests**
+- [ ] **Step 5: Document the Ring Mod / Vocoder in the manual**
 
-Run: `cmake --build --preset mac --target eg13_tests && ctest --preset mac -R "Ring Mod"`
-Expected: all pass. Then the full suite and the Docker command. If a bit-for-bit test fails, report the algorithm, first differing index and both values as BLOCKED.
+Append to `docs/manual/engines.md`:
 
-- [ ] **Step 6: Commit**
+````markdown
+## Shapers
+
+Every voice has a Shaper slot after its Filter. **Off** passes the sound through unchanged.
+
+### Ring Mod / Vocoder (based on Warps)
+
+Warps combines two signals, a **carrier** and a **modulator**, in one of its algorithms. Like the module it has two inputs, CARRIER and MODULATOR, and its internal oscillator can stand in for the carrier. EG13 lets you choose what feeds each input. The routing is provisional; it may be revisited once more patches are made, and if options are added, saved patches keep their meaning.
+
+- **Carrier**:
+  - *Internal Osc* (default): Warps' own oscillator, playing the voice's pitch plus **Osc Pitch** (±24 semitones). **Osc Shape** picks the module's three oscillator modes. Warps chooses the waveform itself for each algorithm region: *Sine / Saw*, *Triangle / Pulse* or *Saw / Noise*, where the first is used for the cross-modulations and the second for the vocoder. Osc Pitch and Osc Shape only matter with this setting. As on the module, **Carrier Level** has no effect while the internal oscillator plays.
+  - *Voice*: the voice itself, meaning the sound reaching the Shaper from this voice's Source and Filter.
+  - *Source AUX*: the Source's second output: the Macro Oscillator's AUX, the Resonator's even partials. Other sources give their main output.
+  - *Input*: the part's Input, as its Input source setting routes it.
+  - *Other part*: the other part's output.
+- **Modulator**: *Voice* (default), *Source AUX*, *Input* or *Other part*, with the same meanings. Voice into the modulator with the internal oscillator as carrier is the classic way to play Warps; for example, the vocoder then puts the voice's formants on the oscillator. Voice into both inputs is allowed: it is self-modulation.
+- If a chosen signal isn't there (no sidechain, a silent part), that input is silent.
+- **Algorithm** is Warps' big knob, and it is continuous: *Crossfade*, *Fold*, *Analog RM*, *Digital RM*, *XOR*, *Compare*, *Spectral*, *Morph* and *Vocoder*. Between two positions it blends the neighbouring algorithms, and the display names both, for example "Fold > Analog RM 40%". The default is *Analog RM*. **Timbre** is the algorithm's own control.
+- **Carrier Level** and **Mod Level** drive Warps' input amplifiers. Their default, 47 %, passes a full-scale voice at unity gain without saturating. Turn them up for the module's overdriven, squarer character (at 100 % the amplifier adds about 12 dB and heavy distortion).
+- **Mode** *Freq shifter* is the module's hidden frequency-shifter mode.
+  - With Carrier = Internal Osc, it shifts the Modulator signal (the voice, by default) by an amount set by Algorithm, from no shift at the centre to several hundred Hz up or down at the ends. Timbre mixes the upper and lower sidebands, Carrier Level sets feedback and Mod Level the dry/wet mix.
+  - With any other Carrier, it multiplies the carrier and modulator into a single sideband instead.
+- Warps runs at 96 kHz in blocks of 60 samples. That adds to EG13's fixed latency ([Latency](latency.md)).
+- Stereo: while the voice is stereo, a second Warps runs for the right channel. It cannot copy the left one's state, so it starts fresh and fades in over 10 ms. The Source AUX, Input and Other part signals are mono (left and right summed).
+````
+
+Append to `docs/manual/smoothing.md`:
+
+````markdown
+- **Ring Mod / Vocoder:** Warps' own knob filter, once per 60-sample block. Algorithm, Timbre and both Levels have a time constant of about 25 ms; Osc Pitch about 6 ms. Within each block Warps glides its parameters itself. Carrier, Modulator, Osc Shape and Mode switch at once.
+````
+
+- [ ] **Step 6: Run the tests**
+
+Run: `cmake --build --preset mac --target eg13_tests && ctest --preset mac -R "Ring Mod|Default levels"`
+Expected: all pass. Then the full suite and the Docker command. If a bit-for-bit test fails, report the case, first differing index and both values as BLOCKED.
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add core/engine/warps_engine.h core/engine/warps_engine.cpp core/CMakeLists.txt tests/test_warps_engine.cpp
-git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "Ring Mod / Vocoder: Warps at 96 kHz with all algorithms, four modulator sources and the frequency shifter"
+git add core/engine/warps_engine.h core/engine/warps_engine.cpp core/CMakeLists.txt tests/test_warps_engine.cpp docs/manual
+git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "Ring Mod / Vocoder: Warps at 96 kHz with Carrier and Modulator selectors and the frequency shifter"
 ```
 
 ---
 ### Task 9: EQ (VCV Shelves model)
 
 **Files:**
+- Manual: `docs/manual/engines.md`, `docs/manual/smoothing.md` (same commit)
 - Create: `core/engine/shelves_engine.h`, `core/engine/shelves_engine.cpp`
 - Modify: `core/CMakeLists.txt` (add `engine/shelves_engine.cpp`)
 - Test: `tests/test_shelves_engine.cpp`
@@ -4343,6 +4880,13 @@ shelves::ShelvesEngine::Frame frameFor(const ParamValues& p) {
   return f;
 }
 
+// The adapter is built with Rack's own -funsafe-math-optimizations (Rack compile.mk:17), this
+// test without it, so they agree to 1e-5 rather than bit for bit (owner, 2026-10-20). Planning
+// measured at most 5.6e-6.
+bool nearModel(float actual, float expected) {
+  return std::fabs(actual - expected) <= 1e-5f * std::max(1.0f, std::fabs(expected));
+}
+
 float tap(const shelves::ShelvesEngine::Frame& f, int output) {
   switch (output) {
     case 1: return f.p1_lp_out;
@@ -4380,7 +4924,7 @@ TEST_CASE("EQ describes itself") {
   REQUIRE(std::string(buf) == "-6 dB");
 }
 
-TEST_CASE("EQ matches the VCV Shelves model sample for sample") {
+TEST_CASE("EQ matches the VCV Shelves model to 1e-5") {
   for (int output = 0; output < ShelvesEngine::kNumOutputs; ++output) {
     for (float pad : {0.25f, 0.75f}) {
       ParamValues p = defaults();
@@ -4407,7 +4951,7 @@ TEST_CASE("EQ matches the VCV Shelves model sample for sample") {
       for (size_t i = 0; i < in.size(); ++i) {
         f.main_in = in[i] * ShelvesEngine::kVolts;
         ref.process(f);
-        REQUIRE(out.l[i] == tap(f, output) / ShelvesEngine::kVolts);
+        REQUIRE(nearModel(out.l[i], tap(f, output) / ShelvesEngine::kVolts));
         REQUIRE(out.r[i] == out.l[i]);
       }
     }
@@ -4446,7 +4990,7 @@ TEST_CASE("EQ ramps its knobs across each block and snaps after reset") {
     f.p1_freq_knob = freq;
     f.main_in = in[size_t(i)] * ShelvesEngine::kVolts;
     ref.process(f);
-    REQUIRE(out[size_t(i)] == f.main_out / ShelvesEngine::kVolts);
+    REQUIRE(nearModel(out[size_t(i)], f.main_out / ShelvesEngine::kVolts));
   }
   engine.reset();
   const float* i2[2] = {in.data(), in.data()};
@@ -4458,7 +5002,7 @@ TEST_CASE("EQ ramps its knobs across each block and snaps after reset") {
   for (int i = 0; i < 16; ++i) {
     g.main_in = in[size_t(i)] * ShelvesEngine::kVolts;
     fresh.process(g);
-    REQUIRE(out[size_t(i)] == g.main_out / ShelvesEngine::kVolts);
+    REQUIRE(nearModel(out[size_t(i)], g.main_out / ShelvesEngine::kVolts));
   }
 }
 
@@ -4647,7 +5191,7 @@ const EngineParamInfo kParams[12] = {
     {"Low Gain", 0.5f, formatGain},   {"Input Pad", 0.25f, formatPad}, {"Output", 0.5f / 7.0f, formatOutput},
 };
 
-const EngineInfo kInfo = {"shelves", "EQ", 12, kParams, true, false, false, -1};
+const EngineInfo kInfo = {"shelves", "EQ", 12, kParams, true, false, 0, nullptr};
 
 float delivered(const shelves::ShelvesEngine::Frame& f, int output) {
   switch (output) {
@@ -4743,7 +5287,33 @@ void ShelvesEngine::process(const float* const* in, float* const* out, const Par
 }  // namespace eg13
 ```
 
-Add `engine/shelves_engine.cpp` to `core/CMakeLists.txt`.
+Add `engine/shelves_engine.cpp` to `core/CMakeLists.txt` and to the `set_source_files_properties` line Task 5 added, so it reads:
+
+```cmake
+set_source_files_properties(engine/ripples_engine.cpp engine/shelves_engine.cpp
+                            PROPERTIES COMPILE_OPTIONS "-funsafe-math-optimizations")
+```
+
+- [ ] **Step 4a: Document the EQ in the manual**
+
+Append to `docs/manual/engines.md` (after the Ring Mod / Vocoder section):
+
+````markdown
+### EQ (the VCV model of Shelves)
+
+A four-band equalizer modelled on the analog circuit: **High Freq** / **High Gain** (high shelf), **Mid 1 Freq** / **Mid 1 Gain** / **Mid 1 Q**, **Mid 2 Freq** / **Mid 2 Gain** / **Mid 2 Q** (two bells), **Low Freq** / **Low Gain** (low shelf). Frequencies run 20 Hz to 20 kHz, gains ±18 dB, Q 0.5 to 40. At the defaults (gains 0 dB) it is flat.
+
+- **Input Pad** (*Off* / *−6 dB*) is the module's pre-gain option: the input goes in 6 dB lower, leaving headroom before the circuit clips (about ±10.5 V inside), and the output is 6 dB lower too.
+- **Output** chooses what you hear: the *EQ*, or one of the module's six filter outputs: *Mid 1 LP*, *Mid 1 BP*, *Mid 1 HP*, *Mid 2 LP*, *Mid 2 BP*, *Mid 2 HP*, which turns the EQ into a multimode filter.
+- Stereo: while the voice is stereo, a second EQ runs for the right channel, starting from the left one's exact state.
+````
+
+Append to `docs/manual/smoothing.md`:
+
+````markdown
+- **EQ:** all ten knobs move in a straight line across each 16-sample control block. Input Pad and Output switch at once.
+````
+
 
 - [ ] **Step 5: Run the tests**
 
@@ -4753,7 +5323,7 @@ Expected: all pass. Then the full suite and the Docker command.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add core/engine/shelves_engine.h core/engine/shelves_engine.cpp core/CMakeLists.txt tests/test_shelves_engine.cpp
+git add core/engine/shelves_engine.h core/engine/shelves_engine.cpp core/CMakeLists.txt tests/test_shelves_engine.cpp docs/manual
 git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "EQ: VCV Shelves model with its pad and filter-tap outputs"
 ```
 
@@ -4761,6 +5331,7 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 ### Task 10: Filter and Shaper slots: registry, Off, factories, ProcessorSlot
 
 **Files:**
+- Manual: `docs/manual/parts-and-routing.md` (same commit)
 - Create: `core/engine/bypass_engine.h`, `core/engine/bypass_engine.cpp`, `core/voice/processor_factory.h`, `core/voice/processor_factory.cpp`, `core/voice/processor_slot.h`, `core/voice/processor_slot.cpp`
 - Modify: `core/engine/engine_registry.h`, `core/engine/engine_registry.cpp`, `core/CMakeLists.txt`, `tests/test_engines.h`
 - Test: `tests/test_engine_registry.cpp`, `tests/test_processor_slot.cpp`
@@ -4773,7 +5344,7 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
   - `int filterEngineFromSelector(double)`, `int shaperEngineFromSelector(double)` (unknown → Off), `const EngineInfo& filterEngineInfo(int)`, `const EngineInfo& shaperEngineInfo(int)` (unknown → Off's info).
   - `class BypassEngine` ("Off", id `"off"`, `usesInput`, no parameters): copies its input to its output.
   - `SourceSpec makeOff(); SourceSpec makeFilter(int); SourceSpec makeShaper(int); std::vector<SourceSpec> makeAllFilters(); std::vector<SourceSpec> makeAllShapers(); std::vector<SourceSpec> makeOffOnly();`
-  - `constexpr double kSlotFadeSeconds = 0.01;` and `class ProcessorSlot` with `explicit ProcessorSlot(std::vector<SourceSpec>)`, `prepare(double, int)`, `reset()`, `restart()`, `latencySamples()`, `engineCount()`, `engine()`, `info()`, `stereo()`, `fading()`, `setEngine(int)`, `noteOn(float, float)`, `noteOff()`, `setNote(float)`, `process(const float* const* in, const float* side, float* const* out, const ParamValues& p, int n)`.
+  - `constexpr double kSlotFadeSeconds = 0.01;` and `class ProcessorSlot` with `explicit ProcessorSlot(std::vector<SourceSpec>)`, `prepare(double, int)`, `reset()`, `restart()`, `latencySamples()`, `engineCount()`, `engine()`, `info()`, `stereo()`, `fading()`, `setEngine(int)`, `noteOn(float, float)`, `noteOff()`, `setNote(float)`, `process(const float* const* in, const float* const* sides, float* const* out, const ParamValues& p, int n)` (`sides`: nullable array of the engine's two side inputs, each nullable).
   - Test engines: `GainEngine` (out = in · 4 · P1), `ConstantEngine` (outputs 0.5 whatever the input).
 
 - [ ] **Step 1: Write the failing tests**
@@ -4797,7 +5368,7 @@ class GainEngine final : public VoiceEngine {
   }
   const EngineInfo& info() const override {
     static const EngineParamInfo kParams[1] = {{"Gain", 0.25f, nullptr}};
-    static const EngineInfo kInfo = {"gain", "Gain", 1, kParams, true, false, false, -1};
+    static const EngineInfo kInfo = {"gain", "Gain", 1, kParams, true, false, 0, nullptr};
     return kInfo;
   }
 };
@@ -4814,7 +5385,7 @@ class ConstantEngine final : public VoiceEngine {
     for (int i = 0; i < n; ++i) out[0][i] = out[1][i] = 0.5f;
   }
   const EngineInfo& info() const override {
-    static const EngineInfo kInfo = {"constant", "Constant", 0, nullptr, true, false, false, -1};
+    static const EngineInfo kInfo = {"constant", "Constant", 0, nullptr, true, false, 0, nullptr};
     return kInfo;
   }
 };
@@ -4854,7 +5425,7 @@ TEST_CASE("Filter and Shaper engines report their display names") {
   REQUIRE(std::string(filterEngineInfo(9).displayName) == "Off");
   for (int e = 0; e < 4; ++e) REQUIRE(filterEngineInfo(e).paramCount <= 4);   // spec §7.1: P1-P4
   for (int e = 0; e < 3; ++e) REQUIRE(shaperEngineInfo(e).paramCount <= 12);  // P1-P12 (amended)
-  REQUIRE(shaperEngineInfo(int(ShaperEngine::RingMod)).usesSide);
+  REQUIRE(shaperEngineInfo(int(ShaperEngine::RingMod)).sideInputs == 2);
 }
 
 TEST_CASE("Filter and Shaper factories build every engine at its rate") {
@@ -4925,7 +5496,8 @@ Stereo run(ProcessorSlot& slot, const std::vector<float>& l, const std::vector<f
     const int n = int(std::min<size_t>(16, l.size() - done));
     const float* in[2] = {l.data() + done, r.data() + done};
     float* out[2] = {s.l.data() + done, s.r.data() + done};
-    slot.process(in, side ? side + done : nullptr, out, p, n);
+    const float* sides[2] = {side ? side + done : nullptr, side ? side + done : nullptr};
+    slot.process(in, sides, out, p, n);
   }
   return s;
 }
@@ -4980,7 +5552,8 @@ TEST_CASE("Every Shaper engine is padded to one slot latency") {
   carrierOnly.p[0] = 0.0f;  // crossfade ...
   carrierOnly.p[1] = 0.0f;  // ... all the way to the carrier
   carrierOnly.p[2] = 0.5f;
-  carrierOnly.p[4] = 2.5f / 4.0f;  // modulator: Input (absent: silence)
+  carrierOnly.p[4] = 1.5f / 8.0f;  // Carrier: Voice
+  carrierOnly.p[5] = 2.5f / 8.0f;  // Modulator: Input (absent: silence)
   REQUIRE(std::abs(peakAt(run(shapers, impulse, impulse, carrierOnly).l) - (1000 + latency)) <= 16);
 }
 
@@ -5077,7 +5650,8 @@ TEST_CASE("Slot processing, engine switches and stereo changes do not allocate")
   float* out[2] = {ol.data(), orr.data()};
   ParamValues p;
   p.p[0] = 0.5f;
-  shapers.process(in, side.data(), out, p, 16);
+  const float* sides[2] = {side.data(), side.data()};
+  shapers.process(in, sides, out, p, 16);
   filters.process(in, nullptr, out, p, 16);
   size_t allocations = 0;
   {
@@ -5088,7 +5662,7 @@ TEST_CASE("Slot processing, engine switches and stereo changes do not allocate")
         filters.setEngine((block / 60) % kNumFilterEngines);
       }
       in[1] = block % 200 < 100 ? r.data() : l.data();
-      shapers.process(in, side.data(), out, p, 16);
+      shapers.process(in, sides, out, p, 16);
       filters.process(in, nullptr, out, p, 16);
       if (block == 300) {
         shapers.restart();
@@ -5138,7 +5712,7 @@ class BypassEngine final : public VoiceEngine {
 namespace eg13 {
 
 namespace {
-const EngineInfo kInfo = {"off", "Off", 0, nullptr, true, false, false, -1};
+const EngineInfo kInfo = {"off", "Off", 0, nullptr, true, false, 0, nullptr};
 }  // namespace
 
 const EngineInfo& BypassEngine::staticInfo() { return kInfo; }
@@ -5349,10 +5923,10 @@ class ProcessorSlot {
   void noteOff();
   void setNote(float note);
 
-  // in: two channels; side: the mono side signal for usesSide engines (nullable); out: two
-  // channels, not aliasing in. n <= the maxBlock given to prepare().
-  void process(const float* const* in, const float* side, float* const* out, const ParamValues& p,
-               int n);
+  // in: two channels; sides: the engine's two mono side inputs (the array and each entry
+  // nullable); out: two channels, not aliasing in. n <= the maxBlock given to prepare().
+  void process(const float* const* in, const float* const* sides, float* const* out,
+               const ParamValues& p, int n);
 
  private:
   NativeRateWrapper& at(int engine) { return *engines_[size_t(engine)]; }
@@ -5459,10 +6033,11 @@ void ProcessorSlot::setNote(float note) {
   if (previous_ >= 0) at(previous_).setNote(note);
 }
 
-void ProcessorSlot::process(const float* const* in, const float* side, float* const* out,
+void ProcessorSlot::process(const float* const* in, const float* const* sides, float* const* out,
                             const ParamValues& p, int n) {
   const bool stereo = detector_.update(in[0], in[1], n);
-  const float* channels[3] = {in[0], in[1], side};
+  const float* channels[4] = {in[0], in[1], sides != nullptr ? sides[0] : nullptr,
+                              sides != nullptr ? sides[1] : nullptr};
   NativeRateWrapper& current = at(current_);
   current.setStereo(stereo);
   current.process(channels, out, p, n);
@@ -5489,6 +6064,22 @@ void ProcessorSlot::process(const float* const* in, const float* side, float* co
 
 Add `engine/bypass_engine.cpp`, `voice/processor_factory.cpp` and `voice/processor_slot.cpp` to `core/CMakeLists.txt`.
 
+- [ ] **Step 7a: Document the slots in the manual**
+
+In `docs/manual/parts-and-routing.md`, after the "Engine switching" section's second paragraph, add:
+
+````markdown
+Changing the **Filter** or **Shaper** type is smooth: while a note sounds, the old engine keeps playing with its last settings until the new one's sound arrives, then the two crossfade over 10 ms. The timing never changes, because every Filter and every Shaper (Off included) is delayed to the same latency.
+
+## Stereo
+
+The voice chain is stereo. A Filter or Shaper runs a second, right-channel copy only while its input is stereo, which saves CPU for mono sounds.
+
+- The input counts as stereo from the first moment left and right differ. It goes back to mono after 50 ms in which they are identical; silence counts as identical.
+- When stereo starts, the right copy continues exactly where the left one is, so nothing jumps. The Ring Mod / Vocoder can't copy its state, so its right copy fades in over 10 ms instead.
+- When stereo stops, the right channel fades back to the left one over 10 ms.
+````
+
 - [ ] **Step 8: Run the tests**
 
 Run: `cmake --build --preset mac --target eg13_tests && ctest --preset mac`
@@ -5499,7 +6090,7 @@ Expected: all pass. Record the "Shaper slot latency" printed by `ctest --preset 
 ```bash
 git add core/engine/bypass_engine.h core/engine/bypass_engine.cpp core/engine/engine_registry.h core/engine/engine_registry.cpp \
   core/voice/processor_factory.h core/voice/processor_factory.cpp core/voice/processor_slot.h core/voice/processor_slot.cpp \
-  core/CMakeLists.txt tests/test_engines.h tests/test_engine_registry.cpp tests/test_processor_slot.cpp
+  core/CMakeLists.txt tests/test_engines.h tests/test_engine_registry.cpp tests/test_processor_slot.cpp docs/manual
 git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "Filter and Shaper slots: registry, Off, factories, padded latency, stereo detection, crossfaded switching"
 ```
 
@@ -5507,6 +6098,7 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 ### Task 11: Voice and Part: Source → Filter → Shaper, side signals, latency, memory
 
 **Files:**
+- Manual: `docs/manual/parts-and-routing.md` (same commit)
 - Modify: `core/voice/voice.h`, `core/voice/voice.cpp`, `core/part/part.h`, `core/part/part.cpp`, `tests/test_engines.h`
 - Test: `tests/test_voice.cpp`, `tests/test_part.cpp`
 
@@ -5540,7 +6132,7 @@ class AuxSourceEngine final : public VoiceEngine {
     }
   }
   const EngineInfo& info() const override {
-    static const EngineInfo kInfo = {"auxsource", "AUX source", 0, nullptr, false, true, false, -1};
+    static const EngineInfo kInfo = {"auxsource", "AUX source", 0, nullptr, false, true, 0, nullptr};
     return kInfo;
   }
 
@@ -5616,7 +6208,7 @@ TEST_CASE("Voice latency adds the Filter and Shaper slots") {
   REQUIRE(voice.latencySamples() == sourceOnly.latencySamples() + shapers.latencySamples());
 }
 
-TEST_CASE("The Shaper's side signal follows its modulator selector") {
+TEST_CASE("The Shaper's side inputs follow their selectors") {
   Voice voice(specs(hostRate(std::make_unique<test::AuxSourceEngine>())), makeOffOnly(),
               specs(makeOff(), hostRate(std::make_unique<test::SideEchoEngine>())));
   voice.prepare(48000.0, 256);
@@ -5631,26 +6223,33 @@ TEST_CASE("The Shaper's side signal follows its modulator selector") {
     float expected;
   } cases[] = {{0.5f / 4.0f, 0.0f}, {1.5f / 4.0f, 0.75f}, {2.5f / 4.0f, 0.2f}, {3.5f / 4.0f, -0.2f}};
   for (const auto& c : cases) {
-    SlotParams p;
-    p.shaper.p[0] = c.selector;  // SideEchoEngine's sideParam is 0
-    std::vector<float> right;
-    const auto l = runChain(voice, 256, p, in, &right);
-    INFO("selector " << c.selector);
-    REQUIRE(std::fabs(l.back() - c.expected) < 1e-6f);  // SideEcho: out L = side
-    REQUIRE(right.back() == 0.25f);                     // out R = the source's L
+    for (int input = 0; input < 2; ++input) {
+      SlotParams p;
+      p.shaper.p[input] = c.selector;    // SideEchoEngine: P1 picks side 1 (out L), P2 side 2 (out R)
+      p.shaper.p[1 - input] = 0.0f;      // the other one: Voice, so nothing is passed
+      std::vector<float> right;
+      const auto l = runChain(voice, 256, p, in, &right);
+      const float got = input == 0 ? l.back() : right.back();
+      const float other = input == 0 ? right.back() : l.back();
+      INFO("side " << input << " selector " << c.selector);
+      REQUIRE(std::fabs(got - c.expected) < 1e-6f);
+      REQUIRE(other == 0.0f);
+    }
   }
 }
 
 TEST_CASE("Source AUX falls back to the main output for sources without AUX") {
   Voice voice(specs(sine()), makeOffOnly(), specs(makeOff(), hostRate(std::make_unique<test::SideEchoEngine>())));
-  voice.prepare(48000.0, 256);
+  Voice plain(sine());
+  for (Voice* v : {&voice, &plain}) v->prepare(48000.0, 256);
   voice.setShaperEngine(1);
   voice.trigger(69, 1.0f);
+  plain.trigger(69, 1.0f);
   SlotParams p;
-  p.shaper.p[0] = 1.5f / 4.0f;  // Source AUX
-  std::vector<float> right;
-  const auto l = runChain(voice, 4800, p, VoiceInputs{}, &right);
-  for (size_t i = 0; i < l.size(); ++i) REQUIRE(l[i] == right[i]);  // (L + R) / 2 of a mono sine = L
+  p.shaper.p[0] = 1.5f / 4.0f;  // side 1: Source AUX
+  const auto l = runChain(voice, 4800, p);
+  const auto sine = runChain(plain, 4800, SlotParams{});
+  for (size_t i = 0; i < l.size(); ++i) REQUIRE(l[i] == sine[i]);  // (L + R) / 2 of a mono sine = L
 }
 
 TEST_CASE("Absent modulator sources give silence, not garbage") {
@@ -5659,14 +6258,24 @@ TEST_CASE("Absent modulator sources give silence, not garbage") {
   voice.setShaperEngine(int(ShaperEngine::RingMod));
   voice.trigger(69, 1.0f);
   SlotParams p;
-  p.shaper = test::defaultParams(WarpsEngine::staticInfo());  // analog ring modulation
-  for (float selector : {2.5f / 4.0f, 3.5f / 4.0f}) {        // Input, Other part: nothing there
-    p.shaper.p[4] = selector;
+  p.shaper = test::defaultParams(WarpsEngine::staticInfo());
+  p.shaper.p[0] = 0.375f;  // digital ring modulation: silent when either input is
+  p.shaper.p[4] = WarpsEngine::optionValue(1);  // Carrier: Voice
+  for (int modulator : {2, 3}) {  // Modulator Input, Other part: nothing there
+    p.shaper.p[5] = WarpsEngine::optionValue(modulator);
     const auto out = runChain(voice, 9600, p);
     for (float s : out) REQUIRE(std::isfinite(s));
     REQUIRE(test::rms(out, 4800, 9600) < 1e-4);
   }
-  p.shaper.p[4] = 1.5f / 4.0f;  // Source AUX: the sine itself
+  p.shaper.p[5] = WarpsEngine::optionValue(0);  // Modulator: Voice
+  for (int carrier : {3, 4}) {  // Carrier Input, Other part: nothing there
+    p.shaper.p[4] = WarpsEngine::optionValue(carrier);
+    const auto out = runChain(voice, 9600, p);
+    for (float s : out) REQUIRE(std::isfinite(s));
+    REQUIRE(test::rms(out, 4800, 9600) < 1e-4);
+  }
+  p.shaper.p[4] = WarpsEngine::optionValue(1);  // Carrier: Voice
+  p.shaper.p[5] = WarpsEngine::optionValue(1);  // Modulator: Source AUX, the sine itself
   const auto self = runChain(voice, 9600, p);
   REQUIRE(test::rms(self, 4800, 9600) > 0.01);
 }
@@ -5702,12 +6311,10 @@ TEST_CASE("The Ring Mod oscillator follows the voice's note") {
   voice.setShaperEngine(int(ShaperEngine::RingMod));
   voice.trigger(57, 1.0f);
   SlotParams p;
-  p.shaper = test::defaultParams(WarpsEngine::staticInfo());
+  p.shaper = test::defaultParams(WarpsEngine::staticInfo());  // Carrier Internal Osc
   p.shaper.p[0] = 0.0f;    // crossfade ...
-  p.shaper.p[1] = 0.99f;   // ... to the modulator
-  p.shaper.p[2] = 0.5f;
-  p.shaper.p[3] = 0.5f;
-  p.shaper.p[5] = 0.75f;   // internal oscillator +12 st: 440 Hz
+  p.shaper.p[1] = 0.0f;    // ... all the way to the carrier
+  p.shaper.p[6] = 0.75f;   // Osc Pitch +12 st: 440 Hz
   const auto out = runChain(voice, 48000, p);
   REQUIRE_THAT(test::estimateFrequency(out, 48000.0, 9600, 48000), Catch::Matchers::WithinRel(440.0, 0.003));
 }
@@ -5876,7 +6483,9 @@ class Voice {
 
  private:
   bool blockIsFinite(int count) const;
-  const float* sideSignal(const VoiceInputs& in, const ParamValues& shaper, int offset, int count);
+  // The Shaper's side inputs for this control block: Source AUX, or the part's Input or the
+  // other part's output summed to mono; nullptr for Voice, None or a missing signal.
+  void sideSignals(const VoiceInputs& in, const ParamValues& shaper, int offset, int count, const float** sides);
   void restartChain();
   NativeRateWrapper& source() { return *sources_[size_t(current_)]; }
 
@@ -5898,7 +6507,7 @@ class Voice {
   int silenceLimit_ = 2400;
   float source_[3][kControlBlock] = {};  // Source L, R, AUX
   float filtered_[2][kControlBlock] = {};
-  float side_[kControlBlock] = {};
+  float side_[2][kControlBlock] = {};  // mono side inputs (Ring Mod CARRIER, MODULATOR)
   float buffer_[2][kControlBlock] = {};  // the voice's output (Shaper)
 };
 
@@ -6042,25 +6651,31 @@ void Voice::release() {
   shaper_.noteOff();
 }
 
-const float* Voice::sideSignal(const VoiceInputs& in, const ParamValues& shaper, int offset, int count) {
+void Voice::sideSignals(const VoiceInputs& in, const ParamValues& shaper, int offset, int count,
+                        const float** sides) {
+  sides[0] = sides[1] = nullptr;
   const EngineInfo& info = shaper_.info();
-  if (!info.usesSide || info.sideParam < 0) return nullptr;
-  const float* const* stereo = nullptr;
-  switch (sideSourceOf(shaper.p[info.sideParam])) {
-    case SideSource::Internal:
-      return nullptr;  // the engine makes its own
-    case SideSource::SourceAux:
-      return source_[2];
-    case SideSource::Input:
-      stereo = in.input;
-      break;
-    case SideSource::OtherPart:
-      stereo = in.other;
-      break;
+  if (info.sideSource == nullptr) return;
+  for (int k = 0; k < std::min(info.sideInputs, 2); ++k) {
+    const float* const* stereo = nullptr;
+    switch (info.sideSource(k, shaper)) {
+      case SideSource::Voice:  // the engine uses its own input, channel by channel
+      case SideSource::None:   // the engine makes the signal (Warps' internal oscillator)
+        continue;
+      case SideSource::SourceAux:
+        sides[k] = source_[2];
+        continue;
+      case SideSource::Input:
+        stereo = in.input;
+        break;
+      case SideSource::OtherPart:
+        stereo = in.other;
+        break;
+    }
+    if (stereo == nullptr) continue;  // nothing there: the engine reads silence
+    for (int i = 0; i < count; ++i) side_[k][i] = 0.5f * (stereo[0][offset + i] + stereo[1][offset + i]);
+    sides[k] = side_[k];
   }
-  if (stereo == nullptr) return nullptr;  // nothing there: the engine reads silence
-  for (int i = 0; i < count; ++i) side_[i] = 0.5f * (stereo[0][offset + i] + stereo[1][offset + i]);
-  return side_;
 }
 
 void Voice::process(const float* const* in, float* const* out, const ParamValues& p, int n) {
@@ -6103,7 +6718,9 @@ void Voice::process(const VoiceInputs& in, float* const* out, const SlotParams& 
     filter_.process(filterIn, nullptr, filterOut, p.filter, count);
     const float* shaperIn[2] = {filtered_[0], filtered_[1]};
     float* shaperOut[2] = {buffer_[0], buffer_[1]};
-    shaper_.process(shaperIn, sideSignal(in, p.shaper, done, count), shaperOut, p.shaper, count);
+    const float* sides[2] = {nullptr, nullptr};
+    sideSignals(in, p.shaper, done, count, sides);
+    shaper_.process(shaperIn, sides, shaperOut, p.shaper, count);
 
     if (!blockIsFinite(count)) {
       // Spec §9: a NaN/Inf from an engine resets the chain and mutes this block; a
@@ -6219,6 +6836,14 @@ void Part::process(const VoiceInputs& in, float* const* out, const SlotParams& p
 }
 ```
 
+- [ ] **Step 5a: Document the voice chain in the manual**
+
+In `docs/manual/parts-and-routing.md`, at the end of the "Parts and voices" section, add:
+
+````markdown
+A voice stops (and becomes free for a new note) when its note is released and the sound reaching its Shaper has been silent (below −90 dBFS) for 50 ms, plus the Shaper's latency. Silence is measured before the Shaper, because the Ring Mod / Vocoder's internal oscillator keeps sounding after the note has died. The amplitude envelopes coming in the next milestone (M4) will close the output itself.
+````
+
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build --preset mac --target EG13_all eg13_tests && ctest --preset mac`
@@ -6227,7 +6852,7 @@ Expected: all pass, M2's voice and part tests unchanged. Run `ctest --preset mac
 - [ ] **Step 7: Commit**
 
 ```bash
-git add core/voice/voice.h core/voice/voice.cpp core/part/part.h core/part/part.cpp tests/test_engines.h tests/test_voice.cpp tests/test_part.cpp
+git add core/voice/voice.h core/voice/voice.cpp core/part/part.h core/part/part.cpp tests/test_engines.h tests/test_voice.cpp tests/test_part.cpp docs/manual
 git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "Voice: Source -> Filter -> Shaper with side signals and chain latency; parts switch slots"
 ```
 
@@ -6235,6 +6860,7 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 ### Task 12: Parameter table v4: Filter and Shaper types and parameters
 
 **Files:**
+- Manual: `docs/manual/engines.md` (same commit)
 - Modify: `core/synth/param_table.h`, `core/synth/param_table.cpp`
 - Test: `tests/test_param_table.cpp`
 
@@ -6856,6 +7482,14 @@ const char* paramName(size_t index, const PartEngines& engines) {
 }  // namespace eg13
 ```
 
+- [ ] **Step 4a: Document the slot parameters in the manual**
+
+In `docs/manual/engines.md`, replace the second sentence of the introduction ("A slot has more parameters ... The Source slot has 16 parameters.") with:
+
+````markdown
+A slot has more parameters than most engines use: the unused ones are named "(unused)" and show "-". The Source slot has 16 parameters, the Filter slot 4 and the Shaper slot 12, plus a selector for the engine in each slot (the Filter's and Shaper's are called *Type*).
+````
+
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build --preset mac --target EG13_all eg13_tests && ctest --preset mac`
@@ -6864,7 +7498,7 @@ Expected: all tests pass. The Synth does not read the new selectors until Task 1
 - [ ] **Step 6: Commit**
 
 ```bash
-git add core/synth/param_table.h core/synth/param_table.cpp tests/test_param_table.cpp
+git add core/synth/param_table.h core/synth/param_table.cpp tests/test_param_table.cpp docs/manual
 git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "Parameter table v4: Filter type + P1-P4 and Shaper type + P1-P12 per part"
 ```
 
@@ -6872,6 +7506,7 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 ### Task 13: Synth v4: three-slot stash and switching, modulator sources, FX filter
 
 **Files:**
+- Manual: `docs/manual/parts-and-routing.md` (same commit)
 - Modify: `core/synth/synth.h`, `core/synth/synth.cpp`
 - Test: `tests/test_synth.cpp`
 
@@ -6886,7 +7521,7 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 
 - [ ] **Step 1: Write the failing tests**
 
-In `tests/test_synth.cpp`, add `#include <utility>` to the includes, and add to the anonymous namespace near the top (after `masterId`):
+In `tests/test_synth.cpp`, add `#include <utility>` and `#include "engine/warps_engine.h"` to the includes, and add to the anonymous namespace near the top (after `masterId`):
 
 ```cpp
 uint32_t filterTypeId(int part) { return paramSpec(filterEngineParamIndex(part)).id; }
@@ -7017,6 +7652,7 @@ TEST_CASE("Switching Filter type while audio plays makes no step") {
 }
 
 TEST_CASE("The Ring Mod modulator takes the part's Input and the other part's output") {
+  // Carrier = Voice (Part A's Audio Input), so the Modulator choice decides what multiplies it.
   auto render = [](float modulator, bool partBPlays) {
     Synth synth(PluginKind::Effect);
     synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
@@ -7026,7 +7662,8 @@ TEST_CASE("The Ring Mod modulator takes the part's Input and the other part's ou
     synth.setParam(shaperId(0, 1), 0.0);
     synth.setParam(shaperId(0, 2), 0.5);
     synth.setParam(shaperId(0, 3), 0.5);
-    synth.setParam(shaperId(0, 4), modulator);
+    synth.setParam(shaperId(0, 4), WarpsEngine::optionValue(1));  // Carrier: Voice (Part A's input)
+    synth.setParam(shaperId(0, 5), modulator);
     if (partBPlays) {  // Part B: the input through Audio Input, heard only by Part A
       synth.setParam(paramSpec(sourceEngineParamIndex(1)).id, 4);
       synth.setParam(partId(1, PartParam::Trigger), 1);
@@ -7052,11 +7689,11 @@ TEST_CASE("The Ring Mod modulator takes the part's Input and the other part's ou
     }
     return std::sqrt(std::max(0.0, s1 * s1 + s2 * s2 - c * s1 * s2));
   };
-  const auto input = render(2.5f / 4.0f, false);  // Input: the carrier times itself
+  const auto input = render(WarpsEngine::optionValue(2), false);  // Input: the carrier times itself
   REQUIRE(magnitude(input, 2000.0) > 10.0 * magnitude(input, 1000.0));
-  const auto other = render(3.5f / 4.0f, true);  // Other part: Part B's copy of the input
+  const auto other = render(WarpsEngine::optionValue(3), true);  // Other part: Part B's copy of the input
   REQUIRE(magnitude(other, 2000.0) > 10.0 * magnitude(other, 1000.0));
-  const auto silentB = render(3.5f / 4.0f, false);  // Other part, but Part B plays nothing
+  const auto silentB = render(WarpsEngine::optionValue(3), false);  // Other part, but Part B plays nothing
   REQUIRE(test::rms(silentB, 9600, silentB.size()) < 1e-4);
 }
 
@@ -7076,7 +7713,8 @@ TEST_CASE("Filter and Shaper switching while playing does not allocate") {
       if (block % 10 == 0) {
         synth.setParam(filterTypeId(block % 20 == 0 ? 0 : 1), (block / 10) % kNumFilterEngines);
         synth.setParam(shaperTypeId(0), (block / 10) % kNumShaperEngines);
-        synth.setParam(shaperId(0, 4), double((block / 10) % 4) / 4.0 + 0.1);
+        synth.setParam(shaperId(0, 4), WarpsEngine::optionValue((block / 10) % WarpsEngine::kNumCarriers));
+        synth.setParam(shaperId(0, 5), WarpsEngine::optionValue((block / 10) % WarpsEngine::kNumModulators));
       }
       run(synth, out, 0, kBlock, &in);
       synth.takeHostUpdates(updates, int(kMaxHostUpdates));
@@ -7332,6 +7970,23 @@ In `processChunk`, replace the per-part loop body (from `ParamValues source;` to
 
 Add `#include "voice/voice.h"` to `synth.cpp`'s includes if `VoiceInputs` is not already visible through `part/part.h` (it is: `part.h` includes `voice/voice.h`).
 
+- [ ] **Step 4a: Document the defaults and slot switching in the manual**
+
+In `docs/manual/parts-and-routing.md`, change the "Engine switching" section's first paragraph to begin "Each engine of each slot (Source, Filter, Shaper) remembers its own settings in each part." and replace the "Default patches" section's list with:
+
+````markdown
+- **EG13:** both parts with the Macro Oscillator, Filter *Off* and Shaper *Off*. (The full init patch, with envelopes and a filter, comes with modulation in M4.)
+- **EG13 FX:**
+  - Part A plays the Input through **Audio Input** → **Analog Filter** (fully open) → Shaper *Off*, with Trigger set to *Always on*, so it processes audio with no MIDI.
+  - Dry is 0 and the master level is 100 %.
+````
+
+In the "Input and Input source" section, after the soft-limiter sentence, add:
+
+````markdown
+The Ring Mod / Vocoder can also take the part's Input or the other part's output as its carrier or modulator, with the same delays and limiter.
+````
+
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build --preset mac --target EG13_all eg13_tests && ctest --preset mac`
@@ -7340,7 +7995,7 @@ Expected: all tests pass, including every M2 Synth test (the EG13 FX pass-throug
 - [ ] **Step 6: Commit**
 
 ```bash
-git add core/synth/synth.h core/synth/synth.cpp tests/test_synth.cpp
+git add core/synth/synth.h core/synth/synth.cpp tests/test_synth.cpp docs/manual
 git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "Synth: Filter and Shaper stash and switching, modulator sources, EG13 FX filter"
 ```
 
@@ -7348,6 +8003,7 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 ### Task 14: State schema 4: Filter and Shaper settings, migration from schema 3
 
 **Files:**
+- Manual: `docs/manual/parts-and-routing.md` (same commit)
 - Modify: `core/state/state.h`, `core/state/state.cpp`
 - Test: `tests/test_state.cpp`
 
@@ -7415,7 +8071,7 @@ TEST_CASE("Filter and Shaper settings round-trip with every engine's stash") {
   a.setParam(shaperTypeId(1), double(ShaperEngine::Eq));
   a.setParam(paramSpec(shaperParamIndex(1, 1)).id, 0.8);
   a.setParam(shaperTypeId(1), double(ShaperEngine::RingMod));
-  a.setParam(paramSpec(shaperParamIndex(1, 7)).id, 0.75);  // Warps Mode: frequency shifter
+  a.setParam(paramSpec(shaperParamIndex(1, 8)).id, 0.75);  // Warps Mode: frequency shifter
   const std::string json = state::StateStore{}.save(a);
   REQUIRE(json.find("\"filterSettings\"") != std::string::npos);
   REQUIRE(json.find("\"shaperSettings\"") != std::string::npos);
@@ -7425,7 +8081,7 @@ TEST_CASE("Filter and Shaper settings round-trip with every engine's stash") {
   REQUIRE(store.load(b, json) == state::LoadResult::Ok);
   REQUIRE(b.engine(SlotKind::Filter, 0) == int(FilterEngine::StateVariable));
   REQUIRE(b.engine(SlotKind::Shaper, 1) == int(ShaperEngine::RingMod));
-  REQUIRE(b.param(paramSpec(shaperParamIndex(1, 7)).id) == 0.75);
+  REQUIRE(b.param(paramSpec(shaperParamIndex(1, 8)).id) == 0.75);
   const EngineStash stash = b.engineStash();
   const EngineStash original = a.engineStash();
   for (size_t i = 0; i < kStashSize; ++i) REQUIRE(stash[i] == original[i]);
@@ -7668,6 +8324,16 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
 }  // namespace eg13::state
 ```
 
+- [ ] **Step 4a: Document older projects in the manual**
+
+Append to `docs/manual/parts-and-routing.md`:
+
+````markdown
+## Projects from earlier versions
+
+Projects saved before Filters and Shapers existed open with Filter and Shaper *Off*, so they sound as they did. This applies even in EG13 FX, whose new default is the Analog Filter. Each engine's remembered settings are saved with the project.
+````
+
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build --preset mac --target EG13_all eg13_tests && ctest --preset mac`
@@ -7676,7 +8342,7 @@ Expected: all tests pass, including M2's state tests (schema 2 and 3 documents n
 - [ ] **Step 6: Commit**
 
 ```bash
-git add core/state/state.h core/state/state.cpp tests/test_state.cpp
+git add core/state/state.h core/state/state.cpp tests/test_state.cpp docs/manual
 git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "State schema 4: Filter and Shaper settings; older projects load with both Off"
 ```
 
@@ -7684,6 +8350,7 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 ### Task 15: Levels, latency and CPU reports; README; validators
 
 **Files:**
+- Manual: `docs/manual/latency.md`, `docs/manual/limitations.md` (same commit)
 - Create: `tests/test_levels.cpp`
 - Modify: `tests/test_benchmark.cpp`, `README.md`
 - Test: the above; `scripts/validate.sh`; the Docker command
@@ -7761,7 +8428,7 @@ TEST_CASE("Output levels of every Filter and Shaper at its defaults", "[levels]"
     slot.reset();
     const Level level = measure(slot, test::defaultParams(shaperEngineInfo(e)));
     std::printf("  Shaper %-22s %+6.2f dB  peak %.3f\n", shaperEngineInfo(e).displayName, level.gainDb, double(level.peak));
-    REQUIRE(level.peak <= 1.0f);
+    REQUIRE(level.peak <= 32768.0f / 10240.0f);  // Warps' 16-bit range, read back at EG13 scale
     if (e != int(ShaperEngine::RingMod)) REQUIRE(std::fabs(level.gainDb) < 0.5);  // Off, flat EQ
   }
   std::printf("  Ring Mod / Vocoder by Algorithm (other parameters at their defaults):\n");
@@ -7774,7 +8441,7 @@ TEST_CASE("Output levels of every Filter and Shaper at its defaults", "[levels]"
     p.p[0] = float(step) / 8.0f;
     const Level level = measure(slot, p);
     std::printf("    %d/8  %+6.2f dB  peak %.3f\n", step, level.gainDb, double(level.peak));
-    REQUIRE(level.peak <= 1.0f);
+    REQUIRE(level.peak <= 32768.0f / 10240.0f);
   }
 }
 
@@ -7798,6 +8465,8 @@ Expected: both pass; keep the printed tables for Step 5 and the final report. If
 
 - [ ] **Step 3: Extend the CPU benchmark (`tests/test_benchmark.cpp`)**
 
+Owner decision (2026-10-20): the 50 % budget holds for chains whose Source is mono; the stereo worst case is measured and printed for information. Mono sources: Macro Oscillator, Digital Oscillator, Resonator with Spread 0, and Audio Input with a mono input. The Modal Synth is always stereo.
+
 Add `#include <cmath>` and append:
 
 ```cpp
@@ -7806,35 +8475,42 @@ namespace {
 struct ShaperSetup {
   const char* name;
   int engine;
-  float algorithm;  // P1, Ring Mod only
-  float modulator;  // P5, Ring Mod only
-  float mode;       // P8, Ring Mod only
+  float algorithm;  // Ring Mod P1
+  int carrier;      // Ring Mod P5 option
+  int modulator;    // Ring Mod P6 option
+  float mode;       // Ring Mod P9
 };
 
 const ShaperSetup kShapers[] = {
-    {"Off", 0, 0.0f, 0.0f, 0.0f},
-    {"Ring Mod (xmod)", int(ShaperEngine::RingMod), 0.25f, 0.5f / 4.0f, 0.25f},
-    {"Vocoder", int(ShaperEngine::RingMod), 1.0f, 1.5f / 4.0f, 0.25f},
-    {"Freq shifter", int(ShaperEngine::RingMod), 0.9f, 0.5f / 4.0f, 0.75f},
-    {"EQ", int(ShaperEngine::Eq), 0.0f, 0.0f, 0.0f},
+    {"Off", 0, 0.0f, 0, 0, 0.0f},
+    {"Ring Mod (int osc)", int(ShaperEngine::RingMod), 0.25f, 0, 0, 0.25f},
+    {"Ring Mod (voice carrier)", int(ShaperEngine::RingMod), 0.25f, 1, 0, 0.25f},
+    {"Vocoder", int(ShaperEngine::RingMod), 1.0f, 0, 0, 0.25f},
+    {"Freq shifter", int(ShaperEngine::RingMod), 0.9f, 0, 0, 0.75f},
+    {"EQ", int(ShaperEngine::Eq), 0.0f, 0, 0, 0.0f},
 };
 
 // Percent of one core for 2 x 8 voices of one Source -> Filter -> Shaper chain at 48 kHz,
-// 128-sample blocks, with a stereo input (so Audio Input chains run stereo).
-double chainLoad(int source, int filter, const ShaperSetup& shaper, int seconds) {
+// 128-sample blocks. stereo = false keeps the Source mono (identical input channels, Resonator
+// Spread 0); stereo = true feeds different channels and keeps the engines' defaults.
+double chainLoad(int source, int filter, const ShaperSetup& shaper, int seconds, bool stereo) {
   constexpr double kRate = 48000.0;
   constexpr int kBlock = 128;
   Synth synth(PluginKind::Instrument);
   synth.setParam(paramSpec(masterParamIndex(MasterParam::Mode)).id, double(PartMode::Layer));
   for (int part = 0; part < kNumParts; ++part) {
     synth.setParam(paramSpec(sourceEngineParamIndex(part)).id, source);
+    if (!stereo && source == int(SourceEngine::Resonator)) {
+      synth.setParam(paramSpec(sourceParamIndex(part, 7)).id, 0.0);  // Spread 0: mono fold
+    }
     synth.setParam(paramSpec(filterEngineParamIndex(part)).id, filter);
     synth.setParam(paramSpec(filterParamIndex(part, 0)).id, 0.6);
     synth.setParam(paramSpec(shaperEngineParamIndex(part)).id, shaper.engine);
     if (shaper.engine == int(ShaperEngine::RingMod)) {
       synth.setParam(paramSpec(shaperParamIndex(part, 0)).id, shaper.algorithm);
-      synth.setParam(paramSpec(shaperParamIndex(part, 4)).id, shaper.modulator);
-      synth.setParam(paramSpec(shaperParamIndex(part, 7)).id, shaper.mode);
+      synth.setParam(paramSpec(shaperParamIndex(part, 4)).id, WarpsEngine::optionValue(shaper.carrier));
+      synth.setParam(paramSpec(shaperParamIndex(part, 5)).id, WarpsEngine::optionValue(shaper.modulator));
+      synth.setParam(paramSpec(shaperParamIndex(part, 8)).id, shaper.mode);
     }
   }
   synth.prepare(kRate, kBlock);
@@ -7842,7 +8518,7 @@ double chainLoad(int source, int filter, const ShaperSetup& shaper, int seconds)
   std::vector<float> inL(kBlock), inR(kBlock), l(kBlock), r(kBlock);
   for (int i = 0; i < kBlock; ++i) {
     inL[size_t(i)] = 0.1f * float(std::sin(0.05 * i));
-    inR[size_t(i)] = 0.1f * float(std::cos(0.07 * i));
+    inR[size_t(i)] = stereo ? 0.1f * float(std::cos(0.07 * i)) : inL[size_t(i)];
   }
   const float* input[2] = {inL.data(), inR.data()};
   float* out[2] = {l.data(), r.data()};
@@ -7861,38 +8537,48 @@ double chainLoad(int source, int filter, const ShaperSetup& shaper, int seconds)
   return 100.0 * elapsed / double(seconds);
 }
 
+struct Chain {
+  int source = 0, filter = 0, shaper = 0;
+  double load = 0.0;
+};
+
 }  // namespace
 
-TEST_CASE("CPU: Source x Filter x Shaper chains, 2 x 8 voices, within budget", "[.benchmark]") {
-  double worst = 0.0;
-  int worstSource = 0, worstFilter = 0, worstShaper = 0;
-  for (int s = 0; s < kNumSourceEngines; ++s) {
-    for (int f = 0; f < kNumFilterEngines; ++f) {
-      for (int k = 0; k < int(sizeof(kShapers) / sizeof(kShapers[0])); ++k) {
-        const double load = chainLoad(s, f, kShapers[k], 1);
-        std::printf("%-20s %-22s %-16s %6.2f%%\n", sourceEngineInfo(s).displayName, filterEngineInfo(f).displayName,
-                    kShapers[k].name, load);
-        if (load > worst) {
-          worst = load;
-          worstSource = s;
-          worstFilter = f;
-          worstShaper = k;
+TEST_CASE("CPU: Source x Filter x Shaper chains, 2 x 8 voices, mono sources within budget", "[.benchmark]") {
+  Chain worst[2];  // [0] mono sources, [1] stereo
+  for (int stereo = 0; stereo < 2; ++stereo) {
+    for (int s = 0; s < kNumSourceEngines; ++s) {
+      if (!stereo && s == int(SourceEngine::Modal)) continue;  // always stereo
+      for (int f = 0; f < kNumFilterEngines; ++f) {
+        for (int k = 0; k < int(sizeof(kShapers) / sizeof(kShapers[0])); ++k) {
+          const double load = chainLoad(s, f, kShapers[k], 1, stereo != 0);
+          std::printf("%-7s %-20s %-22s %-26s %6.2f%%\n", stereo ? "stereo" : "mono", sourceEngineInfo(s).displayName,
+                      filterEngineInfo(f).displayName, kShapers[k].name, load);
+          if (load > worst[stereo].load) worst[stereo] = {s, f, k, load};
         }
       }
     }
   }
-  const double confirmed = chainLoad(worstSource, worstFilter, kShapers[worstShaper], 5);
-  std::printf("Heaviest chain: %s -> %s -> %s: %.2f%% of one core over 5 s (budget 50%%)\n",
-              sourceEngineInfo(worstSource).displayName, filterEngineInfo(worstFilter).displayName,
-              kShapers[worstShaper].name, confirmed);
-  REQUIRE(confirmed < 50.0);
+  const char* const kinds[2] = {"mono-source", "stereo"};
+  double confirmed[2] = {};
+  for (int stereo = 0; stereo < 2; ++stereo) {
+    const Chain& c = worst[stereo];
+    confirmed[stereo] = chainLoad(c.source, c.filter, kShapers[c.shaper], 5, stereo != 0);
+    std::printf("Heaviest %s chain: %s -> %s -> %s: %.2f%% of one core over 5 s%s\n", kinds[stereo],
+                sourceEngineInfo(c.source).displayName, filterEngineInfo(c.filter).displayName,
+                kShapers[c.shaper].name, confirmed[stereo],
+                stereo ? " (for information; not held to the budget)" : " (budget 50%)");
+  }
+  REQUIRE(confirmed[0] < 50.0);
 }
 ```
 
+Add `#include "engine/warps_engine.h"` at the top of the file.
+
 - [ ] **Step 4: Run the benchmark on the macOS build**
 
-Run: `build/mac/tests/eg13_tests "[.benchmark]" -s 2>&1 | grep -E "%"` (Release build; takes about two minutes).
-Expected: the full table prints. Planning measured Ripples ≈ 1.3 %, Shelves ≈ 1.1 % and the Warps vocoder ≈ 1.1 % of an M1 core per instance, so stereo chains of the heaviest engines are expected to exceed 50 % (Open owner decision 1). If the final REQUIRE fails, do not change any DSP, flags or the budget: report BLOCKED with the full table and the heaviest chain, so the owner can choose among the options in Open owner decisions.
+Run: `build/mac/tests/eg13_tests "[.benchmark]" -s 2>&1 | grep -E "%"` (Release build; takes about four minutes).
+Expected: the full table and both "Heaviest ..." lines print, and the mono-source chain is below 50 %. Planning estimates the heaviest mono-source chain (Resonator or Macro Oscillator → Analog Filter → Vocoder) close to the budget: about 8 % source + 15 % Analog Filter (with Rack's flags) + 17 % Warps vocoder + the Warps wrapper's six conversion channels. If the REQUIRE fails, do not change DSP, flags or the budget: report BLOCKED with the table. The first lever to propose is converting the Warps side inputs only while a selector uses them (the wrapper resamples all four input channels today).
 
 - [ ] **Step 5: Update `README.md`**
 
@@ -7920,7 +8606,27 @@ EG13 reports about 10.9 ms of latency at 48 kHz and EG13 FX about 16.5 ms: the M
 
 These are the planning figures (instrument 221 + 300 samples, FX 491 + 300 samples at 48 kHz, with the Shaper slot's 270-sample Warps conversion path, measured during planning, plus its 30-sample block FIFO). If the 48 kHz lines printed in Step 2 differ, write those values (two decimals) instead.
 
-Below it add a "CPU" line: copy the "Heaviest chain: ..." line that Step 4 printed, prefixed with `CPU, Apple M1, `, as a sentence.
+Below it add a "CPU" paragraph: copy the two "Heaviest ..." lines that Step 4 printed, prefixed with `CPU, Apple M1, 48 kHz, 128-sample blocks:`, and the sentence "The 50 % budget applies to chains with a mono Source; stereo chains of the heaviest engines can exceed it."
+
+- [ ] **Step 5a: Update the manual's latency and limitation pages**
+
+In `docs/manual/latency.md`, replace the table and the sentence after it with the following. The figures are the planning figures: M2's source latencies plus the Shaper slot's 266 / 270 samples of conversion at 44.1 / 48 kHz and Warps' 60-sample block (28 / 30 host samples; at 96 kHz Warps needs no conversion, so only its 60-sample block). If a line printed in Step 2 differs, write the printed value instead.
+
+````markdown
+| Plugin | 44.1 kHz | 48 kHz | 96 kHz |
+|---|---|---|---|
+| EG13 (note onsets aligned) | 446 samples (10.11 ms) | 521 samples (10.85 ms) | 501 samples (5.22 ms) |
+| EG13 FX (input aligned with Dry) | 722 samples (16.37 ms) | 791 samples (16.48 ms) | 1041 samples (10.84 ms) |
+
+Two engines set these figures: the Modal Synth's 32 kHz engine and the Ring Mod / Vocoder's 96 kHz engine, which runs in 60-sample blocks. Every Shaper, Off included, is delayed to match the Ring Mod / Vocoder, so changing the Shaper never moves the sound in time. This latency is the accepted cost for version 1 (owner decision, 2026-10-20). Filters add no latency.
+````
+
+Append to `docs/manual/limitations.md`:
+
+````markdown
+- **CPU with stereo chains:** sixteen voices of the heaviest chains stay within half of one Apple M1 core when the Source is mono. With a stereo Source (Modal Synth, Resonator with Spread, a stereo input), every Filter and Shaper runs twice, and the heaviest stereo chains can use more. See the README for the measured figures.
+- **Classic Filters Type** changes restart the filter and can click on a sounding note.
+````
 
 - [ ] **Step 6: Validate the plugins and the Linux build**
 
@@ -7935,7 +8641,7 @@ Manual check in a host (Reaper or Logic): load EG13, choose Filter Analog Filter
 - [ ] **Step 7: Commit**
 
 ```bash
-git add tests/test_levels.cpp tests/test_benchmark.cpp README.md
+git add tests/test_levels.cpp tests/test_benchmark.cpp README.md docs/manual
 git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -m "M3 reports: engine levels, latency and the Source x Filter x Shaper CPU matrix; README"
 ```
 
@@ -7943,5 +8649,6 @@ git -c user.name="Westlee Latta" -c user.email=symbioticaudio@proton.me commit -
 
 ## Self-review notes
 
-- **Spec coverage.** §2.1 submodules (Task 1); §2.2 preallocation per voice and no audio-thread allocation (Tasks 5–11, every engine and slot has an allocation test), memory reported (Task 11); §3.2 native rate for Warps with constant, padded latency (Tasks 2, 8, 10, 11, 13); §3.3 VCV knob mappings (Tasks 5, 8, 9, cited); §4 Filter rows (Tasks 5–7), Shaper rows with all Warps algorithms and the four modulator sources (Tasks 8, 11, 13), Off in both slots (Task 10); §5.1 stereo only when needed (Tasks 3, 5–10); §7.1 Filter P1–P4, Shaper P1–P12 after the amendment, type selectors, live names (Tasks 1, 12, 13); §7.2 per-engine settings per slot and migration (Tasks 13, 14); §9 NaN guards (Tasks 5–9, 11), unknown engine IDs fall back to Off (Task 10); §10 bit-exact fidelity at the native rate (Tasks 5–9), CPU budget (Task 15), validators and CI (Tasks 1, 15).
+- **Spec coverage.** §2.1 submodules (Task 1); §2.2 preallocation per voice and no audio-thread allocation (Tasks 5–11, every engine and slot has an allocation test), memory reported (Task 11); §3.2 native rate for Warps with constant, padded latency (Tasks 2, 8, 10, 11, 13); §3.3 VCV knob mappings (Tasks 5, 8, 9, cited); §4 Filter rows (Tasks 5–7), Shaper rows with all Warps algorithms and the Carrier / Modulator selectors (Tasks 8, 11, 13), Off in both slots (Task 10); §5.1 stereo only when needed (Tasks 3, 5–10); §7.1 Filter P1–P4, Shaper P1–P12 after the amendment, type selectors, live names (Tasks 1, 12, 13); §7.2 per-engine settings per slot and migration (Tasks 13, 14); §9 NaN guards (Tasks 5–9, 11), unknown engine IDs fall back to Off (Task 10); §10 fidelity at the native rate: bit-exact for Classic Filters, SVF and Warps, 1e-5 for the two VCV models built with Rack's flags (owner decision; Tasks 5–9), CPU budget (Task 15), validators and CI (Tasks 1, 15).
+- **Manual:** Task 1 backfills M2's behaviour; Tasks 5–15 each document their own choices in the same commit (Global Constraints).
 - **Not in M3:** modulation of Filter P1, the instrument init patch and the Amp (M4); Part FX (M5); UI cards and the type menus (M6).
