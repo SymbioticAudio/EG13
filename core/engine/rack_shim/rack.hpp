@@ -6,18 +6,11 @@
 // 061ccf6, GPL-3.0-or-later): file:line cited per item. Only Rack's exp/log approximations
 // (sse_mathfun) are replaced by <cmath>; the models only use them for CV levels.
 
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-
-#if defined(__SSE2__) || defined(_M_X64)
-#include <xmmintrin.h>
-#else
-#ifndef SIMDE_ENABLE_NATIVE_ALIASES
-#define SIMDE_ENABLE_NATIVE_ALIASES  // _mm_* names on arm64, as Rack builds with simde there
-#endif
-#include "simde/x86/sse.h"
-#endif
+// Everything this file includes, and the one piece of state it shares, comes from rack_prelude.h.
+// A TU built with Rack's flags includes the prelude at file scope and this file inside its
+// rack_flags namespace (see core/engine/ripples_model.cpp), so its copies of the code below get
+// their own symbols.
+#include "rack_prelude.h"
 
 namespace rack {
 
@@ -130,14 +123,17 @@ namespace random {
 
 // Rack's random::uniform() (include/random.hpp:125-126) draws from a per-thread xoroshiro128+.
 // Ripples only uses it for 1e-6 V of noise to start self-oscillation (ripples.hpp:193-194), so
-// a per-thread xorshift64 serves; seed() makes renders repeatable in tests.
-inline thread_local uint64_t tState = 0x9E3779B97F4A7C15ull;
-inline void seed(uint64_t s) { tState = s != 0 ? s : 0x9E3779B97F4A7C15ull; }
+// a per-thread xorshift64 serves; seed() makes renders repeatable in tests. The state is the one
+// per-thread instance behind ::eg13_rack_shim::randomState(), whichever copy of this code runs.
+inline void seed(uint64_t s) {
+  ::eg13_rack_shim::randomState() = s != 0 ? s : ::eg13_rack_shim::kRandomSeed;
+}
 inline float uniform() {
-  tState ^= tState << 13;
-  tState ^= tState >> 7;
-  tState ^= tState << 17;
-  return float(tState >> 40) * (1.0f / 16777216.0f);
+  uint64_t& state = ::eg13_rack_shim::randomState();
+  state ^= state << 13;
+  state ^= state >> 7;
+  state ^= state << 17;
+  return float(state >> 40) * (1.0f / 16777216.0f);
 }
 
 }  // namespace random

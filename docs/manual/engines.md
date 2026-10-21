@@ -62,7 +62,7 @@ Controls: **Frequency** (20 Hz to 20 kHz, default fully open), **Resonance** (de
 - The module's output amplifiers invert the signal; EG13 turns it back, so the filtered sound adds to the Dry signal instead of cancelling it.
 - Ripples' FM knob and its CV and Gain inputs are not controls here: modulation comes from EG13's modulation matrix (M4), and the LP4 VCA output is LP4 with a fixed level.
 - Stereo: while the voice is stereo, a second filter runs for the right channel, starting from the left filter's exact state (no jump).
-- EG13 builds the Analog Filter with the same fast-math settings as VCV Rack, so it can differ from a strict build by less than −90 dBFS.
+- EG13 builds the Analog Filter with the same fast-math settings as VCV Rack, so it can differ from a strict build by about −90 dBFS (measured), which is inaudible.
 
 ### Classic Filters (sst-filters, the filters of the Surge synthesizer)
 

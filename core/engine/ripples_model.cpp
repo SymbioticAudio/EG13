@@ -1,27 +1,38 @@
-// Compiled with Rack's -funsafe-math-optimizations (core/CMakeLists.txt). Include nothing here
-// beyond the model and what it needs: every symbol this TU defines must be inside
-// eg13::rack_flags (ripples_model.h).
+// Built with Rack's flags (-O3 -funsafe-math-optimizations, the eg13_vcv_flagged object library
+// in core/CMakeLists.txt). The isolation rules for such a TU (preflight ruling F6), which every
+// flagged VCV model TU follows (Shelves too):
+//   1. Include, at file scope, only this TU's own header, the headers the model includes from the
+//      standard library, and rack_prelude.h (standard and SSE headers, the shared random state).
+//      Their include guards then keep them out of the wrapper below.
+//   2. Include rack.hpp and the upstream model inside `namespace eg13 { inline namespace
+//      rack_flags {`, so every inline function they emit out of line, Rack shim included, has
+//      its own eg13::rack_flags:: symbol and cannot merge with an unflagged copy.
+//   3. Declare the TU's API in that namespace too (ripples_model.h), and define nothing else.
+//   4. Add the object to the symbol-check ctest ("flagged VCV models define symbols only in their
+//      rack_flags namespace", scripts/check-flagged-symbols.sh). The library forces -O3 in every
+//      configuration, so the standard-library templates the model instantiates (std::min, ...)
+//      stay inlined; the ctest checks that too.
 #include "engine/ripples_model.h"
 
-// The headers the model includes, first, so their include guards keep them out of the wrapper.
 #include <algorithm>
 #include <cmath>
 #include <random>
 
-#include "rack.hpp"  // shared: Rack's random state is one per thread, as in Rack
+#include "rack_prelude.h"
 
 namespace eg13 {
 inline namespace rack_flags {
 
+#include "rack.hpp"
 #include "Ripples/ripples.hpp"
 
 struct RipplesModel::State {
   ripples::RipplesEngine engine;
 };
 
-RipplesModel::RipplesModel() : s_(std::make_unique<State>()) {}
+RipplesModel::RipplesModel() : s_(new State()) {}
 
-RipplesModel::~RipplesModel() = default;
+RipplesModel::~RipplesModel() { delete s_; }
 
 void RipplesModel::reset(float sampleRate) {
   // A fresh model clears every state, including the CV RC filters that setSampleRate() keeps

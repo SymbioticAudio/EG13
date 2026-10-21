@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory>
-
 namespace eg13 {
 
 // Code compiled with Rack's flags (-funsafe-math-optimizations, core/CMakeLists.txt) lives in the
@@ -33,7 +31,7 @@ class RipplesModel {
 
  private:
   struct State;
-  std::unique_ptr<State> s_;
+  State* s_;  // owned; a raw pointer so no std:: template is instantiated on it
 };
 
 }  // namespace rack_flags

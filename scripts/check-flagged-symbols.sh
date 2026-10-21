@@ -4,8 +4,8 @@
 # external symbol outside the namespace named before it (EG13's models: eg13::rack_flags::, the
 # tests' reference models: eg13::test::rack_flags::). The linker merges weak symbols of the same
 # name, so a symbol elsewhere could replace (or be replaced by) a copy built with other flags in
-# EG13 or its tests (preflight ruling F6). Allowed: Rack's per-thread random state, which is data
-# and shared on purpose (rack.hpp), and GCC's personality reference.
+# EG13 or its tests (preflight ruling F6). Allowed besides: GCC's personality reference and the
+# AddressSanitizer's bookkeeping symbols.
 status=0
 namespace=
 for arg in "$@"; do
@@ -15,10 +15,13 @@ for arg in "$@"; do
   [ -n "$namespace" ] || { echo "no namespace given before $arg"; exit 1; }
   symbols=$(nm -g -C --defined-only "$arg" | grep -E '^[0-9a-fA-F]+ [A-Za-z] ') \
     || { echo "nm found no symbols in $arg"; exit 1; }
+  # The symbol's name must start with the namespace (after nm's address and type, and after a
+  # demangler prefix such as "vtable for "); a std:: template merely naming it does not count.
+  prefix=$(printf '%s' "$namespace" | sed 's/[.[\*^$]/\\&/g')
   stray=$(printf '%s\n' "$symbols" \
-    | grep -vF "$namespace" \
-    | grep -v 'rack::random::tState$' \
-    | grep -v 'DW\.ref\.__gxx_personality_v0$')
+    | grep -vE "^[0-9a-fA-F]+ [A-Za-z] ((vtable|typeinfo|typeinfo name|VTT|guard variable) for )?$prefix" \
+    | grep -v 'DW\.ref\.__gxx_personality_v0$' \
+    | grep -vE ' _*asan_[A-Za-z_]*$')
   if [ -n "$stray" ]; then
     echo "$arg defines symbols outside $namespace"
     printf '%s\n' "$stray"

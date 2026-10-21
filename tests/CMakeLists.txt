@@ -11,7 +11,7 @@ target_include_directories(eg13_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(eg13_vcv_flagged_reference OBJECT reference/flagged_ripples.cpp)
 target_include_directories(eg13_vcv_flagged_reference PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eg13_vcv_flagged_reference PRIVATE eg13_vcv)
-target_compile_options(eg13_vcv_flagged_reference PRIVATE -Wall -Wextra -Werror -funsafe-math-optimizations)
+target_compile_options(eg13_vcv_flagged_reference PRIVATE -Wall -Wextra -Werror -O3 -funsafe-math-optimizations)
 target_sources(eg13_tests PRIVATE $<TARGET_OBJECTS:eg13_vcv_flagged_reference>)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/third_party/Catch2/extras)

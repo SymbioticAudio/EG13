@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory>
-
 namespace eg13 {
 namespace test {
 
@@ -32,7 +30,7 @@ class FlaggedRipples {
 
  private:
   struct State;
-  std::unique_ptr<State> s_;
+  State* s_;  // owned; a raw pointer so no std:: template is instantiated on it
 };
 
 }  // namespace rack_flags

@@ -1,27 +1,27 @@
-// Compiled with Rack's -funsafe-math-optimizations (tests/CMakeLists.txt). Every symbol this TU
-// defines must be inside eg13::test::rack_flags (flagged_ripples.h).
+// Built with Rack's flags (eg13_vcv_flagged_reference, tests/CMakeLists.txt), following the
+// isolation rules at the top of core/engine/ripples_model.cpp, in eg13::test::rack_flags.
 #include "reference/flagged_ripples.h"
 
-// The headers the model includes, first, so their include guards keep them out of the wrapper.
 #include <algorithm>
 #include <cmath>
 #include <random>
 
-#include "rack.hpp"  // shared: Rack's random state, which the tests seed
+#include "rack_prelude.h"  // shared: Rack's random state, which the tests seed
 
 namespace eg13 {
 namespace test {
 inline namespace rack_flags {
 
+#include "rack.hpp"
 #include "Ripples/ripples.hpp"
 
 struct FlaggedRipples::State {
   ripples::RipplesEngine engine;
 };
 
-FlaggedRipples::FlaggedRipples() : s_(std::make_unique<State>()) {}
+FlaggedRipples::FlaggedRipples() : s_(new State()) {}
 
-FlaggedRipples::~FlaggedRipples() = default;
+FlaggedRipples::~FlaggedRipples() { delete s_; }
 
 void FlaggedRipples::setSampleRate(float sampleRate) { s_->engine.setSampleRate(sampleRate); }
 
