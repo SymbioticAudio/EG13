@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <vector>
 
@@ -11,6 +12,9 @@
 #include "part/part.h"
 #include "test_engines.h"
 #include "test_helpers.h"
+#include "voice/processor_factory.h"
+
+#include <sys/resource.h>
 
 using namespace eg13;
 
@@ -274,4 +278,58 @@ TEST_CASE("A part passes its input to the voices") {
     part.process(in, out, p, kBlock);
   }
   REQUIRE(std::fabs(l[19199] - 0.25f) < 1e-4f);
+}
+
+TEST_CASE("A part switches every voice's Filter from its settings") {
+  auto rmsWith = [](int filter) {
+    Part part;
+    part.prepare(kRate, kBlock);
+    PartSettings s = part.settings();
+    s.filterEngine = filter;
+    part.applySettings(s);
+    part.noteOn(60, 1.0f);
+    SlotParams p;
+    p.source = test::defaultParams(sourceEngineInfo(0));
+    p.filter = test::defaultParams(filterEngineInfo(filter));
+    p.filter.p[0] = 0.1f;  // cutoff ~40 Hz where it applies
+    std::vector<float> l(24000), r(24000);
+    for (int done = 0; done < 24000; done += kBlock) {
+      float* out[2] = {l.data() + done, r.data() + done};
+      part.process(VoiceInputs{}, out, p, std::min(kBlock, 24000 - done));
+    }
+    return test::rms(l, 4800, 24000);
+  };
+  const double open = rmsWith(int(FilterEngine::Off));
+  REQUIRE(open > 0.01);
+  for (int filter : {int(FilterEngine::Analog), int(FilterEngine::Classic), int(FilterEngine::StateVariable)}) {
+    INFO("filter " << filter);
+    REQUIRE(rmsWith(filter) < 0.3 * open);
+  }
+}
+
+TEST_CASE("Memory per part with every engine preallocated", "[memory]") {
+  struct rusage before {};
+  getrusage(RUSAGE_SELF, &before);
+  size_t constructed = 0, prepared = 0;
+  std::unique_ptr<Part> part;
+  {
+    test::ScopedAllocationCounter counter;
+    part = std::make_unique<Part>();
+    constructed = counter.bytes();
+  }
+  {
+    test::ScopedAllocationCounter counter;
+    part->prepare(48000.0, 512);
+    prepared = counter.bytes();
+  }
+  struct rusage after {};
+  getrusage(RUSAGE_SELF, &after);
+#ifdef __APPLE__
+  const double rssMb = double(after.ru_maxrss - before.ru_maxrss) / 1048576.0;  // bytes
+#else
+  const double rssMb = double(after.ru_maxrss - before.ru_maxrss) / 1024.0;  // kilobytes
+#endif
+  std::printf("Part memory: %.2f MB constructed + %.2f MB prepared (48 kHz, 512); peak RSS grew %.2f MB\n",
+              double(constructed) / 1048576.0, double(prepared) / 1048576.0, rssMb);
+  REQUIRE(constructed + prepared < size_t(64) * 1024 * 1024);
 }

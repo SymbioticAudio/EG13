@@ -6,6 +6,10 @@ EG13 has two parts, A and B. Each plays up to eight voices. Each voice runs Sour
 
 The master **Mode** decides which notes reach which part: *Single* (only A plays), *Layer* (both play every note), *Split* (A below the split note, B from it up) or *Multi* (each part on its own MIDI channel). In Single mode Part B is silent but still runs, so it can feed Part A (see below).
 
+A voice stops (and becomes free for a new note) when its note is released and the sound reaching its Shaper has been silent (below −90 dBFS) for 50 ms, plus the Shaper's latency. Silence is measured before the Shaper, because the Ring Mod / Vocoder's internal oscillator keeps sounding after the note has died. The amplitude envelopes coming in the next milestone (M4) will close the output itself.
+
+If an engine ever produces an invalid signal (a numerical blow-up), the voice is muted for a moment and only the slots whose output went invalid (Source, Filter or Shaper) start their engine afresh; the others carry on, and a held note keeps playing.
+
 ## Engine switching
 
 Each engine remembers its own settings in each part. Switching Source from Macro Oscillator to Digital Oscillator and back brings back the Macro Oscillator exactly as you left it. The host's parameters change to the new engine's values; this change is not recorded as automation.

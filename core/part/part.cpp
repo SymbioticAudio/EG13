@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "synth/param_table.h"
+#include "voice/processor_factory.h"
 
 namespace eg13 {
 
@@ -11,7 +12,9 @@ constexpr double kGainSmoothingSeconds = 0.01;
 }  // namespace
 
 Part::Part() {
-  for (int v = 0; v < kVoices; ++v) voices_.push_back(std::make_unique<Voice>(makeAllSources()));
+  for (int v = 0; v < kVoices; ++v) {
+    voices_.push_back(std::make_unique<Voice>(makeAllSources(), makeAllFilters(), makeAllShapers()));
+  }
 }
 
 Part::Part(SourceFactory factory) {
@@ -47,6 +50,8 @@ void Part::applySettings(const PartSettings& s) {
   const bool alwaysOnChanged = s.alwaysOn != alwaysOn_;
   const bool baseChanged = s.baseNote != settings_.baseNote;
   const bool engineChanged = s.engine != settings_.engine;
+  const bool filterChanged = s.filterEngine != settings_.filterEngine;
+  const bool shaperChanged = s.shaperEngine != settings_.shaperEngine;
   settings_ = s;
 
   if (configChanged) perform(allocator_.configure(s.voiceMode, s.voiceCount));
@@ -66,6 +71,12 @@ void Part::applySettings(const PartSettings& s) {
   }
   if (engineChanged) {
     for (auto& voice : voices_) voice->setEngine(s.engine);
+  }
+  if (filterChanged) {
+    for (auto& voice : voices_) voice->setFilterEngine(s.filterEngine);
+  }
+  if (shaperChanged) {
+    for (auto& voice : voices_) voice->setShaperEngine(s.shaperEngine);
   }
 
   const float glide = glideSeconds(s.glide);
@@ -125,13 +136,18 @@ void Part::allNotesOff() {
   perform(allocator_.allNotesOff());
 }
 
-void Part::process(const float* const* in, float* const* out, const ParamValues& source,
-                   int n) {
+void Part::process(const float* const* in, float* const* out, const ParamValues& source, int n) {
+  SlotParams params;
+  params.source = source;
+  process(VoiceInputs{in, nullptr}, out, params, n);
+}
+
+void Part::process(const VoiceInputs& in, float* const* out, const SlotParams& params, int n) {
   std::fill(mix_[0].begin(), mix_[0].begin() + n, 0.0f);
   std::fill(mix_[1].begin(), mix_[1].begin() + n, 0.0f);
   float* mix[2] = {mix_[0].data(), mix_[1].data()};
   for (int v = 0; v < kVoices; ++v) {
-    voices_[size_t(v)]->process(in, mix, source, n);
+    voices_[size_t(v)]->process(in, mix, params, n);
     if (allocator_.sounding(v) && !voices_[size_t(v)]->active()) allocator_.voiceIdle(v);
   }
   for (int i = 0; i < n; ++i) {

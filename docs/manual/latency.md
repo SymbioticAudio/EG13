@@ -11,5 +11,7 @@ EG13 reports **one fixed latency**, and every engine is delayed to match the slo
 
 The Modal Synth's 32 kHz engine sets these figures.
 
+These figures cover the Source alone. Each voice's Filter and Shaper add their own latency on top: the Filters add none, but every Shaper is delayed to match the Ring Mod / Vocoder's conversion to 96 kHz and its 60-sample blocks, so the latency EG13 reports is higher than this table shows.
+
 - **EG13** aligns note onsets. Sound that the Input excites through the Modal Synth or Resonator therefore arrives up to about 6 ms after the Dry signal.
 - **EG13 FX** aligns the processed Input exactly with Dry.

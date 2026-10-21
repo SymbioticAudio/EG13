@@ -289,4 +289,58 @@ class ConstantEngine final : public VoiceEngine {
   }
 };
 
+// A source with an AUX output: L = R = 0.25 while gated; AUX (when enabled) = 0.75.
+class AuxSourceEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int) override {}
+  void reset() override { gate_ = false; }
+  void noteOn(float, float) override { gate_ = true; }
+  void noteOff() override { gate_ = false; }
+  void setNote(float) override {}
+  void setAuxEnabled(bool on) override { aux_ = on; }
+  void process(const float* const*, float* const* out, const ParamValues&, int n) override {
+    for (int i = 0; i < n; ++i) {
+      out[0][i] = out[1][i] = gate_ ? 0.25f : 0.0f;
+      if (aux_) out[2][i] = gate_ ? 0.75f : 0.0f;
+    }
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"auxsource", "AUX source", 0, nullptr, false, true, 0, nullptr};
+    return kInfo;
+  }
+
+ private:
+  bool gate_ = false;
+  bool aux_ = false;
+};
+
+// Passes its input through, until its call number goodCalls: from then on it outputs NaN (a
+// blown-up filter) until reset(). It blows up only once.
+class NanUntilResetEngine final : public VoiceEngine {
+ public:
+  explicit NanUntilResetEngine(int goodCalls) : goodCalls_(goodCalls) {}
+  void prepare(double, int) override {}
+  void reset() override { blown_ = false; }
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  void process(const float* const* in, float* const* out, const ParamValues&, int n) override {
+    if (!fired_ && calls_++ == goodCalls_) blown_ = fired_ = true;
+    for (int i = 0; i < n; ++i) {
+      out[0][i] = blown_ ? std::nanf("") : (in ? in[0][i] : 0.0f);
+      out[1][i] = blown_ ? std::nanf("") : (in ? in[1][i] : 0.0f);
+    }
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"nanuntilreset", "NaN until reset", 0, nullptr, true, false, 0, nullptr};
+    return kInfo;
+  }
+
+ private:
+  int goodCalls_;
+  int calls_ = 0;
+  bool blown_ = false;
+  bool fired_ = false;
+};
+
 }  // namespace eg13::test

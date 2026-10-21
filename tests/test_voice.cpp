@@ -10,8 +10,11 @@
 #include "alloc_counter.h"
 #include "engine/engine_registry.h"
 #include "engine/plaits_engine.h"
+#include "engine/warps_engine.h"
 #include "test_engines.h"
 #include "test_helpers.h"
+#include "voice/processor_factory.h"
+#include "voice/processor_slot.h"
 #include "voice/source_factory.h"
 #include "voice/voice.h"
 
@@ -361,4 +364,244 @@ TEST_CASE("A voice with every engine plays each of them") {
     REQUIRE(test::rms(l, 0, 22050) > 1e-4);
     voice.release();
   }
+}
+
+namespace {
+
+std::vector<SourceSpec> specs(SourceSpec a) {
+  std::vector<SourceSpec> v;
+  v.push_back(std::move(a));
+  return v;
+}
+
+std::vector<SourceSpec> specs(SourceSpec a, SourceSpec b) {
+  std::vector<SourceSpec> v;
+  v.push_back(std::move(a));
+  v.push_back(std::move(b));
+  return v;
+}
+
+SourceSpec hostRate(std::unique_ptr<VoiceEngine> e) { return {std::move(e), 0.0, 16}; }
+
+std::vector<float> runChain(Voice& voice, int n, const SlotParams& p, const VoiceInputs& in = VoiceInputs{},
+                            std::vector<float>* right = nullptr) {
+  std::vector<float> l(size_t(n), 0.0f), r(size_t(n), 0.0f);
+  for (int done = 0; done < n; done += 64) {
+    const int count = std::min(64, n - done);
+    float* out[2] = {l.data() + done, r.data() + done};
+    const float* input[2] = {in.input ? in.input[0] + done : nullptr, in.input ? in.input[1] + done : nullptr};
+    const float* other[2] = {in.other ? in.other[0] + done : nullptr, in.other ? in.other[1] + done : nullptr};
+    voice.process(VoiceInputs{in.input ? input : nullptr, in.other ? other : nullptr}, out, p, count);
+  }
+  if (right) *right = r;
+  return l;
+}
+
+}  // namespace
+
+TEST_CASE("The voice chain runs Source, then Filter, then Shaper") {
+  Voice plain(sine());
+  Voice chain(specs(sine()), specs(makeOff(), hostRate(std::make_unique<test::GainEngine>())),
+              specs(makeOff(), hostRate(std::make_unique<test::GainEngine>())));
+  for (Voice* v : {&plain, &chain}) v->prepare(48000.0, 256);
+  chain.setFilterEngine(1);
+  chain.setShaperEngine(1);
+  plain.trigger(69, 1.0f);
+  chain.trigger(69, 1.0f);
+  SlotParams p;
+  p.filter.p[0] = 0.5f;   // x2
+  p.shaper.p[0] = 0.75f;  // x3
+  const auto a = runChain(plain, 4800, SlotParams{});
+  const auto b = runChain(chain, 4800, p);
+  for (size_t i = 0; i < a.size(); ++i) REQUIRE(std::fabs(b[i] - 6.0f * a[i]) <= 1e-6f);
+}
+
+TEST_CASE("Voice latency adds the Filter and Shaper slots") {
+  Voice voice(makeAllSources(), makeAllFilters(), makeAllShapers());
+  voice.prepare(48000.0, 256);
+  Voice sourceOnly(makeAllSources());
+  sourceOnly.prepare(48000.0, 256);
+  ProcessorSlot shapers(makeAllShapers());
+  shapers.prepare(48000.0, Voice::kControlBlock);
+  INFO("voice " << voice.latencySamples() << " source " << sourceOnly.latencySamples() << " shaper "
+                << shapers.latencySamples());
+  REQUIRE(shapers.latencySamples() > 0);
+  REQUIRE(voice.latencySamples() == sourceOnly.latencySamples() + shapers.latencySamples());
+}
+
+TEST_CASE("The Shaper's side inputs follow their selectors") {
+  Voice voice(specs(hostRate(std::make_unique<test::AuxSourceEngine>())), makeOffOnly(),
+              specs(makeOff(), hostRate(std::make_unique<test::SideEchoEngine>())));
+  voice.prepare(48000.0, 256);
+  voice.setShaperEngine(1);
+  voice.trigger(60, 1.0f);
+  const std::vector<float> inL(256, 0.1f), inR(256, 0.3f), otherL(256, -0.4f), otherR(256, 0.0f);
+  const float* input[2] = {inL.data(), inR.data()};
+  const float* other[2] = {otherL.data(), otherR.data()};
+  const VoiceInputs in{input, other};
+  const struct {
+    float selector;
+    float expected;
+  } cases[] = {{0.5f / 4.0f, 0.0f}, {1.5f / 4.0f, 0.75f}, {2.5f / 4.0f, 0.2f}, {3.5f / 4.0f, -0.2f}};
+  for (const auto& c : cases) {
+    for (int input = 0; input < 2; ++input) {
+      SlotParams p;
+      p.shaper.p[input] = c.selector;    // SideEchoEngine: P1 picks side 1 (out L), P2 side 2 (out R)
+      p.shaper.p[1 - input] = 0.0f;      // the other one: Voice, so nothing is passed
+      std::vector<float> right;
+      const auto l = runChain(voice, 256, p, in, &right);
+      const float got = input == 0 ? l.back() : right.back();
+      const float other = input == 0 ? right.back() : l.back();
+      INFO("side " << input << " selector " << c.selector);
+      REQUIRE(std::fabs(got - c.expected) < 1e-6f);
+      REQUIRE(other == 0.0f);
+    }
+  }
+}
+
+TEST_CASE("Source AUX falls back to the main output for sources without AUX") {
+  Voice voice(specs(sine()), makeOffOnly(), specs(makeOff(), hostRate(std::make_unique<test::SideEchoEngine>())));
+  Voice plain(sine());
+  for (Voice* v : {&voice, &plain}) v->prepare(48000.0, 256);
+  voice.setShaperEngine(1);
+  voice.trigger(69, 1.0f);
+  plain.trigger(69, 1.0f);
+  SlotParams p;
+  p.shaper.p[0] = 1.5f / 4.0f;  // side 1: Source AUX
+  const auto l = runChain(voice, 4800, p);
+  const auto sine = runChain(plain, 4800, SlotParams{});
+  for (size_t i = 0; i < l.size(); ++i) REQUIRE(l[i] == sine[i]);  // (L + R) / 2 of a mono sine = L
+}
+
+TEST_CASE("Absent modulator sources give silence, not garbage") {
+  Voice voice(specs(sine()), makeOffOnly(), makeAllShapers());
+  voice.prepare(48000.0, 256);
+  voice.setShaperEngine(int(ShaperEngine::RingMod));
+  voice.trigger(69, 1.0f);
+  SlotParams p;
+  p.shaper = test::defaultParams(WarpsEngine::staticInfo());
+  p.shaper.p[0] = 0.375f;  // digital ring modulation: silent when either input is
+  p.shaper.p[4] = WarpsEngine::optionValue(1);  // Carrier: Voice
+  for (int modulator : {2, 3}) {  // Modulator Input, Other part: nothing there
+    p.shaper.p[5] = WarpsEngine::optionValue(modulator);
+    const auto out = runChain(voice, 9600, p);
+    for (float s : out) REQUIRE(std::isfinite(s));
+    REQUIRE(test::rms(out, 4800, 9600) < 1e-4);
+  }
+  p.shaper.p[5] = WarpsEngine::optionValue(0);  // Modulator: Voice
+  for (int carrier : {3, 4}) {  // Carrier Input, Other part: nothing there
+    p.shaper.p[4] = WarpsEngine::optionValue(carrier);
+    const auto out = runChain(voice, 9600, p);
+    for (float s : out) REQUIRE(std::isfinite(s));
+    REQUIRE(test::rms(out, 4800, 9600) < 1e-4);
+  }
+  p.shaper.p[4] = WarpsEngine::optionValue(1);  // Carrier: Voice
+  p.shaper.p[5] = WarpsEngine::optionValue(1);  // Modulator: Source AUX, the sine itself
+  const auto self = runChain(voice, 9600, p);
+  REQUIRE(test::rms(self, 4800, 9600) > 0.01);
+}
+
+TEST_CASE("A Shaper that keeps sounding does not hold the voice forever") {
+  Voice voice(specs(sine()), makeOffOnly(), specs(makeOff(), hostRate(std::make_unique<test::ConstantEngine>())));
+  voice.prepare(48000.0, 256);
+  voice.setShaperEngine(1);
+  voice.trigger(60, 1.0f);
+  runChain(voice, 4800, SlotParams{});
+  voice.release();
+  runChain(voice, 1920, SlotParams{});  // 40 ms: still active
+  REQUIRE(voice.active());
+  runChain(voice, 4800, SlotParams{});
+  REQUIRE_FALSE(voice.active());
+}
+
+TEST_CASE("A NaN from the Filter mutes the block and the voice recovers") {
+  Voice voice(specs(sine()), specs(makeOff(), hostRate(std::make_unique<test::NanOnceEngine>())), makeOffOnly());
+  voice.prepare(48000.0, 256);
+  voice.setFilterEngine(1);
+  voice.trigger(60, 1.0f);
+  const auto first = runChain(voice, 64, SlotParams{});
+  for (size_t i = 0; i < 16; ++i) REQUIRE(first[i] == 0.0f);
+  const auto later = runChain(voice, 4800, SlotParams{});
+  for (float s : later) REQUIRE(std::isfinite(s));
+  REQUIRE(voice.active());
+}
+
+TEST_CASE("A NaN from one slot resets only that slot") {
+  // The Filter blows up on its 11th control block (samples 160..175) and stays NaN until reset.
+  Voice voice(specs(sine()), specs(makeOff(), hostRate(std::make_unique<test::NanUntilResetEngine>(10))),
+              makeOffOnly());
+  Voice plain(sine());
+  for (Voice* v : {&voice, &plain}) v->prepare(48000.0, 256);
+  voice.setFilterEngine(1);
+  voice.trigger(69, 1.0f);
+  plain.trigger(69, 1.0f);
+  const auto got = runChain(voice, 4800, SlotParams{});
+  const auto expected = runChain(plain, 4800, SlotParams{});
+  for (size_t i = 0; i < 160; ++i) REQUIRE(got[i] == expected[i]);
+  for (size_t i = 160; i < 192; ++i) REQUIRE(got[i] == 0.0f);  // the rest of that call is muted
+  // The Source was not reset: its sine carries on through the restarted Filter where it
+  // stopped, after the failing control block (the muted rest of the call is not rendered).
+  for (size_t i = 192; i < got.size(); ++i) REQUIRE(got[i] == expected[i - 16]);
+  REQUIRE(voice.active());
+}
+
+TEST_CASE("A Filter NaN that the Shaper hides still restarts the Filter") {
+  // Ring Mod reads a NaN input as 0, so its output stays finite while the Filter is blown up.
+  Voice voice(specs(sine()), specs(makeOff(), hostRate(std::make_unique<test::NanUntilResetEngine>(10))),
+              makeAllShapers());
+  voice.prepare(48000.0, 256);
+  voice.setFilterEngine(1);
+  voice.setShaperEngine(int(ShaperEngine::RingMod));
+  voice.trigger(69, 1.0f);
+  SlotParams p;
+  p.shaper = test::defaultParams(WarpsEngine::staticInfo());
+  p.shaper.p[0] = 0.0f;                         // crossfade ...
+  p.shaper.p[1] = 0.0f;                         // ... all the way to the carrier
+  p.shaper.p[4] = WarpsEngine::optionValue(1);  // Carrier: Voice
+  const auto out = runChain(voice, 9600, p);
+  for (float s : out) REQUIRE(std::isfinite(s));
+  REQUIRE(test::rms(out, 4800, 9600) > 0.01);
+}
+
+TEST_CASE("The Ring Mod oscillator follows the voice's note") {
+  Voice voice(specs(sine()), makeOffOnly(), makeAllShapers());
+  voice.prepare(48000.0, 256);
+  voice.setShaperEngine(int(ShaperEngine::RingMod));
+  voice.trigger(57, 1.0f);
+  SlotParams p;
+  p.shaper = test::defaultParams(WarpsEngine::staticInfo());  // Carrier Internal Osc
+  p.shaper.p[0] = 0.0f;    // crossfade ...
+  p.shaper.p[1] = 0.0f;    // ... all the way to the carrier
+  p.shaper.p[6] = 0.75f;   // Osc Pitch +12 st: 440 Hz
+  const auto out = runChain(voice, 48000, p);
+  REQUIRE_THAT(test::estimateFrequency(out, 48000.0, 9600, 48000), Catch::Matchers::WithinRel(440.0, 0.003));
+}
+
+TEST_CASE("Voice processing with every engine and slot switches does not allocate") {
+  Voice voice(makeAllSources(), makeAllFilters(), makeAllShapers());
+  voice.prepare(48000.0, 256);
+  std::vector<float> l(256), r(256), in(256, 0.1f);
+  float* out[2] = {l.data(), r.data()};
+  const float* input[2] = {in.data(), in.data()};
+  SlotParams p;
+  for (float& v : p.source.p) v = 0.5f;
+  for (float& v : p.filter.p) v = 0.5f;
+  for (float& v : p.shaper.p) v = 0.5f;
+  voice.trigger(60, 1.0f);
+  voice.process(VoiceInputs{input, input}, out, p, 256);
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int block = 0; block < 60; ++block) {
+      if (block % 10 == 0) {
+        voice.setFilterEngine((block / 10) % kNumFilterEngines);
+        voice.setShaperEngine((block / 10) % kNumShaperEngines);
+        voice.setEngine((block / 10) % kNumSourceEngines);
+      }
+      if (block == 30) voice.trigger(64, 0.7f);
+      voice.process(VoiceInputs{input, input}, out, p, 256);
+    }
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
 }

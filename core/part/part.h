@@ -27,6 +27,8 @@ struct PartSettings {
   bool mono = false;
   int output = 0;  // 0 = main, 1 = Bus 2, 2 = other part only
   int engine = 0;  // SourceEngine
+  int filterEngine = 0;  // FilterEngine
+  int shaperEngine = 0;  // ShaperEngine
   int inputSource = 0;  // 0 external, 1 other part, 2 both (routed by the Synth)
 };
 
@@ -35,7 +37,7 @@ class Part {
  public:
   static constexpr int kVoices = VoiceAllocator::kMaxVoices;
 
-  Part();                                // every source engine
+  Part();                                // every Source, Filter and Shaper engine
   explicit Part(SourceFactory factory);  // one engine per voice (tests)
 
   void prepare(double hostRate, int maxBlock,
@@ -53,7 +55,9 @@ class Part {
   void sustain(bool down);
   void allNotesOff();
 
-  // Overwrites out[0], out[1] with n samples (n <= maxBlock). in: nullable.
+  // Overwrites out[0], out[1] with n samples (n <= maxBlock).
+  void process(const VoiceInputs& in, float* const* out, const SlotParams& params, int n);
+  // Source parameters only; in: the part's Input (nullable).
   void process(const float* const* in, float* const* out, const ParamValues& source, int n);
   void process(float* const* out, const ParamValues& source, int n) {
     process(nullptr, out, source, n);
