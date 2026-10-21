@@ -43,6 +43,7 @@ void Part::prepare(double hostRate, int maxBlock, Voice::Alignment alignment) {
   gainL_.prepare(hostRate, kGainSmoothingSeconds);
   gainR_.prepare(hostRate, kGainSmoothingSeconds);
   modulation_.prepare(hostRate);
+  inputScaleSmoother_.prepare(hostRate);
   reset();
 }
 
@@ -57,6 +58,9 @@ void Part::reset() {
   bend_ = 0.0f;
   modulation_.reset();
   for (auto& c : controls_) c = VoiceControl{};
+  inputScaleSmoother_.reset();
+  inputScale_ = 1.0f;
+  std::fill(std::begin(voiceInputScale_), std::end(voiceInputScale_), 1.0f);
   std::fill(std::begin(controlValid_), std::end(controlValid_), false);
   std::fill(std::begin(voiceRetrigger_), std::end(voiceRetrigger_), false);
   std::fill(std::begin(voicePressure_), std::end(voicePressure_), 0.0f);
@@ -322,7 +326,8 @@ void Part::controlVoice(int v, const PartParams& params, const ModPartInputs& pa
   VoiceControl& c = controls_[v];
   modulation_.processVoice(v, params.mod, part, voiceInputs(v), params.slots, &c, length);
   c.gain = params.voiceGain;
-  c.sourceGain = sourceTrim(settings_.engine) * inputScale_;  // gain staging (rulings 25, 26)
+  if (voices_[size_t(v)]->gate()) voiceInputScale_[v] = inputScale_;
+  c.sourceGain = sourceTrim(settings_.engine) * voiceInputScale_[v];  // gain staging (rulings 25, 26)
   voices_[size_t(v)]->beginTick(c, length);
   controlValid_[v] = true;
   voiceRetrigger_[v] = false;
@@ -342,7 +347,13 @@ void Part::startTick(const PartParams& params, int offset) {
   // a chord plays the Input at one voice's level.
   int open = 0;
   for (const auto& voice : voices_) open += voice->active() && voice->gate() ? 1 : 0;
-  inputScale_ = settings_.engine == int(SourceEngine::AudioInput) ? 1.0f / float(std::max(1, open)) : 1.0f;
+  if (settings_.engine == int(SourceEngine::AudioInput)) {
+    const float target = 1.0f / float(std::max(1, open));
+    for (int i = 0; i < Voice::kControlBlock; ++i) inputScale_ = inputScaleSmoother_.next(target);  // per sample
+  } else {
+    inputScaleSmoother_.reset();  // snaps to 1 on the next Audio Input tick's first target
+    inputScale_ = 1.0f;
+  }
   ModVoiceInputs voices[kVoices];
   for (int v = 0; v < kVoices; ++v) voices[v] = voiceInputs(v);
   const ModPartInputs part = partInputs(params, offset);

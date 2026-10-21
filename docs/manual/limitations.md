@@ -7,7 +7,7 @@
   - At their defaults the filters and the EQ keep the level (within 0.05 dB).
 
   Keep the master level down; the master Soft Clip (on by default) bends whatever still goes over −3 dBFS and never lets it pass full scale.
-- **Resonator velocity:** with Polyphony 2 or 4, a new note's velocity also changes the level of earlier notes still ringing (over 5 ms, without a click). A level per string would need a change inside the original module's code.
+- **Resonator velocity:** with Polyphony 2 or 4, a new note's velocity also changes the level of earlier notes still ringing (fading in with a time constant of 5 ms, without a click). A level per string would need a change inside the original module's code.
 - **Modal Synth input:** the firmware's noise gate on the external input is not ported.
 - **Part B in Single mode** still runs and uses CPU, so it can feed Part A.
 - **Ring Mod / Vocoder noise carrier:** with Osc Shape *Saw / Noise* in the vocoder range, the noise comes from a random generator shared by the voices on one audio thread, so two renders of the same notes are not sample-identical.

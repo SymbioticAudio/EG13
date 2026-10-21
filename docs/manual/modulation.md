@@ -113,7 +113,7 @@ EG13 keeps room for chords and evens out its Sources (gain staging):
 
 - **Voice Gain** (a master setting): each voice plays 12 dB lower (*−12 dB*, the instrument's default), so a chord of eight loud voices does not overload the mix. *0 dB* plays each voice at full level: EG13 FX starts there (it usually plays one voice), and projects saved before modulation existed load with it, so they keep their level.
 - **Source trims**: each Source is turned up or down at its output, before the Filter, so one held note at the engine's default settings comes out about as loud on every Source: the Digital Oscillator 3 dB down, the Modal Synth and the Resonator 12 dB up, the Macro Oscillator and Audio Input unchanged. This also means the Filter and the Shaper see similar levels from every Source.
-- **Audio Input chords**: every Audio Input voice carries the same Input, so EG13 divides each one by the number of keys held. A chord plays the Input at one voice's level instead of several times louder.
+- **Audio Input chords**: every Audio Input voice carries the same Input, so EG13 divides each one by the number of sounding keys (held keys, sustain and Always on count). A chord plays the Input at one voice's level instead of several times louder. The division glides over a few milliseconds when you add or release a key, and a note you have released keeps its level as it fades out, so a released chord does not swell.
 - **Soft Clip** (a master setting, on by default): the main and Bus 2 outputs pass unchanged below −3 dBFS; above that they bend smoothly towards full scale and never go over it. A NaN is silenced. Switch it off to hear EG13's output exactly (the host may then clip it).
 
 ## In the host

@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 
+#include "engine/pot_smoother.h"
 #include "mod/part_modulation.h"
 #include "util/smoothed_value.h"
 #include "voice/mono_note_stack.h"
@@ -187,7 +188,12 @@ class Part {
   bool partRetrigger_ = false;
   uint32_t seed_ = 0x13579BDFu;  // the Random source's seed (setSeedBase)
   uint32_t random_ = 0x13579BDFu;
-  float inputScale_ = 1.0f;  // Audio Input chord scaling: 1 / open Audio Input voices (ruling 26)
+  // Audio Input chord scaling (ruling 26): 1 / open Audio Input voices, glided over
+  // kMixDeclickSeconds so a note on or off does not step the other voices. A voice with an open
+  // gate follows it; a released voice keeps the scale it had at note-off until it frees.
+  Declicker inputScaleSmoother_{kMixDeclickSeconds};
+  float inputScale_ = 1.0f;                 // the smoothed scale at the end of the last tick
+  float voiceInputScale_[kVoices] = {};     // each voice's scale; frozen once its gate closes
 };
 
 }  // namespace eg13

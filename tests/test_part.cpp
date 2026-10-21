@@ -1019,3 +1019,50 @@ TEST_CASE("An Audio Input chord plays the Input at one voice's level") {
   REQUIRE(one > 0.1);
   REQUIRE(std::fabs(level(4) / one - 1.0) < 0.01);
 }
+
+// Audio Input chord scaling glides: a note on into a held note steps no voice's gain by more than
+// the 5 ms Declicker allows per tick, and a released chord's tails never rise above their
+// note-off level.
+TEST_CASE("An Audio Input note on into a held note glides the scale") {
+  Part part(steady, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  PartSettings s;
+  s.engine = int(SourceEngine::AudioInput);
+  part.applySettings(s);
+  part.noteOn(60, 1.0f);
+  runModulated(part, 1600, PartParams{}, 16);
+  REQUIRE(part.lastControl(0).sourceGain == 1.0f);
+  part.noteOn(64, 1.0f);
+  float previous = 1.0f;
+  float largest = 0.0f;
+  for (int tick = 0; tick < 100; ++tick) {
+    runModulated(part, 16, PartParams{}, 16);
+    const float g = part.lastControl(0).sourceGain;
+    largest = std::max(largest, std::fabs(g - previous));
+    previous = g;
+  }
+  // One tick of the 5 ms one-pole at 48 kHz moves at most 16 x 0.00416 of a 0.5 step: 0.034.
+  REQUIRE(largest < 0.04f);
+  REQUIRE(largest > 0.0f);
+  REQUIRE(std::fabs(previous - 0.5f) < 1e-3f);
+}
+
+TEST_CASE("An Audio Input chord's release tails keep their level") {
+  Part part(steady, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  PartSettings s;
+  s.engine = int(SourceEngine::AudioInput);
+  part.applySettings(s);
+  for (int k = 0; k < 4; ++k) part.noteOn(60 + 4 * k, 1.0f);
+  runModulated(part, 4800, PartParams{}, 16);
+  float atRelease[4];
+  for (int v = 0; v < 4; ++v) {
+    atRelease[v] = part.lastControl(v).sourceGain;
+    REQUIRE(std::fabs(atRelease[v] - 0.25f) < 1e-3f);
+  }
+  for (int k = 0; k < 4; ++k) part.noteOff(60 + 4 * k);
+  for (int tick = 0; tick < 12; ++tick) {  // the 5 ms release, still sounding
+    runModulated(part, 16, PartParams{}, 16);
+    for (int v = 0; v < 4; ++v) REQUIRE(part.lastControl(v).sourceGain <= atRelease[v] + 1e-6f);
+  }
+}
