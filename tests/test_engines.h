@@ -251,4 +251,42 @@ class StereoProbeEngine final : public VoiceEngine {
   int calls_ = 0;
 };
 
+// Uses input: out = in * 4 * P1 (in nullptr -> zeros).
+class GainEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int) override {}
+  void reset() override {}
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  void process(const float* const* in, float* const* out, const ParamValues& p, int n) override {
+    for (int i = 0; i < n; ++i) {
+      out[0][i] = in ? in[0][i] * 4.0f * p.p[0] : 0.0f;
+      out[1][i] = in ? in[1][i] * 4.0f * p.p[0] : 0.0f;
+    }
+  }
+  const EngineInfo& info() const override {
+    static const EngineParamInfo kParams[1] = {{"Gain", 0.25f, nullptr}};
+    static const EngineInfo kInfo = {"gain", "Gain", 1, kParams, true, false, 0, nullptr};
+    return kInfo;
+  }
+};
+
+// Outputs 0.5 on both channels whatever its input: an oscillator in a processor slot.
+class ConstantEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int) override {}
+  void reset() override {}
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  void process(const float* const*, float* const* out, const ParamValues&, int n) override {
+    for (int i = 0; i < n; ++i) out[0][i] = out[1][i] = 0.5f;
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"constant", "Constant", 0, nullptr, true, false, 0, nullptr};
+    return kInfo;
+  }
+};
+
 }  // namespace eg13::test

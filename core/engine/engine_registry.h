@@ -12,4 +12,18 @@ constexpr int kSourceEngineSelectorMax = 31;  // fixed host range so adding engi
 int sourceEngineFromSelector(double value);  // unknown values -> Macro
 const EngineInfo& sourceEngineInfo(int engine);
 
+// Filter and Shaper engine ids. Saved in projects: never renumber.
+enum class FilterEngine : int { Off = 0, Analog = 1, Classic = 2, StateVariable = 3 };
+constexpr int kNumFilterEngines = 4;
+constexpr int kFilterEngineSelectorMax = 31;
+
+enum class ShaperEngine : int { Off = 0, RingMod = 1, Eq = 2 };
+constexpr int kNumShaperEngines = 3;
+constexpr int kShaperEngineSelectorMax = 31;
+
+int filterEngineFromSelector(double value);  // unknown values -> Off
+int shaperEngineFromSelector(double value);  // unknown values -> Off
+const EngineInfo& filterEngineInfo(int engine);  // unknown -> Off's
+const EngineInfo& shaperEngineInfo(int engine);  // unknown -> Off's
+
 }  // namespace eg13

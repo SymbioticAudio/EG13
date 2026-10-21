@@ -12,6 +12,18 @@ Each engine remembers its own settings in each part. Switching Source from Macro
 
 Switching the **Source** engine is a hard cut: the old engine stops at once, and a held note restarts on the new engine after the plugin's latency.
 
+Changing the **Filter** or **Shaper** type is smooth: while a note sounds, the old engine keeps playing with its last settings until the new one's sound arrives, then the two crossfade over 10 ms. The timing never changes, because every Filter and every Shaper (Off included) is delayed to the same latency. A Ring Mod / Vocoder that is fading out keeps its own Carrier and Modulator signals until it is silent.
+
+If you change the type again while a crossfade is under way (for example while the type is automated), the new choice waits until that crossfade has finished, then crossfades in the same way; only the last choice made during the crossfade is played. Meanwhile the host already shows the new choice's settings, and the engine fading in keeps the settings it had. Changing it back to the engine that is fading in cancels the waiting choice. A voice that starts a new note from silence goes straight to the latest choice, with no crossfade.
+
+## Stereo
+
+The voice chain is stereo. A Filter or Shaper runs a second, right-channel copy only while its input is stereo, which saves CPU for mono sounds. (Classic Filters always runs both channels together, at no extra cost.)
+
+- The input counts as stereo from the first moment left and right differ. It goes back to mono after 50 ms in which they are identical; silence counts as identical.
+- When stereo starts, the right copy continues exactly where the left one is, so nothing jumps. The Ring Mod / Vocoder can't copy its state, so its right copy fades in over 10 ms instead.
+- When stereo stops, the right channel fades back to the left one over 10 ms.
+
 ## Input and Input source
 
 The plugin's audio input (the instrument's sidechain, or EG13 FX's main input) is the **Input**. When nothing is connected, the Input is silent. Each part has an **Input source** setting:

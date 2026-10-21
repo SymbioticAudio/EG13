@@ -5,6 +5,7 @@ add_library(eg13_core STATIC
   engine/rings_engine.cpp
   engine/audio_input_engine.cpp
   engine/engine_registry.cpp
+  engine/bypass_engine.cpp
   engine/native_rate_wrapper.cpp
   engine/ripples_engine.cpp
   engine/shelves_engine.cpp
@@ -18,6 +19,8 @@ add_library(eg13_core STATIC
   voice/voice_allocator.cpp
   voice/voice.cpp
   voice/source_factory.cpp
+  voice/processor_factory.cpp
+  voice/processor_slot.cpp
   part/part.cpp)
 target_include_directories(eg13_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eg13_core PRIVATE eg13_eurorack eg13_nlohmann eg13_r8brain eg13_vcv eg13_sst)

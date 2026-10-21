@@ -96,6 +96,10 @@ class Declicker {
 // engines with no firmware pot filter (the VCV Ripples and Shelves models read their knobs every
 // sample, Ripples.cpp:74-76, Shelves.cpp:125-136; the SVF follows Plaits' noise engine,
 // plaits/dsp/engine/noise_engine.cc:76-78). The first call after reset() holds its target.
+// ParamRamp does not clamp: callers pass targets already in the range they need (clamp01 for
+// a 0..1 knob, or the engine's own mapped value). Every at() lies between the previous target
+// and this one (to within float rounding; the last is exactly the target), so it stays in
+// that range too.
 class ParamRamp {
  public:
   void reset() { snap_ = true; }

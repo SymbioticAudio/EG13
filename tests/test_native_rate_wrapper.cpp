@@ -152,12 +152,6 @@ std::vector<float> renderWithInput(VoiceEngine& engine, const std::vector<float>
   return left;
 }
 
-int peakIndex(const std::vector<float>& x) {
-  return int(std::max_element(x.begin(), x.end(), [](float a, float b) {
-               return std::fabs(a) < std::fabs(b);
-             }) - x.begin());
-}
-
 }  // namespace
 
 TEST_CASE("A host-rate engine passes input straight through") {
@@ -183,7 +177,7 @@ TEST_CASE("Input path latency is reported and constant") {
     std::vector<float> input(8000, 0.0f);
     input[3000] = 1.0f;
     const auto big = renderWithInput(wrapped, input, 256);
-    const int delay = peakIndex(big) - 3000;
+    const int delay = test::peakIndex(big) - 3000;
     const int tolerance = int(std::ceil(16.0 * rate / 32000.0)) + 2;
     INFO("delay " << delay);
     REQUIRE(std::abs(delay - latency) <= tolerance);
@@ -203,7 +197,7 @@ TEST_CASE("Extra delay adds exactly that many samples") {
   REQUIRE(wrapped.latencySamples() == 100);
   wrapped.noteOn(60.0f, 1.0f);
   const auto out = render(wrapped, ParamValues{}, 1000, 64);
-  REQUIRE(peakIndex(out) == 100);
+  REQUIRE(test::peakIndex(out) == 100);
 }
 
 TEST_CASE("Engines that don't use input never see it") {
@@ -259,8 +253,8 @@ TEST_CASE("Input path survives host rates below the native rate") {
       REQUIRE(wrapped.inputOverruns() == 0);
       REQUIRE(wrapped.inputUnderruns() == 0);
       const int tolerance = int(std::ceil(double(c.block) * c.host / c.native)) + 2;
-      INFO("latency " << latency << " delay " << peakIndex(out) - at);
-      REQUIRE(std::abs(peakIndex(out) - at - latency) <= tolerance);
+      INFO("latency " << latency << " delay " << test::peakIndex(out) - at);
+      REQUIRE(std::abs(test::peakIndex(out) - at - latency) <= tolerance);
     }
   }
 }
@@ -323,8 +317,8 @@ TEST_CASE("Side inputs are converted with the input path's latency") {
     in.c[3][3000] = 1.0f;  // side 2 -> out R
     const auto out = runAll(w, in, true, 256);
     INFO("rate " << rate << " input latency " << w.inputLatencySamples());
-    REQUIRE(peakIndex(out.c[0]) == peakIndex(out.c[1]));
-    REQUIRE(std::abs(peakIndex(out.c[0]) - 3000 - w.inputLatencySamples()) <= 4);
+    REQUIRE(test::peakIndex(out.c[0]) == test::peakIndex(out.c[1]));
+    REQUIRE(std::abs(test::peakIndex(out.c[0]) - 3000 - w.inputLatencySamples()) <= 4);
     REQUIRE(w.inputUnderruns() == 0);
   }
 }
@@ -353,7 +347,7 @@ TEST_CASE("AUX is converted like the main outputs") {
     Channels silent(2000);
     const auto a = runAll(aux, silent, false, 100);
     const auto m = runAll(main, silent, false, 100);
-    REQUIRE(peakIndex(a.c[2]) == peakIndex(m.c[0]));
+    REQUIRE(test::peakIndex(a.c[2]) == test::peakIndex(m.c[0]));
     for (float s : a.c[0]) REQUIRE(s == 0.0f);
   }
 }
@@ -387,10 +381,10 @@ TEST_CASE("Extra delay delays AUX with the main outputs, bypassed or converted")
     const auto a = runAll(delayed, Channels(2000), false, 37);
     const auto b = runAll(plain, Channels(2000), false, 37);
     INFO("rate " << rate);
-    REQUIRE(peakIndex(a.c[2]) == peakIndex(b.c[2]) + 100);
+    REQUIRE(test::peakIndex(a.c[2]) == test::peakIndex(b.c[2]) + 100);
     for (size_t i = 0; i + 100 < a.c[2].size(); ++i) REQUIRE(a.c[2][i + 100] == b.c[2][i]);
     for (float s : a.c[0]) REQUIRE(s == 0.0f);
-    if (rate == 48000.0) REQUIRE(peakIndex(a.c[2]) == 100);
+    if (rate == 48000.0) REQUIRE(test::peakIndex(a.c[2]) == 100);
   }
 }
 
@@ -401,7 +395,7 @@ TEST_CASE("An engine's own latency is added to the wrapper's") {
   REQUIRE(bypassed.latencySamples() == 60);
   Channels in(2000);
   in.c[0][500] = 1.0f;
-  REQUIRE(peakIndex(runAll(bypassed, in, false, 37).c[0]) == 560);
+  REQUIRE(test::peakIndex(runAll(bypassed, in, false, 37).c[0]) == 560);
 
   NativeRateWrapper fixed(std::make_unique<test::FixedLatencyEngine>(), 96000.0, 60);
   NativeRateWrapper echo(std::make_unique<test::EchoEngine>(), 96000.0, 60);
