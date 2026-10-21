@@ -10,6 +10,7 @@ add_library(eg13_core STATIC
   engine/rack_shim/rack_random.cpp
   engine/sst_filter_engine.cpp
   engine/svf_engine.cpp
+  engine/warps_engine.cpp
   synth/param_table.cpp
   synth/synth.cpp
   state/state.cpp

@@ -80,3 +80,28 @@ The clean, digital state-variable filter that the Eurorack modules use inside (n
 As in the original, the cutoff runs a little low near the top of the range (about 15% at 20 kHz when running at 48 kHz), so the Hz readout is approximate up there.
 
 Stereo: while the voice is stereo, a second filter runs for the right channel, starting from the left filter's exact state.
+
+## Shapers
+
+Every voice has a Shaper slot after its Filter. **Off** passes the sound through unchanged.
+
+### Ring Mod / Vocoder (based on Warps)
+
+Warps combines two signals, a **carrier** and a **modulator**, in one of its algorithms. EG13 routes them as the module does: there are two inputs, CARRIER and MODULATOR, and when the internal oscillator is on it replaces whatever would feed CARRIER. Two controls choose what feeds each input.
+
+- **Carrier**:
+  - *Internal Osc* (default): Warps' own oscillator, playing the voice's pitch plus **Osc Pitch** (±24 semitones). **Osc Shape** picks one of the module's three oscillator modes. Warps chooses the waveform itself for each algorithm region: *Sine / Saw*, *Triangle / Pulse* or *Saw / Noise*, where the first name is the waveform for the cross-modulation algorithms and the second for the vocoder. Osc Pitch and Osc Shape only matter with this setting. As on the module, **Carrier Level** has no effect while the internal oscillator plays.
+  - *Voice*: the voice itself, meaning the sound reaching the Shaper from this voice's Source and Filter. It plays the part of the cable plugged into the module's input.
+  - *Source AUX*: the Source's second output: the Macro Oscillator's AUX, the Resonator's even partials. Other sources give their main output.
+  - *Input*: the part's Input, as its Input source setting routes it.
+  - *Other part*: the other part's output.
+- **Modulator**: *Voice* (default), *Source AUX*, *Input* or *Other part*, with the same meanings. Voice into the modulator with the internal oscillator as carrier is the classic way to play Warps; for example, the vocoder then puts the voice's formants on the oscillator. Voice into both inputs is allowed: it is self-modulation.
+- The routing and its defaults are provisional. They may be revisited when patching arrives in a later version. New options are only ever added at the end of each list, so a saved patch keeps its routing. A change of default would apply to new patches only.
+- If a chosen signal isn't there (no sidechain, a silent part), that input is silent.
+- **Algorithm** is Warps' big knob, and it is continuous: *Crossfade*, *Fold*, *Analog RM*, *Digital RM*, *XOR*, *Compare*, *Spectral*, *Morph* and *Vocoder*. Between two positions it blends the neighbouring algorithms, and the display names both, for example "Fold > Analog RM 40%". The default is *Analog RM*, the ring modulator the engine is named after. **Timbre** is the algorithm's own control.
+- **Carrier Level** and **Mod Level** drive Warps' input amplifiers. Their default, 47 %, passes a full-scale voice at unity gain without saturating (measured: +0.03 dB, 0.06 % distortion). Turn them up for the module's overdriven, squarer character (at 100 % the amplifier adds about 12 dB and heavy distortion).
+- **Mode** *Freq shifter* is the module's hidden frequency-shifter mode.
+  - With Carrier = Internal Osc, it shifts the Modulator signal (the voice, by default) by an amount set by Algorithm, from no shift at the centre to about 2 kHz down or up at the ends. Timbre mixes the upper and lower sidebands, Carrier Level sets feedback and Mod Level the dry/wet mix.
+  - With any other Carrier, it multiplies the carrier and modulator into a single sideband instead.
+- Warps runs at 96 kHz in blocks of 60 samples. That adds to EG13's fixed latency ([Latency](latency.md)).
+- Stereo: while the voice is stereo, a second Warps runs for the right channel. It cannot copy the left one's state, so it starts fresh and fades in over 10 ms. The Source AUX, Input and Other part signals are mono (left and right summed).

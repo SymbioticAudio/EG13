@@ -110,3 +110,16 @@ TEST_CASE("StereoLink can mix in place over the right buffer") {
   link.mix(left.data(), right.data(), right.data(), 8);
   for (float s : right) REQUIRE(s == 0.5f);
 }
+
+// Found by the Ring Mod / Vocoder range test: left + 1 * (right - left) can round past right
+// (here 28659 / 10240 and -3.2 give -3.2000003, outside Warps' 16-bit range).
+TEST_CASE("StereoLink at full weight outputs the right instance exactly") {
+  StereoLink link;
+  link.prepare(kRate);
+  link.reset();
+  link.request(true, false);
+  std::vector<float> left(size_t(kFade) * 2, 28659.0f / 10240.0f), right(size_t(kFade) * 2, -3.2f), out(size_t(kFade) * 2);
+  link.mix(left.data(), right.data(), out.data(), kFade * 2);
+  REQUIRE(link.weight() == 1.0f);
+  for (size_t i = size_t(kFade); i < out.size(); ++i) REQUIRE(out[i] == -3.2f);
+}

@@ -43,7 +43,8 @@ class StereoLink {
   bool rightRuns() const { return running_; }
   float weight() const { return weight_; }
 
-  // out = left + weight * (right - left), per sample. right is not read while not running.
+  // out = left + weight * (right - left), per sample; exactly right at full weight (the sum
+  // can round past right, and past the engine's range). right is not read while not running.
   // out may alias right.
   void mix(const float* left, const float* right, float* out, int n) {
     if (!running_) {
@@ -52,7 +53,7 @@ class StereoLink {
     }
     for (int i = 0; i < n; ++i) {
       weight_ += std::clamp(target_ - weight_, -step_, step_);
-      out[i] = left[i] + weight_ * (right[i] - left[i]);
+      out[i] = weight_ >= 1.0f ? right[i] : left[i] + weight_ * (right[i] - left[i]);
     }
     if (target_ == 0.0f && weight_ <= 0.0f) {
       weight_ = 0.0f;

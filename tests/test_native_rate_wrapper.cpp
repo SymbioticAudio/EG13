@@ -358,6 +358,42 @@ TEST_CASE("AUX is converted like the main outputs") {
   }
 }
 
+// Task 2 carry-forward: AUX in bypass (the engine at the host rate) and through the extra delay.
+TEST_CASE("AUX passes through a bypassed wrapper bit for bit") {
+  NativeRateWrapper aux(std::make_unique<test::AuxImpulseEngine>(), 48000.0, 12);
+  aux.setAuxEnabled(true);
+  aux.prepare(48000.0, 256);
+  REQUIRE(aux.latencySamples() == 0);
+  aux.noteOn(60.0f, 1.0f);
+  const auto out = runAll(aux, Channels(500), false, 37);
+  REQUIRE(out.c[2][0] == 1.0f);
+  for (size_t i = 1; i < out.c[2].size(); ++i) REQUIRE(out.c[2][i] == 0.0f);
+  for (float s : out.c[0]) REQUIRE(s == 0.0f);
+  for (float s : out.c[1]) REQUIRE(s == 0.0f);
+}
+
+TEST_CASE("Extra delay delays AUX with the main outputs, bypassed or converted") {
+  for (double rate : {48000.0, 44100.0}) {  // 48 kHz: bypassed; 44.1 kHz: converted
+    NativeRateWrapper delayed(std::make_unique<test::AuxImpulseEngine>(), 48000.0, 12);
+    NativeRateWrapper plain(std::make_unique<test::AuxImpulseEngine>(), 48000.0, 12);
+    delayed.setAuxEnabled(true);
+    plain.setAuxEnabled(true);
+    delayed.prepare(rate, 256);
+    plain.prepare(rate, 256);
+    delayed.setExtraDelay(100);
+    REQUIRE(delayed.latencySamples() == plain.latencySamples() + 100);
+    delayed.noteOn(60.0f, 1.0f);
+    plain.noteOn(60.0f, 1.0f);
+    const auto a = runAll(delayed, Channels(2000), false, 37);
+    const auto b = runAll(plain, Channels(2000), false, 37);
+    INFO("rate " << rate);
+    REQUIRE(peakIndex(a.c[2]) == peakIndex(b.c[2]) + 100);
+    for (size_t i = 0; i + 100 < a.c[2].size(); ++i) REQUIRE(a.c[2][i + 100] == b.c[2][i]);
+    for (float s : a.c[0]) REQUIRE(s == 0.0f);
+    if (rate == 48000.0) REQUIRE(peakIndex(a.c[2]) == 100);
+  }
+}
+
 TEST_CASE("An engine's own latency is added to the wrapper's") {
   NativeRateWrapper bypassed(std::make_unique<test::FixedLatencyEngine>(), 96000.0, 60);
   bypassed.prepare(96000.0, 256);
