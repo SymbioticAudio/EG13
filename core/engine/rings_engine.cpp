@@ -55,7 +55,8 @@ constexpr float kTonic = 60.0f;      // reference the played note is measured fr
 // adc_lp_ += lp_coefficient * (value - adc_lp_) (cv_scaler.cc:171); every pot's coefficient
 // is 0.01 (cv_scaler.cc:53-57). The chord is derived from the filtered Structure pot
 // (cv_scaler.cc:217-225), so it follows the smoothed value here too. Model, Exciter and
-// Polyphony are stepped. Spread has no firmware control and is not smoothed. The played
+// Polyphony are stepped. Spread has no firmware control, so it skips the pot filter and is
+// de-clicked per sample instead (spread_). The played
 // note is not touched: Part's NoteFilter already conditions it (part.cc:480-494).
 const float kPotLp[9] = {
     1.0f,   // Model: stepped
@@ -65,12 +66,9 @@ const float kPotLp[9] = {
     0.01f,  // Position    :57
     1.0f,   // Exciter: stepped
     0.01f,  // Frequency   :53 (the transpose pot)
-    1.0f,   // Spread: EG13-only, de-clicked per sample instead (kMixSeconds)
+    1.0f,   // Spread: EG13-only, de-clicked per sample instead (kMixDeclickSeconds)
     1.0f,   // Polyphony: stepped
 };
-
-// Spread has no firmware filter; a ~5 ms per-sample one-pole keeps it from zippering.
-constexpr double kMixSeconds = 0.005;
 
 }  // namespace
 
@@ -85,7 +83,7 @@ struct RingsEngine::Impl {
 RingsEngine::RingsEngine()
     : impl_(std::make_unique<Impl>()),
       pots_(kPotLp, kInfo.paramCount, kNativeBlock),
-      spread_(kMixSeconds) {
+      spread_(kMixDeclickSeconds) {
   reset();
 }
 

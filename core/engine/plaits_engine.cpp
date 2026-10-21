@@ -51,7 +51,8 @@ const EngineInfo kInfo = {"plaits", "Macro Oscillator", 8, kParams, false};
 // ui.cc:72-79. Decay and LPG Colour are the hidden parameters of the Morph and Timbre pots:
 // ProcessUIRate copies the same filtered value_ to them (pot_controller.h:127-128), every
 // fourth Poll (ui.cc:477-479); that 4-block hold is not modelled. Model is stepped. Aux Mix
-// has no firmware control (OUT and AUX are separate jacks) and is not smoothed. The played
+// has no firmware control (OUT and AUX are separate jacks), so it skips the pot filter and
+// is de-clicked per sample instead (auxMix_). The played
 // note is not touched: it reaches Plaits as patch.note, outside the V/OCT path.
 const float kPotLp[8] = {
     1.0f,    // Model: stepped
@@ -61,11 +62,8 @@ const float kPotLp[8] = {
     0.005f,  // Frequency  ui.cc:72-73 (transposition_)
     0.01f,   // Decay      Morph pot's hidden parameter
     0.01f,   // LPG Colour Timbre pot's hidden parameter
-    1.0f,    // Aux Mix: EG13-only, de-clicked per sample instead (kMixSeconds)
+    1.0f,    // Aux Mix: EG13-only, de-clicked per sample instead (kMixDeclickSeconds)
 };
-
-// Aux Mix has no firmware filter; a ~5 ms per-sample one-pole keeps it from zippering.
-constexpr double kMixSeconds = 0.005;
 
 }  // namespace
 
@@ -80,7 +78,7 @@ struct PlaitsEngine::Impl {
 PlaitsEngine::PlaitsEngine()
     : impl_(std::make_unique<Impl>()),
       pots_(kPotLp, kInfo.paramCount, kNativeBlock),
-      auxMix_(kMixSeconds) {
+      auxMix_(kMixDeclickSeconds) {
   reset();
 }
 

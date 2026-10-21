@@ -30,13 +30,15 @@ if(TARGET EG13_auv2-build-helper)
   set_property(TARGET EG13_auv2-build-helper APPEND PROPERTY LINK_DEPENDS $<TARGET_FILE:EG13_clap>)
 endif()
 
-# The AU bundle's Info.plist must be the generated auv2_Info.plist, but
-# clap-wrapper only copies it as a PRE_LINK step of the module. That copy is
-# skipped when the module does not relink (generated plist changed alone, or
-# the bundle plist was replaced/clobbered), leaving a generic plist with no
-# AudioComponents. So: relink when the generated plist changes, re-sync and
-# verify the bundle plist after every link, and re-check on every build via an
-# always-run target that EG13_all depends on.
+# The AU bundle's Info.plist must be the generated auv2_Info.plist. Two things
+# leave a generic one (no AudioComponents) behind: CMake itself writes a
+# generic Contents/Info.plist into every BUNDLE target at generate time, so
+# any reconfigure clobbers it without a relink; and clap-wrapper copies the
+# generated plist only in a PRE_BUILD step (PRE_LINK on Ninja/Make), which runs
+# only on a relink. So: relink when the generated plist changes, re-sync and
+# verify after every link, and re-sync on every build via the always-run
+# EG13_auv2_plist target under EG13_all. That target is what repairs a
+# reconfigure, so it must not be removed. Build EG13_all, not EG13_auv2 alone.
 if(TARGET EG13_auv2)
   set(EG13_AUV2_PLIST ${CMAKE_CURRENT_BINARY_DIR}/EG13_auv2-build-helper-output/auv2_Info.plist)
   set(EG13_AUV2_SYNC ${CMAKE_COMMAND}

@@ -589,7 +589,7 @@ TEST_CASE("Resonator smooths its pots like the firmware") {
   step.p[4] = 1.0f;   // Position 0.5 -> 1
   step.p[5] = kBoth;  // Exciter: stepped
   step.p[6] = 1.0f;   // Frequency 0.5 -> 1
-  step.p[7] = 0.0f;   // Spread: EG13-only, not smoothed
+  step.p[7] = 0.0f;   // Spread: EG13-only: not pot-smoothed (de-clicked per sample)
   step.p[8] = 0.99f;  // Polyphony: stepped
   engine.process(nullptr, out, step, 24);
   REQUIRE(engine.smoothedParam(0) == 0.99f);
@@ -629,6 +629,19 @@ TEST_CASE("Resonator smooths its pots like the firmware") {
   engine.process(nullptr, out, step, 24);
   REQUIRE(engine.smoothedParam(2) == 1.0f);
   REQUIRE(engine.smoothedParam(3) == 0.0f);
+}
+
+TEST_CASE("Resonator smoothing keeps its time constant at 16-sample calls") {
+  RingsEngine e;
+  e.prepare(RingsEngine::kNativeRate, 256);
+  std::vector<float> l(16), r(16);
+  float* out[2] = {l.data(), r.data()};
+  ParamValues p = defaults();
+  p.p[2] = 0.0f;
+  e.process(nullptr, out, p, 16);
+  p.p[2] = 1.0f;
+  for (int i = 0; i < 150; ++i) e.process(nullptr, out, p, 16);  // 2400 samples = 100 native blocks
+  REQUIRE_THAT(e.smoothedParam(2), Catch::Matchers::WithinAbs(1.0 - std::pow(0.99, 100), 1e-4));
 }
 
 TEST_CASE("Resonator smoothing is independent of host block size") {

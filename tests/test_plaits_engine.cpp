@@ -180,7 +180,7 @@ TEST_CASE("Macro Oscillator smooths its pots like the firmware") {
   step.p[4] = 1.0f;   // Frequency 0.5 -> 1
   step.p[5] = 1.0f;   // Decay 0.5 -> 1
   step.p[6] = 0.0f;   // LPG Colour 0.5 -> 0
-  step.p[7] = 1.0f;   // Aux Mix: EG13-only, not smoothed
+  step.p[7] = 1.0f;   // Aux Mix: EG13-only: not pot-smoothed (de-clicked per sample)
   engine.process(nullptr, out, step, 12);
   REQUIRE(engine.smoothedParam(0) == 0.99f);
   REQUIRE_THAT(engine.smoothedParam(1), Catch::Matchers::WithinAbs(0.5025, 1e-6));

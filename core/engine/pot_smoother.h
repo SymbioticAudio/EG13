@@ -52,6 +52,9 @@ class PotSmoother {
   bool snap_ = true;
 };
 
+// De-click time for the EG13-only gain/mix controls (Aux Mix, Spread).
+constexpr double kMixDeclickSeconds = 0.005;
+
 // Per-sample de-click one-pole for EG13-only gain and mix controls, which have no firmware
 // filter to reproduce. The first value after reset() snaps to its target; afterwards it snaps
 // once within 1e-6, or once a step no longer moves the float (it would stall short).
