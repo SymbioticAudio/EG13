@@ -39,6 +39,27 @@ Stereo render(VoiceEngine& engine, const ParamValues& p, int n, const std::vecto
 
 ParamValues defaults() { return test::defaultParams(RingsEngine::staticInfo()); }
 
+// P6 Exciter, stepped in thirds like the other stepped engine params: centres.
+constexpr float kInternal = 0.5f / 3.0f;
+constexpr float kInput = 1.5f / 3.0f;
+constexpr float kBoth = 2.5f / 3.0f;
+
+ParamValues withExciter(float exciter) {
+  ParamValues p = defaults();
+  p.p[5] = exciter;
+  return p;
+}
+
+std::vector<float> noiseBurst() {
+  std::vector<float> burst(9600, 0.0f);
+  uint32_t seed = 7;
+  for (size_t i = 0; i < 480; ++i) {
+    seed = seed * 1664525u + 1013904223u;
+    burst[i] = float(int32_t(seed)) / 2147483648.0f;
+  }
+  return burst;
+}
+
 }  // namespace
 
 TEST_CASE("Resonator describes itself") {
@@ -96,19 +117,69 @@ TEST_CASE("Spread 0 is mono and spread 1 separates odd and even") {
   REQUIRE(s.l != s.r);
 }
 
+TEST_CASE("Exciter is stepped Internal / Input / Both") {
+  REQUIRE(RingsEngine::exciterIndex(0.0f) == 0);
+  REQUIRE(RingsEngine::exciterIndex(0.33f) == 0);
+  REQUIRE(RingsEngine::exciterIndex(0.34f) == 1);
+  REQUIRE(RingsEngine::exciterIndex(0.66f) == 1);
+  REQUIRE(RingsEngine::exciterIndex(0.67f) == 2);
+  REQUIRE(RingsEngine::exciterIndex(1.0f) == 2);
+  REQUIRE(RingsEngine::exciterIndex(std::numeric_limits<float>::quiet_NaN()) == 0);
+  const auto& param = RingsEngine::staticInfo().params[5];
+  REQUIRE(param.defaultValue == kInternal);
+  char buf[64];
+  const char* const names[3] = {"Internal", "Input", "Both"};
+  const float centres[3] = {kInternal, kInput, kBoth};
+  for (int i = 0; i < 3; ++i) {
+    REQUIRE(RingsEngine::exciterIndex(centres[i]) == i);
+    param.format(centres[i], buf, sizeof(buf));
+    REQUIRE(std::string(buf) == names[i]);
+  }
+}
+
 TEST_CASE("Input excites the Resonator when Exciter is Input") {
-  ParamValues p = defaults();
-  p.p[5] = 0.75f;  // Input
   RingsEngine engine;
   engine.prepare(RingsEngine::kNativeRate, 256);
-  std::vector<float> burst(9600, 0.0f);
-  uint32_t seed = 7;
-  for (size_t i = 0; i < 480; ++i) {
-    seed = seed * 1664525u + 1013904223u;
-    burst[i] = float(int32_t(seed)) / 2147483648.0f;
-  }
-  const auto out = render(engine, p, 9600, &burst);
+  const auto burst = noiseBurst();
+  const auto out = render(engine, withExciter(kInput), 9600, &burst);
   REQUIRE(test::rms(out.l, 960, 9600) > 0.0005);
+}
+
+TEST_CASE("Exciter Internal ignores the input") {
+  RingsEngine engine;
+  engine.prepare(RingsEngine::kNativeRate, 256);
+  const auto burst = noiseBurst();
+  const auto out = render(engine, withExciter(kInternal), 9600, &burst);
+  REQUIRE(test::rms(out.l, 0, 9600) < 1e-6);
+}
+
+TEST_CASE("Exciter Both responds to a note-on strike and to the input") {
+  const auto burst = noiseBurst();
+  const std::vector<float> silence(9600, 0.0f);
+  SECTION("input alone, no note") {
+    RingsEngine engine;
+    engine.prepare(RingsEngine::kNativeRate, 256);
+    const auto out = render(engine, withExciter(kBoth), 9600, &burst);
+    REQUIRE(test::rms(out.l, 960, 9600) > 0.0005);
+  }
+  SECTION("note-on strike with a silent input") {
+    RingsEngine engine;
+    engine.prepare(RingsEngine::kNativeRate, 256);
+    engine.noteOn(60.0f, 1.0f);
+    const auto out = render(engine, withExciter(kBoth), 4800, &silence);
+    REQUIRE(test::rms(out.l, 0, 4800) > 0.005);
+  }
+  SECTION("strike plus input is louder than the strike alone") {
+    RingsEngine internal, both;
+    for (auto* e : {&internal, &both}) {
+      e->prepare(RingsEngine::kNativeRate, 256);
+      e->noteOn(60.0f, 1.0f);
+    }
+    const double a = test::rms(render(internal, withExciter(kInternal), 9600, &burst).l, 0, 9600);
+    const double b = test::rms(render(both, withExciter(kBoth), 9600, &burst).l, 0, 9600);
+    INFO("internal " << a << " both " << b);
+    REQUIRE(b > 1.1 * a);
+  }
 }
 
 TEST_CASE("Resonator survives NaN parameters") {

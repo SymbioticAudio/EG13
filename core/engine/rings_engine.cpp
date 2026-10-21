@@ -15,7 +15,7 @@ namespace {
 
 const char* const kModelNames[RingsEngine::kNumModels] = {
     "Modal", "Sympathetic", "String", "FM Voice", "Sympathetic Q", "String + Reverb"};
-const char* const kExciterNames[2] = {"Internal", "Input"};
+const char* const kExciterNames[3] = {"Internal", "Input", "Both"};
 
 void formatModel(float v, char* buf, size_t size) {
   std::snprintf(buf, size, "%s", kModelNames[RingsEngine::modelIndex(v)]);
@@ -36,7 +36,7 @@ const EngineParamInfo kParams[8] = {
     {"Brightness", 0.5f, formatPercent},
     {"Damping", 0.5f, formatPercent},
     {"Position", 0.5f, formatPercent},
-    {"Exciter", 0.25f, formatExciter},
+    {"Exciter", 0.5f / 3.0f, formatExciter},  // stepped thirds; default Internal
     {"Frequency", 0.5f, formatSemitones},
     {"Spread", 1.0f, formatPercent},
 };
@@ -68,7 +68,10 @@ int RingsEngine::modelIndex(float normalized) {
   return i < kNumModels ? i : kNumModels - 1;
 }
 
-int RingsEngine::exciterIndex(float normalized) { return clamp01(normalized) >= 0.5f ? 1 : 0; }
+int RingsEngine::exciterIndex(float normalized) {
+  const int i = int(clamp01(normalized) * 3.0f);
+  return i < 3 ? i : 2;
+}
 
 float RingsEngine::frequencyOffset(float normalized) { return (clamp01(normalized) - 0.5f) * 24.0f; }
 
@@ -115,10 +118,17 @@ void RingsEngine::renderBlock(const float* const* in, const ParamValues& p, floa
   patch.damping = std::min(clamp01(p.p[3]), kMaxKnob);
   patch.position = std::min(clamp01(p.p[4]), kMaxKnob);
 
-  const bool external = exciterIndex(p.p[5]) == 1 && in != nullptr;
+  // Internal: the note-on strike only. Input: the input only. Both: strike plus
+  // input. Upstream Rings always feeds `in` to the resonator, and
+  // internal_exciter only adds the strike/pluck and selects the excitation
+  // filter (note-tracked for the internal exciter, rings/dsp/part.cc:504-516).
+  // So Both is internal_exciter with the input passed: the hardware state with
+  // the input jack unpatched, here with a real signal on it.
+  const int exciter = exciterIndex(p.p[5]);
+  const bool useInput = exciter != 0 && in != nullptr;
   rings::PerformanceState state;
   state.strum = strum_;
-  state.internal_exciter = !external;
+  state.internal_exciter = exciter != 1 || in == nullptr;
   state.internal_strum = false;
   state.internal_note = true;
   state.tonic = note_ + frequencyOffset(p.p[6]) + pitchOffset_;
@@ -128,7 +138,7 @@ void RingsEngine::renderBlock(const float* const* in, const ParamValues& p, floa
   strum_ = false;
 
   for (int i = 0; i < count; ++i) {
-    s.in[i] = external ? 0.5f * (in[0][offset + i] + in[1][offset + i]) : 0.0f;
+    s.in[i] = useInput ? 0.5f * (in[0][offset + i] + in[1][offset + i]) : 0.0f;
   }
   std::memset(s.odd, 0, sizeof(s.odd));
   std::memset(s.even, 0, sizeof(s.even));

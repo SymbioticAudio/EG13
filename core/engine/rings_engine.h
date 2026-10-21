@@ -27,7 +27,7 @@ class RingsEngine final : public VoiceEngine {
 
   static const EngineInfo& staticInfo();
   static int modelIndex(float normalized);    // P1 -> 0..5
-  static int exciterIndex(float normalized);  // P6 -> 0 Internal, 1 Input
+  static int exciterIndex(float normalized);  // P6 thirds -> 0 Internal, 1 Input, 2 Both
   static float frequencyOffset(float normalized);  // P7 -> -12..+12 semitones
 
  private:
