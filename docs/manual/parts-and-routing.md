@@ -51,3 +51,7 @@ Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second outpu
   - Part A plays the Input through **Audio Input** → **Analog Filter** (fully open) → Shaper *Off*, with Trigger set to *Always on*, so it processes audio with no MIDI.
   - Part B starts with Filter *Off* and Shaper *Off*.
   - Dry is 0 and the master level is 100 %.
+
+## Projects from earlier versions
+
+Projects saved before Filters and Shapers existed open with Filter and Shaper *Off*, so they sound as they did. This applies even in EG13 FX, whose new default is the Analog Filter on Part A. A brand-new EG13 FX instance starts with the Analog Filter; a project saved with the current version keeps whatever Filter and Shaper it was saved with. Each engine's remembered settings are saved with the project.

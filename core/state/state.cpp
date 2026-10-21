@@ -28,12 +28,66 @@ bool parseId(const std::string& key, uint32_t* id) {
 }
 
 // Schema 1 (M0) -> 2: the nine M0 parameters kept their IDs and ranges, so no
-// transformation is needed. Later schema changes add their migrations here.
+// transformation is needed. Schema 2 -> 3 (M2): Source engine selector. Schema 3 -> 4 (M3):
+// Filter and Shaper types, Off for older documents.
 
-// engineSettings arrays hold kSourceParamCount numbers. Early unreleased
-// schema 3 builds wrote 8 (P1..P8); those load as a prefix, the rest keep the
-// engine's defaults.
+// Source engineSettings arrays hold kSourceParamCount numbers. Early unreleased schema 3 builds
+// wrote 8 (P1..P8); those load as a prefix, the rest keep the engine's defaults.
 constexpr size_t kLegacyEngineSettingsSize = 8;
+
+// Every slot's per-engine settings: {part: {engine: [P values]}}.
+struct Section {
+  SlotKind kind;
+  const char* key;
+};
+const Section kSections[kNumSlotKinds] = {
+    {SlotKind::Source, "engineSettings"},  // M2's key
+    {SlotKind::Filter, "filterSettings"},
+    {SlotKind::Shaper, "shaperSettings"},
+};
+
+bool isKnownTopLevel(const std::string& key) {
+  if (key == "schemaVersion" || key == "params") return true;
+  for (const Section& s : kSections) {
+    if (key == s.key) return true;
+  }
+  return false;
+}
+
+// Reads one section into the stash. False if anything had to be dropped.
+bool readSection(const nlohmann::json& root, const Section& section, EngineStash& stash) {
+  const auto found = root.find(section.key);
+  if (found == root.end()) return true;
+  if (!found->is_object()) return false;
+  bool clean = true;
+  const size_t count = slotParamCount(section.kind);
+  for (auto partIt = found->begin(); partIt != found->end(); ++partIt) {
+    uint32_t part = 0;
+    if (!parseId(partIt.key(), &part) || part >= uint32_t(kNumParts) || !partIt.value().is_object()) {
+      clean = false;
+      continue;
+    }
+    for (auto engineIt = partIt.value().begin(); engineIt != partIt.value().end(); ++engineIt) {
+      uint32_t engine = 0;
+      const auto& list = engineIt.value();
+      bool valid = parseId(engineIt.key(), &engine) && engine < uint32_t(slotEngineCount(section.kind)) &&
+                   list.is_array() &&
+                   (list.size() == count ||
+                    (section.kind == SlotKind::Source && list.size() == kLegacyEngineSettingsSize));
+      for (size_t p = 0; valid && p < list.size(); ++p) valid = list[p].is_number();
+      if (!valid) {
+        clean = false;
+        continue;
+      }
+      for (size_t p = 0; p < list.size(); ++p) {
+        const double v = list[p].get<double>();
+        stash[slotStashIndex(section.kind, int(part), int(engine), int(p))] =
+            float(std::clamp(std::isnan(v) ? 0.0 : v, 0.0, 1.0));
+      }
+    }
+  }
+  return clean;
+}
 
 }  // namespace
 
@@ -48,17 +102,21 @@ std::string StateStore::save(const Synth& synth) const {
   root["params"] = std::move(params);
 
   const EngineStash stash = synth.engineStash();
-  nlohmann::json engines = nlohmann::json::object();
-  for (int part = 0; part < kNumParts; ++part) {
-    nlohmann::json perPart = nlohmann::json::object();
-    for (int e = 0; e < kNumSourceEngines; ++e) {
-      nlohmann::json values = nlohmann::json::array();
-      for (int p = 0; p < int(kSourceParamCount); ++p) values.push_back(stash[stashIndex(part, e, p)]);
-      perPart[std::to_string(e)] = std::move(values);
+  for (const Section& section : kSections) {
+    nlohmann::json engines = nlohmann::json::object();
+    for (int part = 0; part < kNumParts; ++part) {
+      nlohmann::json perPart = nlohmann::json::object();
+      for (int e = 0; e < slotEngineCount(section.kind); ++e) {
+        nlohmann::json values = nlohmann::json::array();
+        for (int p = 0; p < int(slotParamCount(section.kind)); ++p) {
+          values.push_back(stash[slotStashIndex(section.kind, part, e, p)]);
+        }
+        perPart[std::to_string(e)] = std::move(values);
+      }
+      engines[std::to_string(part)] = std::move(perPart);
     }
-    engines[std::to_string(part)] = std::move(perPart);
+    root[section.key] = std::move(engines);
   }
-  root["engineSettings"] = std::move(engines);
   return root.dump();
 }
 
@@ -98,42 +156,25 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
     for (int part = 0; part < kNumParts; ++part) values[sourceEngineParamIndex(part)] = 0.0f;
   }
 
-  EngineStash stash = Synth::defaultStash();
-  const auto engines = root.find("engineSettings");
-  if (engines != root.end()) {
-    if (!engines->is_object()) {
-      warnings = true;
-    } else {
-      for (auto partIt = engines->begin(); partIt != engines->end(); ++partIt) {
-        uint32_t part = 0;
-        if (!parseId(partIt.key(), &part) || part >= uint32_t(kNumParts) || !partIt.value().is_object()) {
-          warnings = true;
-          continue;
-        }
-        for (auto engineIt = partIt.value().begin(); engineIt != partIt.value().end(); ++engineIt) {
-          uint32_t engine = 0;
-          const auto& list = engineIt.value();
-          bool valid = parseId(engineIt.key(), &engine) && engine < uint32_t(kNumSourceEngines) &&
-                       list.is_array() &&
-                       (list.size() == kSourceParamCount || list.size() == kLegacyEngineSettingsSize);
-          for (size_t p = 0; valid && p < list.size(); ++p) valid = list[p].is_number();
-          if (!valid) {
-            warnings = true;
-            continue;
-          }
-          for (size_t p = 0; p < list.size(); ++p) {
-            const double v = list[p].get<double>();
-            stash[stashIndex(int(part), int(engine), int(p))] =
-                float(std::clamp(std::isnan(v) ? 0.0 : v, 0.0, 1.0));
-          }
-        }
-      }
+  if (schema < 4) {
+    // Schema 3 (M2) had no Filter or Shaper: those projects keep their sound with both Off,
+    // whose P values are unused.
+    for (int part = 0; part < kNumParts; ++part) {
+      values[filterEngineParamIndex(part)] = 0.0f;
+      values[shaperEngineParamIndex(part)] = 0.0f;
+      for (int p = 0; p < int(kFilterParamCount); ++p) values[filterParamIndex(part, p)] = 0.0f;
+      for (int p = 0; p < int(kShaperParamCount); ++p) values[shaperParamIndex(part, p)] = 0.0f;
     }
+  }
+
+  EngineStash stash = Synth::defaultStash();
+  for (const Section& section : kSections) {
+    if (!readSection(root, section, stash)) warnings = true;
   }
 
   nlohmann::json extraTopLevel = nlohmann::json::object();
   for (auto it = root.begin(); it != root.end(); ++it) {
-    if (it.key() != "schemaVersion" && it.key() != "params" && it.key() != "engineSettings") {
+    if (!isKnownTopLevel(it.key())) {
       extraTopLevel[it.key()] = it.value();
       warnings = true;
     }
