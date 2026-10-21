@@ -54,16 +54,19 @@ void Voice::prepare(double hostRate, int maxBlock, Alignment alignment) {
     return alignment == Alignment::Input && s.info().usesInput ? s.inputLatencySamples()
                                                                : s.outputLatencySamples();
   };
-  int sourceLatency = 0;
+  sourceLatency_ = 0;
   for (auto& s : sources_) {
     s->prepare(hostRate, maxBlock);
-    sourceLatency = std::max(sourceLatency, path(*s));
+    sourceLatency_ = std::max(sourceLatency_, path(*s));
   }
-  for (auto& s : sources_) s->setExtraDelay(sourceLatency - path(*s));
+  for (auto& s : sources_) s->setExtraDelay(sourceLatency_ - path(*s));
   // The Filter and Shaper see one control block per call.
   filter_.prepare(hostRate, kControlBlock);
   shaper_.prepare(hostRate, kControlBlock);
-  latency_ = sourceLatency + filter_.latencySamples() + shaper_.latencySamples();
+  // Source AUX goes to the Shaper straight from the Source: it is aligned with the voice only
+  // while no Filter adds latency.
+  assert(filter_.latencySamples() == 0 && "delay Source AUX by the Filter latency");
+  latency_ = sourceLatency_ + filter_.latencySamples() + shaper_.latencySamples();
   reset();
 }
 
@@ -154,8 +157,8 @@ void Voice::release() {
 SideSignals Voice::sideSignals(const VoiceInputs& in, int offset, int count) {
   SideSignals sides;
   sides.sourceAux = source_[2];
-  sides.input = monoOf(in.input, offset, count, side_[0]);
-  sides.otherPart = monoOf(in.other, offset, count, side_[1]);
+  sides.input = in.inputSide ? in.inputSide + offset : nullptr;
+  sides.otherPart = monoOf(in.other, offset, count, side_);
   return sides;
 }
 

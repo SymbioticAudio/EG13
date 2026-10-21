@@ -14,8 +14,11 @@ namespace eg13 {
 // signals (the Ring Mod / Vocoder Carrier and Modulator) come from either, or from the Source's
 // AUX.
 struct VoiceInputs {
-  const float* const* input = nullptr;  // two channels, nullable
+  const float* const* input = nullptr;  // two channels, nullable: the Source's input
   const float* const* other = nullptr;  // two channels, nullable
+  // The Input as the Shaper's side signals see it: mono, delayed by sourceLatencySamples() so it
+  // reaches the Shaper with the voice. Part fills it from input; nullable (silence).
+  const float* inputSide = nullptr;
 };
 
 // Post-modulation parameters of each slot in the voice chain.
@@ -64,6 +67,7 @@ class Voice {
   bool gate() const { return gate_; }
   float currentNote() const { return float(currentNote_); }
   int latencySamples() const { return latency_; }  // Source + Filter + Shaper
+  int sourceLatencySamples() const { return sourceLatency_; }  // the Source path, as aligned
 
  private:
   // The stages of the chain, as bits: which ones failed, or wait for the held note again.
@@ -75,7 +79,7 @@ class Voice {
   // The stages whose output in this control block is not finite.
   unsigned failedStages(int count) const;
   // The signals the Shaper's side inputs can select for this control block: the Source AUX,
-  // and the part's Input and the other part's output summed to mono (nullptr when absent).
+  // the aligned mono Input, and the other part's output summed to mono (nullptr when absent).
   // The slot picks from them by each engine's own selectors.
   SideSignals sideSignals(const VoiceInputs& in, int offset, int count);
   void restart(unsigned stages);  // reset the engines playing in these stages
@@ -86,6 +90,7 @@ class Voice {
   ProcessorSlot filter_;
   ProcessorSlot shaper_;
   int current_ = 0;
+  int sourceLatency_ = 0;
   int latency_ = 0;
   double hostRate_ = 48000.0;
   float targetNote_ = 60.0f;
@@ -100,7 +105,7 @@ class Voice {
   int silenceLimit_ = 2400;
   float source_[3][kControlBlock] = {};  // Source L, R, AUX
   float filtered_[2][kControlBlock] = {};
-  float side_[2][kControlBlock] = {};    // mono Input, mono other part
+  float side_[kControlBlock] = {};       // mono other part
   float buffer_[2][kControlBlock] = {};  // the voice's output (Shaper)
 };
 

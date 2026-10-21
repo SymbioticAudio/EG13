@@ -7,14 +7,14 @@
 #include <memory>
 #include <vector>
 
+#include <sys/resource.h>
+
 #include "alloc_counter.h"
 #include "engine/engine_registry.h"
 #include "part/part.h"
 #include "test_engines.h"
 #include "test_helpers.h"
 #include "voice/processor_factory.h"
-
-#include <sys/resource.h>
 
 using namespace eg13;
 
@@ -324,6 +324,8 @@ TEST_CASE("Memory per part with every engine preallocated", "[memory]") {
   }
   struct rusage after {};
   getrusage(RUSAGE_SELF, &after);
+  // ru_maxrss is the process's high-water mark: informational only (0 if an earlier test in the
+  // same process peaked higher). The assertion uses the counted bytes.
 #ifdef __APPLE__
   const double rssMb = double(after.ru_maxrss - before.ru_maxrss) / 1048576.0;  // bytes
 #else
@@ -364,4 +366,48 @@ TEST_CASE("An Always-on part starts with its Filter in place, with no fade in fr
   REQUIRE(peak() < 1e-3f);
   part.reset();  // re-applies the settings to reset voices
   REQUIRE(peak() < 1e-3f);
+}
+
+namespace {
+
+std::vector<SourceSpec> voiceAndSideShapers() {
+  std::vector<SourceSpec> v;
+  v.push_back(makeOff());
+  v.push_back({std::make_unique<test::VoiceAndSideEngine>(), 0.0, 16});
+  return v;
+}
+
+}  // namespace
+
+TEST_CASE("The Input side signal reaches the Shaper aligned with the voice") {
+  for (const auto alignment : {Voice::Alignment::Notes, Voice::Alignment::Input}) {  // EG13, EG13 FX
+    for (const double rate : {44100.0, 48000.0, 96000.0}) {
+      Part part(makeAllSources, makeOffOnly, voiceAndSideShapers);
+      part.prepare(rate, kBlock, alignment);
+      PartSettings s = part.settings();
+      s.engine = int(SourceEngine::AudioInput);
+      s.alwaysOn = true;
+      s.shaperEngine = 1;
+      part.applySettings(s);
+      SlotParams p;
+      p.source = test::defaultParams(sourceEngineInfo(int(SourceEngine::AudioInput)));
+      p.shaper.p[0] = 2.5f / 4.0f;  // side 1: Input
+      const int n = 8192;
+      std::vector<float> input(size_t(n), 0.0f), l(size_t(n), 0.0f), r(size_t(n), 0.0f);
+      input[1000] = 1.0f;
+      for (int done = 0; done < n; done += kBlock) {
+        const int count = std::min(kBlock, n - done);
+        const float* in[2] = {input.data() + done, input.data() + done};
+        float* out[2] = {l.data() + done, r.data() + done};
+        part.process(VoiceInputs{in, nullptr}, out, p, count);
+      }
+      INFO("rate " << rate << (alignment == Voice::Alignment::Input ? " FX" : " instrument") << " latency "
+                   << part.latencySamples());
+      const int voicePeak = test::peakIndex(l);
+      REQUIRE(std::fabs(l[size_t(voicePeak)]) > 0.5f);
+      REQUIRE(std::fabs(r[size_t(voicePeak)]) > 0.5f);
+      REQUIRE(test::peakIndex(r) == voicePeak);
+      REQUIRE(voicePeak == 1000 + part.latencySamples());
+    }
+  }
 }

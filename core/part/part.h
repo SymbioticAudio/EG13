@@ -37,8 +37,11 @@ class Part {
  public:
   static constexpr int kVoices = VoiceAllocator::kMaxVoices;
 
+  using SlotFactory = std::vector<SourceSpec> (*)();
+
   Part();                                // every Source, Filter and Shaper engine
-  explicit Part(SourceFactory factory);  // one engine per voice (tests)
+  explicit Part(SourceFactory factory);  // one engine per voice; Filter and Shaper Off (tests)
+  Part(SlotFactory sources, SlotFactory filters, SlotFactory shapers);  // per voice (tests)
 
   void prepare(double hostRate, int maxBlock,
                Voice::Alignment alignment = Voice::Alignment::Notes);  // main thread
@@ -68,6 +71,7 @@ class Part {
 
  private:
   void perform(const VoiceActions& actions);
+  void delayInputSide(const float* const* input, int n);  // fills inputSide_[0..n)
   void updatePitchOffset();
   void updateGains();
 
@@ -80,6 +84,11 @@ class Part {
   SmoothedValue gainL_;
   SmoothedValue gainR_;
   std::vector<float> mix_[2];
+  // The Input for the Shaper's side signals: mono, delayed by the voices' Source latency so
+  // it reaches the Shaper with the voice (one line shared by every voice).
+  std::vector<float> inputDelay_;
+  int inputDelayPos_ = 0;
+  std::vector<float> inputSide_;
 };
 
 }  // namespace eg13

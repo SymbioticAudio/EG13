@@ -11,10 +11,10 @@ namespace {
 constexpr double kGainSmoothingSeconds = 0.01;
 }  // namespace
 
-Part::Part() {
-  for (int v = 0; v < kVoices; ++v) {
-    voices_.push_back(std::make_unique<Voice>(makeAllSources(), makeAllFilters(), makeAllShapers()));
-  }
+Part::Part() : Part(makeAllSources, makeAllFilters, makeAllShapers) {}
+
+Part::Part(SlotFactory sources, SlotFactory filters, SlotFactory shapers) {
+  for (int v = 0; v < kVoices; ++v) voices_.push_back(std::make_unique<Voice>(sources(), filters(), shapers()));
 }
 
 Part::Part(SourceFactory factory) {
@@ -24,6 +24,10 @@ Part::Part(SourceFactory factory) {
 void Part::prepare(double hostRate, int maxBlock, Voice::Alignment alignment) {
   for (auto& voice : voices_) voice->prepare(hostRate, maxBlock, alignment);
   for (auto& buffer : mix_) buffer.assign(size_t(maxBlock), 0.0f);
+  int sourceLatency = 0;
+  for (auto& voice : voices_) sourceLatency = std::max(sourceLatency, voice->sourceLatencySamples());
+  inputDelay_.assign(size_t(sourceLatency), 0.0f);
+  inputSide_.assign(size_t(maxBlock), 0.0f);
   gainL_.prepare(hostRate, kGainSmoothingSeconds);
   gainR_.prepare(hostRate, kGainSmoothingSeconds);
   reset();
@@ -31,6 +35,8 @@ void Part::prepare(double hostRate, int maxBlock, Voice::Alignment alignment) {
 
 void Part::reset() {
   for (auto& voice : voices_) voice->reset();
+  std::fill(inputDelay_.begin(), inputDelay_.end(), 0.0f);
+  inputDelayPos_ = 0;
   allocator_.allNotesOff();
   for (int v = 0; v < kVoices; ++v) allocator_.voiceIdle(v);
   alwaysOnNotes_.clear();
@@ -142,12 +148,29 @@ void Part::process(const float* const* in, float* const* out, const ParamValues&
   process(VoiceInputs{in, nullptr}, out, params, n);
 }
 
+void Part::delayInputSide(const float* const* input, int n) {
+  const int length = int(inputDelay_.size());
+  for (int i = 0; i < n; ++i) {
+    const float x = input ? 0.5f * (input[0][i] + input[1][i]) : 0.0f;
+    if (length == 0) {
+      inputSide_[size_t(i)] = x;
+      continue;
+    }
+    inputSide_[size_t(i)] = inputDelay_[size_t(inputDelayPos_)];
+    inputDelay_[size_t(inputDelayPos_)] = x;
+    if (++inputDelayPos_ == length) inputDelayPos_ = 0;
+  }
+}
+
 void Part::process(const VoiceInputs& in, float* const* out, const SlotParams& params, int n) {
   std::fill(mix_[0].begin(), mix_[0].begin() + n, 0.0f);
   std::fill(mix_[1].begin(), mix_[1].begin() + n, 0.0f);
   float* mix[2] = {mix_[0].data(), mix_[1].data()};
+  delayInputSide(in.input, n);
+  VoiceInputs voiceIn = in;
+  voiceIn.inputSide = inputSide_.data();
   for (int v = 0; v < kVoices; ++v) {
-    voices_[size_t(v)]->process(in, mix, params, n);
+    voices_[size_t(v)]->process(voiceIn, mix, params, n);
     if (allocator_.sounding(v) && !voices_[size_t(v)]->active()) allocator_.voiceIdle(v);
   }
   for (int i = 0; i < n; ++i) {

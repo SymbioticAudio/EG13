@@ -391,7 +391,8 @@ std::vector<float> runChain(Voice& voice, int n, const SlotParams& p, const Voic
     float* out[2] = {l.data() + done, r.data() + done};
     const float* input[2] = {in.input ? in.input[0] + done : nullptr, in.input ? in.input[1] + done : nullptr};
     const float* other[2] = {in.other ? in.other[0] + done : nullptr, in.other ? in.other[1] + done : nullptr};
-    voice.process(VoiceInputs{in.input ? input : nullptr, in.other ? other : nullptr}, out, p, count);
+    const float* inputSide = in.inputSide ? in.inputSide + done : nullptr;
+    voice.process(VoiceInputs{in.input ? input : nullptr, in.other ? other : nullptr, inputSide}, out, p, count);
   }
   if (right) *right = r;
   return l;
@@ -437,12 +438,14 @@ TEST_CASE("The Shaper's side inputs follow their selectors") {
   voice.trigger(60, 1.0f);
   const std::vector<float> inL(256, 0.1f), inR(256, 0.3f), otherL(256, -0.4f), otherR(256, 0.0f);
   const float* input[2] = {inL.data(), inR.data()};
+  const std::vector<float> inputSide(256, 0.2f);  // the Input as Part delivers it: mono, aligned
   const float* other[2] = {otherL.data(), otherR.data()};
-  const VoiceInputs in{input, other};
+  const VoiceInputs in{input, other, inputSide.data()};
   const struct {
     float selector;
     float expected;
   } cases[] = {{0.5f / 4.0f, 0.0f}, {1.5f / 4.0f, 0.75f}, {2.5f / 4.0f, 0.2f}, {3.5f / 4.0f, -0.2f}};
+  // Other part: (L + R) / 2 = -0.2.
   for (const auto& c : cases) {
     for (int input = 0; input < 2; ++input) {
       SlotParams p;
@@ -599,7 +602,7 @@ TEST_CASE("Voice processing with every engine and slot switches does not allocat
         voice.setEngine((block / 10) % kNumSourceEngines);
       }
       if (block == 30) voice.trigger(64, 0.7f);
-      voice.process(VoiceInputs{input, input}, out, p, 256);
+      voice.process(VoiceInputs{input, input, in.data()}, out, p, 256);
     }
     allocations = counter.count();
   }
