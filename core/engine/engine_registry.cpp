@@ -6,12 +6,16 @@
 #include "engine/braids_engine.h"
 #include "engine/bypass_engine.h"
 #include "engine/elements_engine.h"
+#include "engine/marbles_engine.h"
+#include "engine/peaks_engine.h"
 #include "engine/plaits_engine.h"
 #include "engine/rings_engine.h"
 #include "engine/ripples_engine.h"
 #include "engine/shelves_engine.h"
 #include "engine/sst_filter_engine.h"
+#include "engine/stages_engine.h"
 #include "engine/svf_engine.h"
+#include "engine/tides_engine.h"
 #include "engine/warps_engine.h"
 
 namespace eg13 {
@@ -59,6 +63,19 @@ const EngineInfo& shaperEngineInfo(int engine) {
     case ShaperEngine::Off: break;
   }
   return BypassEngine::staticInfo();
+}
+
+int modEngineFromSelector(double value) { return fromSelector(value, kNumModEngines); }
+
+const ModEngineInfo& modEngineInfo(int engine) {
+  switch (ModEngineKind(engine)) {
+    case ModEngineKind::Envelope: return StagesEngine::staticInfo();
+    case ModEngineKind::Lfo: return TidesEngine::staticInfo();
+    case ModEngineKind::Random: return MarblesEngine::staticInfo();
+    case ModEngineKind::FunctionGenerator: return PeaksEngine::staticInfo();
+    case ModEngineKind::Off: break;
+  }
+  return OffModEngine::staticInfo();
 }
 
 }  // namespace eg13

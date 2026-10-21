@@ -26,7 +26,9 @@ add_library(eg13_core STATIC
   voice/source_factory.cpp
   voice/processor_factory.cpp
   voice/processor_slot.cpp
-  part/part.cpp)
+  part/part.cpp
+  mod/mod_factory.cpp
+  mod/mod_slot.cpp)
 target_include_directories(eg13_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eg13_core PRIVATE eg13_eurorack eg13_nlohmann eg13_r8brain eg13_vcv eg13_sst)
 target_compile_options(eg13_core PRIVATE -Wall -Wextra -Werror)

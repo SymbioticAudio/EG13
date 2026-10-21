@@ -1,5 +1,6 @@
 #pragma once
 
+#include "engine/mod_engine.h"
 #include "engine/voice_engine.h"
 
 namespace eg13 {
@@ -25,5 +26,13 @@ int filterEngineFromSelector(double value);  // unknown values -> Off
 int shaperEngineFromSelector(double value);  // unknown values -> Off
 const EngineInfo& filterEngineInfo(int engine);  // unknown -> Off's
 const EngineInfo& shaperEngineInfo(int engine);  // unknown -> Off's
+
+// Mod engine ids. Saved in projects: never renumber; new engines are appended.
+enum class ModEngineKind : int { Off = 0, Envelope = 1, Lfo = 2, Random = 3, FunctionGenerator = 4 };
+constexpr int kNumModEngines = 5;
+constexpr int kModEngineSelectorMax = 31;  // fixed host range so adding engines changes nothing
+
+int modEngineFromSelector(double value);         // unknown values -> Off
+const ModEngineInfo& modEngineInfo(int engine);  // unknown -> Off's
 
 }  // namespace eg13

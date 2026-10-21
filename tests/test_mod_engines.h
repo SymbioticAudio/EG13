@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 
 #include "engine/mod_engine.h"
 
@@ -40,6 +41,25 @@ class CountingModEngine final : public NativeModEngine {
     ++blocks;
   }
   int64_t index_ = 0;
+};
+
+// Outputs NaN on output 0 for the first tick after construction (a one-off glitch that survives
+// reset()), then 0.25. Counts its resets.
+class NanModEngine final : public ModEngine {
+ public:
+  void prepare(double) override {}
+  void reset() override { ++resets; }
+  void process(const ModContext&, const ParamValues&, int, float* out) override {
+    for (int k = 0; k < kMaxModOutputs; ++k) out[k] = 0.0f;
+    out[0] = ticks++ == 0 ? std::numeric_limits<float>::quiet_NaN() : 0.25f;
+  }
+  const ModEngineInfo& info() const override {
+    static const ModOutputInfo kOutputs[1] = {{"Out", false}};
+    static const ModEngineInfo kInfo = {{"nan", "NaN", 0, nullptr, false}, 1, kOutputs, false};
+    return kInfo;
+  }
+  int ticks = 0;
+  int resets = 0;
 };
 
 }  // namespace eg13::test
