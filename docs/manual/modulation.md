@@ -47,3 +47,13 @@ Random gates and random voltages, with the module's controls (the knob mappings 
 - **Sync** *On* clocks the T section from the host's tempo, one beat per clock, and T Rate then multiplies or divides the beat. It restarts its pattern when the transport starts or jumps; with the transport stopped it keeps the last tempo (120 BPM if none). It takes about two beats to lock.
 - A new slot with Random / S&H is per part, so every voice hears the same random values; set Scope to per voice for a different sequence on each voice. Every voice and slot has its own random sequence.
 - Defaults: VCV's, except X Range *Full*.
+
+### Function Generator (based on Peaks)
+
+One channel of the module in its full-control mode. One output.
+
+- **Mode**: *Envelope* (an ADSR: **Attack**, **Decay**, **Sustain**, **Release**, from 0 to 100 %), *LFO* (**Rate** from 0.03 Hz to 155 Hz; **Waveform** *Sine*, *Triangle*, *Square*, *Steps* or *Noise*; **Wave Shape** folds the sine, skews the triangle, sets the square's width or the number of steps; **Phase** is where a new note restarts the cycle), *Tap LFO* (the notes you play are the taps: the LFO follows their tempo, with Waveform, Wave Shape and Phase as in LFO mode) or *Random* (a random wave at **Rate**; **Smoothness** goes from stepped, through straight lines, to smooth curves).
+- Each mode keeps its own controls, so switching modes and back restores them. Attack, Decay, Sustain and Release sit at the same positions as the Envelope engine's, so routes into them suit both.
+- A new note restarts the envelope, and the LFO at its Phase (per-voice scope).
+- The envelope runs from 0 to 100 %; the LFOs swing from −100 % to +100 % (the module's ±5 V).
+- Defaults: Envelope with the fastest attack, about 0.4 s decay and release, full sustain; LFO at about 2.2 Hz, sine.
