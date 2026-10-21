@@ -1,6 +1,8 @@
 #include "part/part.h"
 
 #include <algorithm>
+#include <cmath>
+#include <iterator>
 
 #include "synth/param_table.h"
 #include "voice/processor_factory.h"
@@ -11,14 +13,21 @@ namespace {
 constexpr double kGainSmoothingSeconds = 0.01;
 }  // namespace
 
-Part::Part() : Part(makeAllSources, makeAllFilters, makeAllShapers) {}
+Part::Part(ModEngineFactory mods) : Part(makeAllSources, makeAllFilters, makeAllShapers, mods) {}
 
-Part::Part(SlotFactory sources, SlotFactory filters, SlotFactory shapers) {
+Part::Part(SlotFactory sources, SlotFactory filters, SlotFactory shapers, ModEngineFactory mods)
+    : modulation_(mods) {
   for (int v = 0; v < kVoices; ++v) voices_.push_back(std::make_unique<Voice>(sources(), filters(), shapers()));
 }
 
-Part::Part(SourceFactory factory) {
+Part::Part(SourceFactory factory, ModEngineFactory mods) : modulation_(mods) {
   for (int v = 0; v < kVoices; ++v) voices_.push_back(std::make_unique<Voice>(factory()));
+}
+
+void Part::setSeedBase(uint32_t base) {
+  modulation_.setSeedBase(base);
+  random_ = 0x13579BDFu ^ (base * 2654435761u);
+  if (random_ == 0) random_ = 1;
 }
 
 void Part::prepare(double hostRate, int maxBlock, Voice::Alignment alignment) {
@@ -30,6 +39,7 @@ void Part::prepare(double hostRate, int maxBlock, Voice::Alignment alignment) {
   inputSide_.assign(size_t(maxBlock), 0.0f);
   gainL_.prepare(hostRate, kGainSmoothingSeconds);
   gainR_.prepare(hostRate, kGainSmoothingSeconds);
+  modulation_.prepare(hostRate);
   reset();
 }
 
@@ -42,6 +52,22 @@ void Part::reset() {
   alwaysOnNotes_.clear();
   alwaysOn_ = false;
   bend_ = 0.0f;
+  modulation_.reset();
+  for (auto& c : controls_) c = VoiceControl{};
+  std::fill(std::begin(controlValid_), std::end(controlValid_), false);
+  std::fill(std::begin(voiceRetrigger_), std::end(voiceRetrigger_), false);
+  std::fill(std::begin(voicePressure_), std::end(voicePressure_), 0.0f);
+  std::fill(std::begin(voiceSlide_), std::end(voiceSlide_), 0.0f);
+  std::fill(std::begin(voiceBend_), std::end(voiceBend_), 0.0f);
+  std::fill(std::begin(channelBend_), std::end(channelBend_), 0.0f);
+  std::fill(std::begin(channelPressure_), std::end(channelPressure_), 0.0f);
+  std::fill(std::begin(channelSlide_), std::end(channelSlide_), 0.0f);
+  tickPos_ = 0;
+  pendingJump_ = false;
+  lastVoice_ = -1;
+  partGate_ = false;
+  partRetrigger_ = false;
+  modulated_ = false;
   const PartSettings current = settings_;
   settings_ = PartSettings{};
   allocator_.configure(settings_.voiceMode, settings_.voiceCount);
@@ -66,7 +92,11 @@ void Part::applySettings(const PartSettings& s) {
       perform(allocator_.allNotesOff());
       alwaysOnNotes_.clear();
       alwaysOn_ = true;
+      if (!voices_[0]->active()) modulation_.startVoice(0);
       voices_[0]->trigger(s.baseNote, 1.0f);
+      controlValid_[0] = false;
+      voiceVelocity_[0] = 1.0f;
+      voiceKey_[0] = s.baseNote;
     } else {
       alwaysOn_ = false;
       alwaysOnNotes_.clear();
@@ -84,15 +114,25 @@ void Part::applySettings(const PartSettings& s) {
   if (shaperChanged) {
     for (auto& voice : voices_) voice->setShaperEngine(s.shaperEngine);
   }
+  for (int slot = 0; slot < kNumModSlots; ++slot) modulation_.configure(slot, s.modEngine[slot], s.modPerPart[slot]);
 
   const float glide = glideSeconds(s.glide);
   for (auto& voice : voices_) voice->setGlideSeconds(glide);
   updatePitchOffset();
-  updateGains();
+  // The modulated path keeps its last Part Level (preflight ruling G5): resetting it here, once per
+  // host block, would make the level depend on the host's block sizes.
+  updateGains(modulated_ ? partLevel_ : s.level);
+}
+
+bool Part::isMemberChannel(int channel) const {
+  return settings_.mpe != 0 && channel >= settings_.mpeFirst && channel <= settings_.mpeLast &&
+         channel != settings_.mpeMaster;
 }
 
 bool Part::acceptsChannel(int channel) const {
-  return settings_.midiChannel == 0 || channel < 0 || channel == settings_.midiChannel - 1;
+  if (channel < 0) return true;
+  if (settings_.mpe != 0) return channel == settings_.mpeMaster || isMemberChannel(channel);
+  return settings_.midiChannel == 0 || channel == settings_.midiChannel - 1;
 }
 
 bool Part::acceptsKey(int key) const {
@@ -101,21 +141,33 @@ bool Part::acceptsKey(int key) const {
   return key >= low && key <= high;
 }
 
-void Part::noteOn(int key, float velocity) {
+void Part::noteOn(int key, float velocity, int channel) {
+  noteChannel_ = std::clamp(channel, 0, kChannels - 1);
   if (alwaysOn_) {
+    // Always on (spec §5.3): notes move the pitch but do not retrigger the voice. The per-voice
+    // mod engines' gate follows the keys: the first key down triggers them (provisional ruling 8).
+    if (alwaysOnNotes_.empty()) {
+      voiceRetrigger_[0] = true;
+      voiceVelocity_[0] = velocity;
+      lastVoice_ = 0;
+    }
     alwaysOnNotes_.noteOn(key, velocity);
     voices_[0]->glideTo(key);
+    voiceKey_[0] = key;
+    voiceChannel_[0] = noteChannel_;
     return;
   }
   perform(allocator_.noteOn(key, velocity));
 }
 
-void Part::noteOff(int key) {
+void Part::noteOff(int key, float releaseVelocity) {
+  if (key >= 0 && key < 128) keyRelease_[key] = clamp01(releaseVelocity);
   if (alwaysOn_) {
     const bool wasTop = !alwaysOnNotes_.empty() && alwaysOnNotes_.topKey() == key;
     alwaysOnNotes_.noteOff(key);
     if (alwaysOnNotes_.empty()) {
       voices_[0]->glideTo(settings_.baseNote);
+      voiceRelease_[0] = clamp01(releaseVelocity);
     } else if (wasTop) {
       voices_[0]->glideTo(alwaysOnNotes_.topKey());
     }
@@ -142,6 +194,51 @@ void Part::allNotesOff() {
   perform(allocator_.allNotesOff());
 }
 
+void Part::setController(PartController controller, float value) {
+  value = clamp01(value);
+  switch (controller) {
+    case PartController::ModWheel: modWheel_ = value; break;
+    case PartController::Slide: slide_ = value; break;
+    case PartController::ChannelPressure: pressure_ = value; break;
+    case PartController::CcA: cc_[0] = value; break;
+    case PartController::CcB: cc_[1] = value; break;
+    case PartController::CcC: cc_[2] = value; break;
+    case PartController::CcD: cc_[3] = value; break;
+  }
+}
+
+namespace {
+
+void setExpression(Expression e, float value, float* bend, float* pressure, float* slide) {
+  if (e == Expression::Bend) {
+    *bend = std::isfinite(value) ? value : 0.0f;
+  } else if (e == Expression::Pressure) {
+    *pressure = clamp01(value);
+  } else {
+    *slide = clamp01(value);
+  }
+}
+
+}  // namespace
+
+void Part::memberExpression(int channel, Expression expression, float value) {
+  if (channel < 0 || channel >= kChannels) return;
+  setExpression(expression, value, &channelBend_[channel], &channelPressure_[channel], &channelSlide_[channel]);
+  for (int v = 0; v < kVoices; ++v) {
+    if (voices_[size_t(v)]->active() && voiceChannel_[v] == channel) {
+      setExpression(expression, value, &voiceBend_[v], &voicePressure_[v], &voiceSlide_[v]);
+    }
+  }
+}
+
+void Part::noteExpression(int channel, int key, Expression expression, float value) {
+  for (int v = 0; v < kVoices; ++v) {
+    if (voices_[size_t(v)]->active() && voiceKey_[v] == key && (channel < 0 || voiceChannel_[v] == channel)) {
+      setExpression(expression, value, &voiceBend_[v], &voicePressure_[v], &voiceSlide_[v]);
+    }
+  }
+}
+
 void Part::process(const float* const* in, float* const* out, const ParamValues& source, int n) {
   SlotParams params;
   params.source = source;
@@ -163,6 +260,10 @@ void Part::delayInputSide(const float* const* input, int n) {
 }
 
 void Part::process(const VoiceInputs& in, float* const* out, const SlotParams& params, int n) {
+  if (modulated_) {  // back from the modulated path: the unmodulated level
+    modulated_ = false;
+    updateGains(settings_.level);
+  }
   std::fill(mix_[0].begin(), mix_[0].begin() + n, 0.0f);
   std::fill(mix_[1].begin(), mix_[1].begin() + n, 0.0f);
   float* mix[2] = {mix_[0].data(), mix_[1].data()};
@@ -173,7 +274,116 @@ void Part::process(const VoiceInputs& in, float* const* out, const SlotParams& p
     voices_[size_t(v)]->process(voiceIn, mix, params, n);
     if (allocator_.sounding(v) && !voices_[size_t(v)]->active()) allocator_.voiceIdle(v);
   }
-  for (int i = 0; i < n; ++i) {
+  writeOutput(out, 0, n);
+}
+
+ModVoiceInputs Part::voiceInputs(int v) const {
+  const Voice& voice = *voices_[size_t(v)];
+  ModVoiceInputs m;
+  m.active = voice.active();
+  // Always on: the voice's gate stays high (its Amp open); its mod engines follow the keys.
+  m.gate = alwaysOn_ && v == 0 ? !alwaysOnNotes_.empty() : voice.gate();
+  m.retrigger = voiceRetrigger_[v];
+  m.note = voice.currentNote();
+  m.velocity = voiceVelocity_[v];
+  m.releaseVelocity = voiceRelease_[v];
+  m.random = voiceRandom_[v];
+  m.pressure = voicePressure_[v];
+  m.slide = voiceSlide_[v];
+  m.bend = voiceBend_[v];
+  return m;
+}
+
+ModPartInputs Part::partInputs(const PartParams& params, int offset) const {
+  ModPartInputs p;
+  p.modWheel = modWheel_;
+  p.pitchBend = bend_;
+  p.channelPressure = pressure_;
+  p.slide = slide_;
+  for (int i = 0; i < 4; ++i) p.cc[i] = cc_[i];
+  const ModTiming& t = params.timing;
+  const double bars = t.barPhase + double(offset) * t.beatsPerSample / std::max(1e-9, t.beatsPerBar);
+  p.transportPhase = float(bars - std::floor(bars));
+  p.noteBendRange = float(settings_.mpeBendRange);
+  p.gate = partGate_;
+  p.retrigger = partRetrigger_;
+  p.beat = t.beat + double(offset) * t.beatsPerSample;
+  p.beatsPerSample = t.beatsPerSample;
+  p.beatJump = pendingJump_;
+  p.lastVoice = lastVoice_;
+  return p;
+}
+
+void Part::controlVoice(int v, const PartParams& params, const ModPartInputs& part, int length) {
+  VoiceControl& c = controls_[v];
+  modulation_.processVoice(v, params.mod, part, voiceInputs(v), params.slots, &c, length);
+  c.gain = params.voiceGain;
+  c.sourceGain = 1.0f;
+  voices_[size_t(v)]->beginTick(c, length);
+  controlValid_[v] = true;
+  voiceRetrigger_[v] = false;
+}
+
+void Part::startTick(const PartParams& params, int offset) {
+  // The part-scope gate: any key held (Always on: any key down), triggering on the first key.
+  bool gate = false;
+  if (alwaysOn_) {
+    gate = !alwaysOnNotes_.empty();
+  } else {
+    for (const auto& voice : voices_) gate = gate || voice->gate();
+  }
+  if (gate && !partGate_) partRetrigger_ = true;
+  partGate_ = gate;
+  ModVoiceInputs voices[kVoices];
+  for (int v = 0; v < kVoices; ++v) voices[v] = voiceInputs(v);
+  const ModPartInputs part = partInputs(params, offset);
+  modulation_.processPart(params.mod, part, voices, Voice::kControlBlock);
+  partRetrigger_ = false;
+  pendingJump_ = false;
+  partLevel_ = modulation_.partLevel(params.mod, settings_.level);
+  updateGains(partLevel_);
+  for (int v = 0; v < kVoices; ++v) {
+    controlValid_[v] = false;
+    if (voices_[size_t(v)]->active()) controlVoice(v, params, part, Voice::kControlBlock);
+  }
+}
+
+void Part::process(const VoiceInputs& in, float* const* out, const PartParams& params, int n) {
+  std::fill(mix_[0].begin(), mix_[0].begin() + n, 0.0f);
+  std::fill(mix_[1].begin(), mix_[1].begin() + n, 0.0f);
+  delayInputSide(in.input, n);
+  modulated_ = true;
+  pendingJump_ = pendingJump_ || params.timing.jump;
+  for (int done = 0; done < n;) {
+    // Modulation runs on a fixed grid of 16-sample ticks, whatever the host's block sizes.
+    if (tickPos_ == 0) startTick(params, done);
+    const int count = std::min(Voice::kControlBlock - tickPos_, n - done);
+    for (int v = 0; v < kVoices; ++v) {
+      // A voice that started since the tick began gets controls for the rest of the tick.
+      if (voices_[size_t(v)]->active() && !controlValid_[v]) {
+        controlVoice(v, params, partInputs(params, done), Voice::kControlBlock - tickPos_);
+      }
+    }
+    const float* input[2] = {in.input ? in.input[0] + done : nullptr, in.input ? in.input[1] + done : nullptr};
+    const float* other[2] = {in.other ? in.other[0] + done : nullptr, in.other ? in.other[1] + done : nullptr};
+    VoiceInputs slice;
+    slice.input = in.input ? input : nullptr;
+    slice.other = in.other ? other : nullptr;
+    slice.inputSide = inputSide_.data() + done;
+    float* mix[2] = {mix_[0].data() + done, mix_[1].data() + done};
+    for (int v = 0; v < kVoices; ++v) {
+      voices_[size_t(v)]->render(slice, mix, count);
+      if (allocator_.sounding(v) && !voices_[size_t(v)]->active()) allocator_.voiceIdle(v);
+    }
+    // The part's gains per slice, so a Part Level change lands at its tick whatever the block.
+    writeOutput(out, done, count);
+    tickPos_ = (tickPos_ + count) % Voice::kControlBlock;
+    done += count;
+  }
+}
+
+void Part::writeOutput(float* const* out, int from, int n) {
+  for (int i = from; i < from + n; ++i) {
     const float gl = gainL_.next();
     const float gr = gainR_.next();
     if (settings_.mono) {
@@ -193,19 +403,45 @@ int Part::activeVoiceCount() const {
   return count;
 }
 
+void Part::startNote(int v, int key, float velocity) {
+  voiceKey_[v] = key;
+  voiceChannel_[v] = noteChannel_;
+  voiceVelocity_[v] = clamp01(velocity);
+  voiceRelease_[v] = 0.0f;
+  random_ ^= random_ << 13;  // xorshift32: a new Random source value per note
+  random_ ^= random_ >> 17;
+  random_ ^= random_ << 5;
+  voiceRandom_[v] = float(random_ >> 8) / 16777216.0f;
+  // An MPE member channel's expression sent before the note belongs to it (provisional ruling 11).
+  const bool member = isMemberChannel(noteChannel_);
+  voiceBend_[v] = member ? channelBend_[noteChannel_] : 0.0f;
+  voicePressure_[v] = member ? channelPressure_[noteChannel_] : 0.0f;
+  voiceSlide_[v] = member ? channelSlide_[noteChannel_] : 0.0f;
+  voiceRetrigger_[v] = true;
+  lastVoice_ = v;
+}
+
 void Part::perform(const VoiceActions& actions) {
   for (int i = 0; i < actions.count; ++i) {
     const VoiceAction& a = actions.items[i];
     Voice& voice = *voices_[size_t(a.voice)];
     switch (a.type) {
       case VoiceAction::Type::Trigger:
+        if (!voice.active()) {
+          modulation_.startVoice(a.voice);  // a voice from silence: fresh mod engines
+          controlValid_[a.voice] = false;
+        }
         voice.trigger(a.key, a.velocity);
+        startNote(a.voice, a.key, a.velocity);
         break;
       case VoiceAction::Type::Glide:
         voice.glideTo(a.key);
+        voiceKey_[a.voice] = a.key;
+        voiceChannel_[a.voice] = noteChannel_;
         break;
       case VoiceAction::Type::Release:
         voice.release();
+        voiceRelease_[a.voice] = a.key >= 0 && a.key < 128 ? keyRelease_[a.key] : kDefaultReleaseVelocity;
         break;
     }
   }
@@ -216,14 +452,14 @@ void Part::updatePitchOffset() {
   for (auto& voice : voices_) voice->setPitchOffset(offset);
 }
 
-void Part::updateGains() {
+void Part::updateGains(float level) {
   if (settings_.mono) {
-    gainL_.setTarget(settings_.level);
-    gainR_.setTarget(settings_.level);
+    gainL_.setTarget(level);
+    gainR_.setTarget(level);
     return;
   }
-  gainL_.setTarget(settings_.level * std::min(1.0f, 1.0f - settings_.pan));
-  gainR_.setTarget(settings_.level * std::min(1.0f, 1.0f + settings_.pan));
+  gainL_.setTarget(level * std::min(1.0f, 1.0f - settings_.pan));
+  gainR_.setTarget(level * std::min(1.0f, 1.0f + settings_.pan));
 }
 
 }  // namespace eg13

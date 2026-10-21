@@ -11,9 +11,11 @@
 
 #include "alloc_counter.h"
 #include "engine/engine_registry.h"
+#include "engine/tides_engine.h"
 #include "part/part.h"
 #include "test_engines.h"
 #include "test_helpers.h"
+#include "test_mod_engines.h"
 #include "voice/processor_factory.h"
 
 using namespace eg13;
@@ -45,6 +47,35 @@ Part preparedSinePart() {
   part.prepare(kRate, kBlock);
   return part;
 }
+
+SourceSpec steady() { return {std::make_unique<test::ConstantEngine>(), 0.0, 16}; }
+
+// Renders n samples through the modulated path in host blocks of `block`.
+Stereo runModulated(Part& part, int n, const PartParams& params, int block = kBlock) {
+  Stereo s{std::vector<float>(size_t(n)), std::vector<float>(size_t(n))};
+  for (int done = 0; done < n;) {
+    const int count = std::min(block, n - done);
+    float* out[2] = {s.l.data() + done, s.r.data() + done};
+    part.process(VoiceInputs{}, out, params, count);
+    done += count;
+  }
+  return s;
+}
+
+void setRoute(PartParams& params, int r, uint16_t source, uint16_t destination, float amount,
+              uint16_t via = kSrcNone) {
+  params.mod.routes.route[r] = {source, destination, via};
+  params.mod.routes.amount[r] = amount;
+}
+
+PartSettings withMod(int slot, int engine, bool perPart = false) {
+  PartSettings s;
+  s.modEngine[slot] = engine;
+  s.modPerPart[slot] = perPart;
+  return s;
+}
+
+ParamValues engineDefaults(ModEngineKind kind) { return test::defaultParams(modEngineInfo(int(kind)).engine); }
 
 }  // namespace
 
@@ -448,4 +479,261 @@ TEST_CASE("The Input side signal reaches the Shaper aligned with the voice") {
       REQUIRE(voicePeak == 1000 + part.latencySamples());
     }
   }
+}
+
+TEST_CASE("Without Amp routes a modulated part follows the gate, closing 5 ms after release") {
+  Part part(steady, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  const PartParams params;
+  part.noteOn(60, 1.0f);
+  Stereo held = runModulated(part, 4800, params);
+  REQUIRE(held.l[4799] == 0.5f);
+  part.noteOff(60);
+  Stereo released = runModulated(part, 480, params);
+  REQUIRE(released.l[100] > 0.0f);
+  REQUIRE(released.l[300] == 0.0f);
+}
+
+TEST_CASE("An Envelope routed to the Amp shapes the part's notes, scaled by velocity") {
+  Part part(steady);
+  part.prepare(kRate, kBlock);
+  part.applySettings(withMod(0, int(ModEngineKind::Envelope)));
+  PartParams params;
+  params.mod.slot[0] = engineDefaults(ModEngineKind::Envelope);  // 1 ms attack, full sustain, 0.5 s release
+  setRoute(params, 0, modOutputSource(0, 0), kDestAmp, 1.0f, kSrcVelocity);
+  part.noteOn(60, 0.5f);
+  const Stereo held = runModulated(part, 9600, params);
+  REQUIRE(std::fabs(held.l[9599] - 0.5f * 0.5f) < 1e-4f);
+  part.noteOff(60);
+  const Stereo released = runModulated(part, 28800, params);
+  REQUIRE(released.l[4800] < 0.25f);   // releasing over about half a second
+  REQUIRE(released.l[4800] > 0.01f);
+  REQUIRE(released.l[28799] < 1e-4f);
+}
+
+TEST_CASE("Modulation does not depend on host block slicing") {
+  // Counts derived from the rate: the note starts after about 21 ms, is released at 0.25 s and
+  // the render ends at 0.5 s (1001, 12000 and 24000 samples at 48 kHz).
+  for (const double rate : {44100.0, 48000.0, 96000.0}) {
+    const int noteAt = int(rate / 48.0) + 1;
+    const int releaseAt = int(rate / 4.0);
+    const int total = int(rate / 2.0);
+    auto render = [&](int block) {
+      Part part(sine);
+      part.setSeedBase(7);
+      part.prepare(rate, 512);
+      PartSettings s;
+      s.modEngine[0] = int(ModEngineKind::Envelope);
+      s.modEngine[1] = int(ModEngineKind::Lfo);
+      part.applySettings(s);
+      PartParams params;
+      params.timing.beatsPerSample = 2.0 / rate;
+      params.mod.slot[0] = engineDefaults(ModEngineKind::Envelope);
+      params.mod.slot[0].p[3] = 0.3f;  // decay
+      params.mod.slot[0].p[5] = 0.4f;  // sustain
+      params.mod.slot[1] = engineDefaults(ModEngineKind::Lfo);
+      params.mod.slot[1].p[2] = TidesEngine::frequencyFor(6.0, TidesEngine::Medium);
+      setRoute(params, 0, modOutputSource(0, 0), kDestAmp, 1.0f, kSrcVelocity);
+      setRoute(params, 1, modOutputSource(1, 0), kDestPitch, 0.05f);
+      setRoute(params, 2, modOutputSource(1, 1), kDestPan, 0.3f);
+      Stereo out{std::vector<float>(size_t(total)), std::vector<float>(size_t(total))};
+      auto process = [&](int from, int to) {
+        for (int done = from; done < to;) {
+          const int count = std::min(block, to - done);
+          float* o[2] = {out.l.data() + done, out.r.data() + done};
+          part.process(VoiceInputs{}, o, params, count);
+          done += count;
+        }
+      };
+      process(0, noteAt);
+      part.noteOn(57, 0.9f);
+      process(noteAt, releaseAt);
+      part.noteOff(57);
+      process(releaseAt, total);
+      return out;
+    };
+    const Stereo a = render(512);
+    for (int block : {1, 7, 16, 100}) {
+      const Stereo b = render(block);
+      INFO("rate " << rate << " block " << block);
+      REQUIRE(a.l == b.l);
+      REQUIRE(a.r == b.r);
+    }
+  }
+}
+
+TEST_CASE("A modulated Part Level holds across settings updates, whatever the host block size") {
+  // Preflight ruling G5: applySettings() (once per host block) keeps the last modulated level, so
+  // the output does not depend on how often the settings arrive.
+  for (const double rate : {44100.0, 48000.0, 96000.0}) {
+    const int total = int(rate / 4.0);
+    auto render = [&](int block) {
+      Part part(steady);
+      part.setSeedBase(11);
+      part.prepare(rate, 512);
+      PartSettings s = withMod(0, int(ModEngineKind::Lfo), true);
+      s.level = 0.8f;
+      s.pan = 0.2f;
+      part.applySettings(s);
+      PartParams params;
+      params.timing.beatsPerSample = 2.0 / rate;
+      params.mod.slot[0] = engineDefaults(ModEngineKind::Lfo);
+      params.mod.slot[0].p[2] = TidesEngine::frequencyFor(9.0, TidesEngine::Medium);
+      setRoute(params, 0, modOutputSource(0, 0), kDestPartLevel, -0.5f);
+      part.noteOn(60, 1.0f);
+      Stereo out{std::vector<float>(size_t(total)), std::vector<float>(size_t(total))};
+      for (int done = 0; done < total;) {
+        const int count = std::min(block, total - done);
+        float* o[2] = {out.l.data() + done, out.r.data() + done};
+        part.applySettings(s);  // as the Synth does before every block
+        part.process(VoiceInputs{}, o, params, count);
+        done += count;
+      }
+      return out;
+    };
+    const Stereo a = render(512);
+    REQUIRE(*std::min_element(a.l.begin() + total / 2, a.l.end()) < 0.5f * 0.8f * 0.8f);  // the LFO moves the level
+    for (int block : {1, 7, 100}) {
+      const Stereo b = render(block);
+      INFO("rate " << rate << " block " << block);
+      REQUIRE(a.l == b.l);
+      REQUIRE(a.r == b.r);
+    }
+  }
+}
+
+TEST_CASE("Per-voice mod engines retrigger on each note, per-part ones on the first key") {
+  Part part(sine, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  PartSettings s;
+  s.modEngine[0] = test::kTestStep;
+  s.modEngine[1] = test::kTestStep;
+  s.modPerPart[1] = true;
+  part.applySettings(s);
+  const PartParams params;
+  part.noteOn(60, 1.0f);
+  runModulated(part, 64, params);
+  part.noteOn(64, 1.0f);
+  runModulated(part, 64, params);
+  part.noteOff(60);
+  part.noteOff(64);
+  runModulated(part, 64, params);
+  part.noteOn(67, 1.0f);  // after every key was up
+  runModulated(part, 64, params);
+  const PartModulation& m = part.modulation();
+  REQUIRE(m.outputs(0, 0)[2] == 0.1f);  // voice 0: one note
+  REQUIRE(m.outputs(0, 1)[2] == 0.1f);  // voice 1: one note
+  REQUIRE(std::fabs(m.outputs(1, -1)[2] - 0.2f) < 1e-6f);  // the part: first keys twice
+  REQUIRE(m.outputs(1, -1)[1] == 1.0f);  // part gate high
+}
+
+TEST_CASE("Always on: the Amp stays open, per-voice mod engines follow the held keys") {
+  Part part(steady, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  PartSettings s = withMod(0, test::kTestStep);
+  s.alwaysOn = true;
+  part.applySettings(s);
+  const PartParams params;
+  Stereo out = runModulated(part, 960, params);
+  REQUIRE(out.l[959] == 0.5f);                       // sounding with no MIDI
+  REQUIRE(part.modulation().outputs(0, 0)[1] == 0.0f);  // no key: gate low
+  part.noteOn(60, 1.0f);
+  part.noteOn(64, 1.0f);
+  runModulated(part, 64, params);
+  REQUIRE(part.modulation().outputs(0, 0)[1] == 1.0f);
+  REQUIRE(part.modulation().outputs(0, 0)[2] == 0.1f);  // one trigger for the chord
+  part.noteOff(60);
+  part.noteOff(64);
+  out = runModulated(part, 64, params);
+  REQUIRE(part.modulation().outputs(0, 0)[1] == 0.0f);
+  REQUIRE(out.l[63] == 0.5f);  // the Amp is still open
+}
+
+TEST_CASE("MPE member expression reaches only its channel's voices, and earlier messages count") {
+  Part part(sine, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  PartSettings s;
+  s.mpe = 1;  // lower zone: master channel 1 (0), members 2..16 (1..15)
+  s.mpeMaster = 0;
+  s.mpeFirst = 1;
+  s.mpeLast = 15;
+  part.applySettings(s);
+  PartParams params;
+  setRoute(params, 0, kSrcPressure, uint16_t(kDestSourceP + 0), 1.0f);
+  part.memberExpression(3, Expression::Pressure, 0.7f);  // before the note on channel 4
+  part.noteOn(60, 1.0f, 1);
+  part.noteOn(64, 1.0f, 3);
+  runModulated(part, 32, params);
+  REQUIRE(part.lastControl(0).params.source.p[0] == 0.0f);
+  REQUIRE(part.lastControl(1).params.source.p[0] == 0.7f);
+  part.memberExpression(1, Expression::Bend, 2.0f);
+  runModulated(part, 32, params);
+  REQUIRE(part.lastControl(0).pitch == 2.0f);
+  REQUIRE(part.lastControl(1).pitch == 0.0f);
+  REQUIRE(part.acceptsChannel(0));
+  REQUIRE(part.isMemberChannel(5));
+  REQUIRE_FALSE(part.isMemberChannel(0));
+}
+
+TEST_CASE("Polyphonic pressure and release velocity reach their own voice") {
+  Part part(sine, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  PartParams params;
+  setRoute(params, 0, kSrcPressure, uint16_t(kDestSourceP + 0), 1.0f);
+  setRoute(params, 1, kSrcReleaseVelocity, uint16_t(kDestSourceP + 1), 1.0f);
+  part.noteOn(60, 1.0f);
+  part.noteOn(64, 1.0f);
+  part.noteExpression(-1, 64, Expression::Pressure, 0.5f);
+  runModulated(part, 32, params);
+  REQUIRE(part.lastControl(0).params.source.p[0] == 0.0f);
+  REQUIRE(part.lastControl(1).params.source.p[0] == 0.5f);
+  REQUIRE(part.lastControl(0).params.source.p[1] == 0.0f);  // 0 until released
+  part.noteOff(60, 0.3f);
+  runModulated(part, 32, params);
+  REQUIRE(part.lastControl(0).params.source.p[1] == 0.3f);
+}
+
+TEST_CASE("A route into Part Level moves the part's level") {
+  Part part(steady, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  PartParams params;
+  setRoute(params, 0, kSrcVelocity, kDestPartLevel, -0.5f);
+  part.noteOn(60, 1.0f);
+  const Stereo out = runModulated(part, 9600, params);
+  REQUIRE(std::fabs(out.l[9599] - 0.5f * 0.5f) < 1e-3f);
+}
+
+TEST_CASE("A modulated part does not allocate") {
+  Part part;
+  part.setSeedBase(3);
+  part.prepare(kRate, kBlock);
+  PartSettings s;
+  for (int slot = 0; slot < kNumModSlots; ++slot) s.modEngine[slot] = 1 + slot;
+  part.applySettings(s);
+  PartParams params;
+  for (int slot = 0; slot < kNumModSlots; ++slot) params.mod.slot[slot] = engineDefaults(ModEngineKind(1 + slot));
+  setRoute(params, 0, modOutputSource(0, 0), kDestAmp, 1.0f, kSrcVelocity);
+  setRoute(params, 1, modOutputSource(1, 0), kDestPitch, 0.02f, kSrcModWheel);
+  setRoute(params, 2, modOutputSource(2, 3), uint16_t(kDestSourceP + 2), 0.3f);
+  setRoute(params, 3, modOutputSource(3, 0), modParamDestination(1, 2), 0.2f);
+  std::vector<float> l(kBlock), r(kBlock);
+  float* out[2] = {l.data(), r.data()};
+  part.process(VoiceInputs{}, out, params, kBlock);
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int b = 0; b < 300; ++b) {
+      if (b % 40 == 0) {
+        for (int k = 0; k < 4; ++k) part.noteOn(48 + 7 * k + b % 5, 0.8f, k);
+      }
+      if (b % 40 == 30) part.allNotesOff();
+      if (b == 100) part.memberExpression(1, Expression::Bend, 1.0f);
+      if (b == 150) part.setController(PartController::ModWheel, 0.7f);
+      params.timing.beat += 0.1;
+      part.process(VoiceInputs{}, out, params, 1 + b % kBlock);
+    }
+    part.reset();
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
 }

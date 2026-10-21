@@ -2,7 +2,7 @@
 
 ## Parts and voices
 
-EG13 has two parts, A and B. Each plays up to eight voices. Each voice runs Source → Filter → Shaper. Every engine of every slot is ready in every voice, so changing an engine never loads anything.
+EG13 has two parts, A and B. Each plays up to eight voices. Each voice runs Source → Filter → Shaper → Amp, then its pan. Each part also has four mod slots and a modulation matrix ([Modulation](modulation.md)). Every engine of every slot, mod slots included, is ready in every voice, so changing an engine never loads anything.
 
 The master **Mode** decides which notes reach which part: *Single* (only A plays), *Layer* (both play every note), *Split* (A below the split note, B from it up) or *Multi* (each part on its own MIDI channel). In Single mode Part B is silent but still runs, so it can feed Part A (see below).
 

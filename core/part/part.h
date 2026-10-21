@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
+#include "mod/part_modulation.h"
 #include "util/smoothed_value.h"
 #include "voice/mono_note_stack.h"
 #include "voice/source_factory.h"
@@ -10,6 +12,9 @@
 #include "voice/voice_allocator.h"
 
 namespace eg13 {
+
+// MIDI's release velocity when a note-off carries none (a note-on with velocity 0): 64.
+constexpr float kDefaultReleaseVelocity = 64.0f / 127.0f;
 
 struct PartSettings {
   float level = 1.0f;
@@ -30,19 +35,51 @@ struct PartSettings {
   int filterEngine = 0;  // FilterEngine
   int shaperEngine = 0;  // ShaperEngine
   int inputSource = 0;  // 0 external, 1 other part, 2 both (routed by the Synth)
+  int modEngine[kNumModSlots] = {};      // ModEngineKind per mod slot
+  bool modPerPart[kNumModSlots] = {};    // scope per mod slot
+  int mpe = 0;              // 0 off, 1 lower zone, 2 upper zone (the Synth works out the channels)
+  int mpeBendRange = 48;    // semitones of a member channel's full pitch bend
+  int mpeMaster = 0;        // MPE: the zone's master channel (0..15)
+  int mpeFirst = 1;         // MPE: the zone's member channels, first..last (0..15)
+  int mpeLast = 15;
 };
 
-// One part: 8 voices, their allocator and the part's settings.
+// Per-note expression (MPE member channels, polyphonic aftertouch, CLAP note expressions).
+enum class Expression { Bend, Pressure, Slide };  // Bend in semitones; Pressure and Slide 0..1
+// Part-wide controllers the matrix reads.
+enum class PartController { ModWheel, Slide, ChannelPressure, CcA, CcB, CcC, CcD };
+
+// Where the part is in musical time at the start of a process() call (the Synth's beat clock).
+struct ModTiming {
+  double beat = 0.0;
+  double beatsPerSample = 2.0 / 48000.0;  // 120 BPM at 48 kHz
+  bool jump = false;  // the transport started or jumped
+  double barPhase = 0.0;
+  double beatsPerBar = 4.0;
+};
+
+// Everything one process() call of a modulated part reads besides audio.
+struct PartParams {
+  SlotParams slots;     // host values of the Source, Filter and Shaper P's
+  ModParams mod;        // mod slot P's, routes and amounts, envelope shapes
+  ModTiming timing;
+  float voiceGain = 1.0f;  // the master Voice Gain (spec §5.2's Amp gain)
+};
+
+// One part: 8 voices, their allocator, the part's modulation and the part's settings.
 class Part {
  public:
   static constexpr int kVoices = VoiceAllocator::kMaxVoices;
+  static constexpr int kChannels = 16;
 
   using SlotFactory = std::vector<SourceSpec> (*)();
 
-  Part();                                // every Source, Filter and Shaper engine
-  explicit Part(SourceFactory factory);  // one engine per voice; Filter and Shaper Off (tests)
-  Part(SlotFactory sources, SlotFactory filters, SlotFactory shapers);  // per voice (tests)
+  explicit Part(ModEngineFactory mods = makeAllModEngines);  // every engine of every slot
+  explicit Part(SourceFactory factory, ModEngineFactory mods = makeAllModEngines);  // tests
+  Part(SlotFactory sources, SlotFactory filters, SlotFactory shapers,
+       ModEngineFactory mods = makeAllModEngines);  // per voice (tests)
 
+  void setSeedBase(uint32_t base);  // main thread, before prepare(): the part's random seeds
   void prepare(double hostRate, int maxBlock,
                Voice::Alignment alignment = Voice::Alignment::Notes);  // main thread
   void reset();
@@ -51,14 +88,24 @@ class Part {
 
   bool acceptsChannel(int channel) const;  // 0..15, negative = any
   bool acceptsKey(int key) const;
+  bool isMemberChannel(int channel) const;  // an MPE member channel of this part's zone
 
-  void noteOn(int key, float velocity);
-  void noteOff(int key);
+  void noteOn(int key, float velocity, int channel = 0);
+  void noteOff(int key, float releaseVelocity = kDefaultReleaseVelocity);
   void pitchBend(float value);  // -1..1
   void sustain(bool down);
   void allNotesOff();
+  void setController(PartController controller, float value);  // 0..1 (ModWheel..CcD)
+  // An MPE member channel's bend (semitones), pressure or slide: every voice on that channel,
+  // and the next notes on it.
+  void memberExpression(int channel, Expression expression, float value);
+  // One note's expression: the voices playing `key` (on `channel`; negative: any channel).
+  void noteExpression(int channel, int key, Expression expression, float value);
 
-  // Overwrites out[0], out[1] with n samples (n <= maxBlock).
+  // Modulated (M4): the part's mod slots and matrix on a fixed 16-sample grid, then each voice's
+  // Amp and pan. Overwrites out[0], out[1] with n samples (n <= maxBlock).
+  void process(const VoiceInputs& in, float* const* out, const PartParams& params, int n);
+  // Unmodulated (M1-M3 tests): no mod slots, Amp, pan or gains.
   void process(const VoiceInputs& in, float* const* out, const SlotParams& params, int n);
   // Source parameters only; in: the part's Input (nullable).
   void process(const float* const* in, float* const* out, const ParamValues& source, int n);
@@ -68,12 +115,20 @@ class Part {
 
   int activeVoiceCount() const;
   int latencySamples() const { return voices_[0]->latencySamples(); }
+  const VoiceControl& lastControl(int voice) const { return controls_[voice]; }  // tests
+  const PartModulation& modulation() const { return modulation_; }               // tests
 
  private:
   void perform(const VoiceActions& actions);
+  void startNote(int v, int key, float velocity);  // a voice's new note: its mod sources
   void delayInputSide(const float* const* input, int n);  // fills inputSide_[0..n)
   void updatePitchOffset();
-  void updateGains();
+  void updateGains(float level);
+  void writeOutput(float* const* out, int from, int n);  // mix_ x the part's gains (and Mono) into out
+  ModVoiceInputs voiceInputs(int v) const;
+  ModPartInputs partInputs(const PartParams& params, int offset) const;
+  void startTick(const PartParams& params, int offset);  // the grid: part slots, then every voice
+  void controlVoice(int v, const PartParams& params, const ModPartInputs& part, int length);
 
   std::vector<std::unique_ptr<Voice>> voices_;
   VoiceAllocator allocator_;
@@ -89,6 +144,40 @@ class Part {
   std::vector<float> inputDelay_;
   int inputDelayPos_ = 0;
   std::vector<float> inputSide_;
+
+  // Modulation (M4).
+  PartModulation modulation_;
+  VoiceControl controls_[kVoices];
+  bool controlValid_[kVoices] = {};  // controls_[v] belongs to the current tick
+  int tickPos_ = 0;                  // samples into the 16-sample grid tick
+  bool pendingJump_ = false;
+  bool modulated_ = false;   // the last process() call was the modulated path
+  float partLevel_ = 1.0f;   // its Part Level (base + routes) at the last tick
+  // Per-voice sources.
+  int voiceKey_[kVoices] = {};
+  int voiceChannel_[kVoices] = {};
+  float voiceVelocity_[kVoices] = {};
+  float voiceRelease_[kVoices] = {};
+  float voiceRandom_[kVoices] = {};
+  float voicePressure_[kVoices] = {};
+  float voiceSlide_[kVoices] = {};
+  float voiceBend_[kVoices] = {};
+  bool voiceRetrigger_[kVoices] = {};
+  float keyRelease_[128] = {};
+  int noteChannel_ = 0;
+  int lastVoice_ = -1;
+  // MPE member channels' state, for notes that start after it was sent.
+  float channelBend_[kChannels] = {};
+  float channelPressure_[kChannels] = {};
+  float channelSlide_[kChannels] = {};
+  // Part-wide controllers and gates.
+  float modWheel_ = 0.0f;
+  float pressure_ = 0.0f;
+  float slide_ = 0.0f;
+  float cc_[4] = {};
+  bool partGate_ = false;
+  bool partRetrigger_ = false;
+  uint32_t random_ = 0x13579BDFu;
 };
 
 }  // namespace eg13
