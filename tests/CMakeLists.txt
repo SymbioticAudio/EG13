@@ -8,7 +8,7 @@ target_include_directories(eg13_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # The tests' reference copies of the VCV models, built with Rack's flags as VCV ships them (and as
 # EG13 builds its own copies, core/CMakeLists.txt), each in its own TU inside
 # eg13::test::rack_flags.
-add_library(eg13_vcv_flagged_reference OBJECT reference/flagged_ripples.cpp)
+add_library(eg13_vcv_flagged_reference OBJECT reference/flagged_ripples.cpp reference/flagged_shelves.cpp)
 target_include_directories(eg13_vcv_flagged_reference PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eg13_vcv_flagged_reference PRIVATE eg13_vcv)
 target_compile_options(eg13_vcv_flagged_reference PRIVATE -Wall -Wextra -Werror -O3 -funsafe-math-optimizations)

@@ -7,6 +7,7 @@ add_library(eg13_core STATIC
   engine/engine_registry.cpp
   engine/native_rate_wrapper.cpp
   engine/ripples_engine.cpp
+  engine/shelves_engine.cpp
   engine/rack_shim/rack_random.cpp
   engine/sst_filter_engine.cpp
   engine/svf_engine.cpp
@@ -28,7 +29,7 @@ target_compile_options(eg13_core PRIVATE -Wall -Wextra -Werror)
 # the isolation rules at the top of engine/ripples_model.cpp; their adapters are built like every
 # other engine. The ctest "flagged VCV models define symbols
 # only in their rack_flags namespace" (scripts/check-flagged-symbols.sh) checks these objects.
-add_library(eg13_vcv_flagged OBJECT engine/ripples_model.cpp)
+add_library(eg13_vcv_flagged OBJECT engine/ripples_model.cpp engine/shelves_model.cpp)
 target_include_directories(eg13_vcv_flagged PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eg13_vcv_flagged PRIVATE eg13_vcv)
 target_compile_options(eg13_vcv_flagged PRIVATE -Wall -Wextra -Werror -O3 -funsafe-math-optimizations)

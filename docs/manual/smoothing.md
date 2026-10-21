@@ -11,5 +11,6 @@ When a control jumps (an automation step, or a modulation change), each engine f
 - **Classic Filters:** as in Surge, the filter's coefficients glide: each 16-sample control block they move a fifth of the way to a new target, in a straight line across the block, so a step settles in a few milliseconds (a time constant of about 5 blocks, 1.7 ms at 48 kHz). Type switches at once.
 - **State Variable Filter:** Cutoff and Resonance move in a straight line across each 16-sample control block, as in the Macro Oscillator's own filters. Mode switches at once.
 - **Ring Mod / Vocoder:** Warps' own knob filter, once per 60-sample block. Algorithm, Timbre and both Levels have a time constant of about 25 ms; Osc Pitch about 6 ms. Within each block Warps glides its parameters itself. Carrier, Modulator, Osc Shape and Mode switch at once.
+- **EQ:** the VCV module reads its knobs every sample; EG13 moves all ten knobs in a straight line across each control block of up to 16 samples. Input Pad and Output switch at once.
 
 After a reset, or when a voice starts from silence, every control starts at its current value with no glide.

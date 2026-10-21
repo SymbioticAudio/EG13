@@ -105,3 +105,13 @@ Warps combines two signals, a **carrier** and a **modulator**, in one of its alg
   - With any other Carrier, it multiplies the carrier and modulator into a single sideband instead.
 - Warps runs at 96 kHz in blocks of 60 samples. That adds to EG13's fixed latency ([Latency](latency.md)).
 - Stereo: while the voice is stereo, a second Warps runs for the right channel. It cannot copy the left one's state, so it starts fresh and fades in over 10 ms. The Source AUX, Input and Other part signals are mono (left and right summed).
+
+### EQ (the VCV model of Shelves)
+
+A four-band equalizer modelled on the analog circuit: **High Freq** / **High Gain** (high shelf), **Mid 1 Freq** / **Mid 1 Gain** / **Mid 1 Q**, **Mid 2 Freq** / **Mid 2 Gain** / **Mid 2 Q** (two bells), **Low Freq** / **Low Gain** (low shelf). Frequencies run 20 Hz to 20 kHz, gains ±18 dB, Q 0.5 to 40. At the defaults (gains 0 dB) it is flat.
+
+- **Input Pad** (*Off* / *−6 dB*) is the module's pre-gain option: the input goes in 6 dB lower, leaving headroom before the circuit clips (about ±10.5 V inside), and the output is 6 dB lower too.
+- **Output** chooses what you hear: the *EQ*, or one of the module's six filter outputs: *Mid 1 LP*, *Mid 1 BP*, *Mid 1 HP*, *Mid 2 LP*, *Mid 2 BP*, *Mid 2 HP*, which turns the EQ into a multimode filter. A change of Output takes effect at once, like moving the cable on the module, so it can click on a sounding note.
+- Shelves' CV inputs are not controls here: modulation comes from EG13's modulation matrix (M4).
+- Stereo: while the voice is stereo, a second EQ runs for the right channel, starting from the left one's exact state.
+- EG13 builds the EQ with the same fast-math settings as VCV Rack, so it can differ from a strict build by about −95 dBFS (measured), which is inaudible.

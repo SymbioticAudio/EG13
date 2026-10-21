@@ -1,5 +1,7 @@
 #!/bin/sh
 # Usage: check-flagged-symbols.sh NAMESPACE:: OBJECT... [NAMESPACE:: OBJECT...]...
+# An OBJECT argument may be a CMake list of paths separated by ';', as ctest passes
+# $<TARGET_OBJECTS:...> of a library with several sources.
 # Each OBJECT was compiled with Rack's -funsafe-math-optimizations. Fails if one defines an
 # external symbol outside the namespace named before it (EG13's models: eg13::rack_flags::, the
 # tests' reference models: eg13::test::rack_flags::). The linker merges weak symbols of the same
@@ -8,10 +10,8 @@
 # AddressSanitizer's bookkeeping symbols.
 status=0
 namespace=
-for arg in "$@"; do
-  case "$arg" in
-    *::) namespace=$arg; continue ;;
-  esac
+check() {
+  arg=$1
   [ -n "$namespace" ] || { echo "no namespace given before $arg"; exit 1; }
   symbols=$(nm -g -C --defined-only "$arg" | grep -E '^[0-9a-fA-F]+ [A-Za-z] ') \
     || { echo "nm found no symbols in $arg"; exit 1; }
@@ -29,5 +29,20 @@ for arg in "$@"; do
   else
     echo "$arg: $(printf '%s\n' "$symbols" | wc -l | tr -d ' ') symbols, all in $namespace"
   fi
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    *::) namespace=$arg; continue ;;
+  esac
+  rest=$arg
+  while [ -n "$rest" ]; do
+    object=${rest%%;*}
+    case "$rest" in
+      *\;*) rest=${rest#*;} ;;
+      *) rest= ;;
+    esac
+    [ -n "$object" ] && check "$object"
+  done
 done
 exit $status
