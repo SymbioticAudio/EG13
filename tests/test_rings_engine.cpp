@@ -726,3 +726,24 @@ TEST_CASE("Resonator smooths Spread per sample") {
   engine.process(nullptr, out, step, 1);
   REQUIRE(engine.smoothedSpread() == 1.0f);
 }
+
+TEST_CASE("Resonator AUX is upstream Rings' even output") {
+  REQUIRE(RingsEngine::staticInfo().hasAux);
+  constexpr int kBlocks = 200;
+  constexpr int kN = RingsEngine::kNativeBlock;
+  std::vector<float> odd, even;
+  renderUpstream(kBlocks, odd, even);
+  ParamValues p = defaults();
+  p.p[0] = 3.5f / 6.0f;  // FM Voice, as renderUpstream
+  RingsEngine engine;
+  engine.setAuxEnabled(true);
+  engine.prepare(RingsEngine::kNativeRate, 256);
+  engine.noteOn(60.0f, 1.0f);
+  std::vector<float> l(size_t(kBlocks * kN)), r(l.size()), aux(l.size());
+  for (int b = 0; b < kBlocks; ++b) {
+    float* out[3] = {l.data() + b * kN, r.data() + b * kN, aux.data() + b * kN};
+    engine.process(nullptr, out, p, kN);
+  }
+  REQUIRE(test::rms(even, 0, even.size()) > 0.001);
+  for (size_t i = 0; i < aux.size(); ++i) REQUIRE(aux[i] == even[i]);
+}

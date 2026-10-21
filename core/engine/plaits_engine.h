@@ -25,6 +25,7 @@ class PlaitsEngine final : public VoiceEngine {
   void noteOn(float note, float velocity) override;
   void noteOff() override;
   void setNote(float note) override { note_ = note; }
+  void setAuxEnabled(bool on) override { aux_ = on; }
   void process(const float* const* in, float* const* out, const ParamValues& p,
                int n) override;
   const EngineInfo& info() const override;
@@ -47,6 +48,7 @@ class PlaitsEngine final : public VoiceEngine {
   float velocity_ = 0.0f;
   bool gate_ = false;
   bool retrigger_ = false;
+  bool aux_ = false;  // write out[2]: Plaits' AUX output, for the Ring Mod modulator
   size_t pos_ = 0;
   PotSmoother pots_;  // Ui::Poll pot smoothing, once per native block
   Declicker auxMix_;  // EG13-only Aux Mix, per sample

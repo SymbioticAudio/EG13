@@ -45,7 +45,7 @@ const EngineParamInfo kParams[9] = {
     {"Polyphony", 0.5f / 3.0f, formatPolyphony},  // stepped thirds; default 1 voice
 };
 
-const EngineInfo kInfo = {"rings", "Resonator", 9, kParams, true};
+const EngineInfo kInfo = {"rings", "Resonator", 9, kParams, true, true, 0, nullptr};
 
 constexpr float kMaxKnob = 0.9995f;  // Rings' own clamp for structure, damping, position
 constexpr float kTonic = 60.0f;      // reference the played note is measured from
@@ -217,6 +217,10 @@ void RingsEngine::renderBlock(const float* const* in, const ParamValues& p, floa
     const float even = evenSign * s.even[i];
     out[0][offset + i] = (odd + (1.0f - spread) * even) * velocity_;
     out[1][offset + i] = (even + (1.0f - spread) * odd) * velocity_;
+    // The AUX jack: the raw even output (part.cc:530-535), times velocity. It is
+    // deliberately not the sign-corrected, spread-mixed signal above: the module's
+    // AUX jack carries the unfolded even output, polarity included (preflight F18).
+    if (aux_) out[2][offset + i] = s.even[i] * velocity_;
   }
 }
 

@@ -298,3 +298,61 @@ TEST_CASE("Macro Oscillator smooths Aux Mix per sample") {
   render(engine, step, 12, 12);
   REQUIRE(engine.smoothedAuxMix() == 1.0f);  // reset snaps on the next render
 }
+
+TEST_CASE("Macro Oscillator AUX is upstream Plaits' AUX output") {
+  PlaitsEngine engine;
+  REQUIRE(PlaitsEngine::staticInfo().hasAux);
+  engine.setAuxEnabled(true);
+  engine.prepare(PlaitsEngine::kNativeRate, 512);
+  engine.noteOn(69.0f, 0.8f);
+  const int blocks = 200;
+  std::vector<float> l(size_t(blocks * 12)), r(l.size()), aux(l.size());
+  const auto p = defaultParams(PlaitsEngine::staticInfo());
+  for (int b = 0; b < blocks; ++b) {
+    float* out[3] = {l.data() + b * 12, r.data() + b * 12, aux.data() + b * 12};
+    engine.process(nullptr, out, p, 12);
+  }
+
+  static char ram[16384];
+  stmlib::BufferAllocator allocator(ram, sizeof(ram));
+  auto reference = std::make_unique<plaits::Voice>();
+  reference->Init(&allocator);
+  plaits::Patch patch = {};
+  patch.note = 69.0f;
+  patch.harmonics = 0.5f;
+  patch.timbre = 0.5f;
+  patch.morph = 0.5f;
+  patch.engine = 8;
+  patch.decay = 0.5f;
+  patch.lpg_colour = 0.5f;
+  plaits::Modulations mods = {};
+  mods.trigger_patched = true;
+  mods.level_patched = true;
+  mods.level = 0.8f;
+  plaits::Voice::Frame frames[plaits::kBlockSize];
+  for (int b = 0; b < blocks; ++b) {
+    mods.trigger = b == 0 ? 0.0f : 1.0f;
+    reference->Render(patch, mods, frames, plaits::kBlockSize);
+    for (size_t j = 0; j < plaits::kBlockSize; ++j) {
+      REQUIRE(aux[size_t(b) * 12 + j] == float(frames[j].aux) / 32768.0f);
+      REQUIRE(l[size_t(b) * 12 + j] == float(frames[j].out) / 32768.0f);  // Aux Mix 0: OUT only
+    }
+  }
+}
+
+TEST_CASE("Macro Oscillator AUX does not change the main outputs") {
+  PlaitsEngine a, b;
+  b.setAuxEnabled(true);
+  for (auto* e : {&a, &b}) {
+    e->prepare(PlaitsEngine::kNativeRate, 512);
+    e->noteOn(60.0f, 1.0f);
+  }
+  const auto p = defaultParams(PlaitsEngine::staticInfo());
+  std::vector<float> la(480), ra(480), lb(480), rb(480), xb(480);
+  float* outA[2] = {la.data(), ra.data()};
+  float* outB[3] = {lb.data(), rb.data(), xb.data()};
+  a.process(nullptr, outA, p, 480);
+  b.process(nullptr, outB, p, 480);
+  REQUIRE(la == lb);
+  REQUIRE(ra == rb);
+}

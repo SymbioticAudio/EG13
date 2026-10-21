@@ -22,6 +22,7 @@ class RingsEngine final : public VoiceEngine {
   void noteOn(float note, float velocity) override;
   void noteOff() override {}
   void setNote(float note) override { note_ = note; }
+  void setAuxEnabled(bool on) override { aux_ = on; }
   void process(const float* const* in, float* const* out, const ParamValues& p,
                int n) override;
   const EngineInfo& info() const override;
@@ -48,6 +49,7 @@ class RingsEngine final : public VoiceEngine {
   bool strum_ = false;
   int model_ = -1;
   int polyphony_ = 1;
+  bool aux_ = false;  // write out[2]: Rings' even (AUX jack) output, for the Ring Mod modulator
   PotSmoother pots_;  // CvScaler pot smoothing, once per native block
   Declicker spread_;  // EG13-only Spread, per sample
 };

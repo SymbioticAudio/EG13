@@ -44,7 +44,7 @@ Controls: **Model** (Modal, Sympathetic, String, FM Voice, Sympathetic Q, String
   - Small pitch bends pass through Rings' own note filter, so they are smoothed.
   - Moving **Frequency** glides briefly rather than jumping.
 - The Resonator responds to the Input even before the first note (useful in EG13 FX).
-- Its even output can also feed the Ring Mod / Vocoder's carrier or modulator (*Source AUX*).
+- Its even output can also feed the Ring Mod / Vocoder's carrier or modulator (*Source AUX*). This is the module's raw even (AUX jack) output, scaled by velocity: it does not follow **Spread** and keeps the polarity the module gives that jack.
 
 ### Audio Input
 
