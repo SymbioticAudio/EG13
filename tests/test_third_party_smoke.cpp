@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <memory>
@@ -153,15 +154,29 @@ TEST_CASE("Warps' modulator runs from the unmodified upstream sources") {
   p->modulation_algorithm = 3.0f / 8.0f;  // digital ring modulation
   p->modulation_parameter = 0.5f;
   warps::ShortFrame in[60], out[60];
-  double energy = 0.0;
-  for (int block = 0; block < 200; ++block) {
+  std::vector<double> l;
+  for (int block = 0; block < 400; ++block) {
     for (int i = 0; i < 60; ++i) {
       const double t = double(block * 60 + i) / 96000.0;
       in[i].l = short(10000.0 * std::sin(6.283185307179586 * 440.0 * t));
       in[i].r = short(10000.0 * std::sin(6.283185307179586 * 110.0 * t));
     }
     modulator->Process(in, out, 60);
-    for (const auto& frame : out) energy += double(frame.l) * double(frame.l);
+    for (const auto& frame : out) l.push_back(double(frame.l));
   }
-  REQUIRE(energy > 0.0);
+  // Goertzel magnitude over the second half (after the parameter smoothing settles).
+  auto magnitude = [&](double hz) {
+    const double c = 2.0 * std::cos(6.283185307179586 * hz / 96000.0);
+    double s1 = 0.0, s2 = 0.0;
+    for (size_t i = l.size() / 2; i < l.size(); ++i) {
+      const double s0 = l[i] + c * s1 - s2;
+      s2 = s1;
+      s1 = s0;
+    }
+    return std::sqrt(std::max(0.0, s1 * s1 + s2 * s2 - c * s1 * s2));
+  };
+  // Ring modulation of 440 Hz by 110 Hz: the sum and difference (550, 330 Hz) dominate, and the
+  // carrier itself is suppressed (measured: each about 30 to 40 times the 440 Hz component).
+  REQUIRE(magnitude(330.0) > 10.0 * magnitude(440.0));
+  REQUIRE(magnitude(550.0) > 10.0 * magnitude(440.0));
 }
