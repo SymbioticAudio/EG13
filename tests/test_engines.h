@@ -23,7 +23,7 @@ class ImpulseEngine final : public VoiceEngine {
     }
   }
   const EngineInfo& info() const override {
-    static const EngineInfo kInfo = {"impulse", "Impulse", 0, nullptr};
+    static const EngineInfo kInfo = {"impulse", "Impulse", 0, nullptr, false};
     return kInfo;
   }
 
@@ -57,7 +57,7 @@ class SineEngine final : public VoiceEngine {
     }
   }
   const EngineInfo& info() const override {
-    static const EngineInfo kInfo = {"sine", "Sine", 0, nullptr};
+    static const EngineInfo kInfo = {"sine", "Sine", 0, nullptr, false};
     return kInfo;
   }
 
@@ -90,7 +90,7 @@ class NanOnceEngine final : public VoiceEngine {
     sine_.process(in, out, p, n);
   }
   const EngineInfo& info() const override {
-    static const EngineInfo kInfo = {"nanonce", "NaN once", 0, nullptr};
+    static const EngineInfo kInfo = {"nanonce", "NaN once", 0, nullptr, false};
     return kInfo;
   }
 
@@ -98,6 +98,46 @@ class NanOnceEngine final : public VoiceEngine {
   SineEngine sine_;
   bool pending_ = false;
   bool fired_ = false;
+};
+
+// Copies its input to its output (zeros when there is no input).
+class EchoEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int) override {}
+  void reset() override {}
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  void process(const float* const* in, float* const* out, const ParamValues&, int n) override {
+    for (int i = 0; i < n; ++i) {
+      out[0][i] = in ? in[0][i] : 0.0f;
+      out[1][i] = in ? in[1][i] : 0.0f;
+    }
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"echo", "Echo", 0, nullptr, true};
+    return kInfo;
+  }
+};
+
+// Records the maxBlock given to prepare() and the largest block given to process().
+class MaxBlockProbeEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int maxBlock) override { preparedMax = maxBlock; }
+  void reset() override {}
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  void process(const float* const*, float* const* out, const ParamValues&, int n) override {
+    if (n > largest) largest = n;
+    for (int i = 0; i < n; ++i) out[0][i] = out[1][i] = 0.0f;
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"probe", "Probe", 0, nullptr, false};
+    return kInfo;
+  }
+  int preparedMax = 0;
+  int largest = 0;
 };
 
 }  // namespace eg13::test

@@ -138,7 +138,7 @@ bool paramsGetInfo(const clap_plugin_t* p, uint32_t index, clap_param_info_t* in
   info->id = spec.id;
   info->flags = CLAP_PARAM_IS_AUTOMATABLE | (spec.stepped ? CLAP_PARAM_IS_STEPPED : 0u);
   info->cookie = nullptr;
-  std::snprintf(info->name, sizeof(info->name), "%s", spec.name);
+  std::snprintf(info->name, sizeof(info->name), "%s", self(p)->synth.paramName(index));
   std::snprintf(info->module, sizeof(info->module), "%s", spec.module);
   info->min_value = double(spec.minValue);
   info->max_value = double(spec.maxValue);
@@ -152,18 +152,41 @@ bool paramsGetValue(const clap_plugin_t* p, clap_id id, double* value) {
   return true;
 }
 
-bool paramsValueToText(const clap_plugin_t*, clap_id id, double value, char* display,
+bool paramsValueToText(const clap_plugin_t* p, clap_id id, double value, char* display,
                        uint32_t size) {
   const int index = paramIndex(id);
   if (index < 0) return false;
-  formatParam(size_t(index), value, display, size);
+  self(p)->synth.formatParam(size_t(index), value, display, size);
   return true;
 }
 
 bool paramsTextToValue(const clap_plugin_t*, clap_id, const char*, double*) { return false; }
 
+void sendHostUpdates(Plugin* plugin, const clap_output_events_t* out, uint32_t time) {
+  HostUpdate updates[kMaxHostUpdates];
+  const int count = plugin->synth.takeHostUpdates(updates, int(kMaxHostUpdates));
+  for (int i = 0; i < count; ++i) {
+    clap_event_param_value_t ev{};
+    ev.header.size = sizeof(ev);
+    ev.header.time = time;
+    ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+    ev.header.type = CLAP_EVENT_PARAM_VALUE;
+    // Derived from the selector change, not a user edit: recording it would fight the stash.
+    ev.header.flags = CLAP_EVENT_DONT_RECORD;
+    ev.param_id = updates[i].id;
+    ev.cookie = nullptr;
+    ev.note_id = -1;
+    ev.port_index = -1;
+    ev.channel = -1;
+    ev.key = -1;
+    ev.value = double(updates[i].value);
+    out->try_push(out, &ev.header);
+  }
+  if (count > 0) plugin->host->request_callback(plugin->host);
+}
+
 void paramsFlush(const clap_plugin_t* p, const clap_input_events_t* in,
-                 const clap_output_events_t*) {
+                 const clap_output_events_t* out) {
   self(p)->synth.beginBlock();
   const uint32_t count = in->size(in);
   for (uint32_t i = 0; i < count; ++i) {
@@ -172,6 +195,7 @@ void paramsFlush(const clap_plugin_t* p, const clap_input_events_t* in,
       handleEvent(self(p), hdr);
     }
   }
+  sendHostUpdates(self(p), out, 0);
 }
 
 const clap_plugin_params_t kParams = {paramsCount,       paramsGetInfo, paramsGetValue,
@@ -208,7 +232,11 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
     }
     Plugin* plugin = self(p);
     if (plugin->store.load(plugin->synth, data) == state::LoadResult::Invalid) return false;
-    if (plugin->hostParams) plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_VALUES);
+    // Engines may have changed too: names and value text follow them.
+    if (plugin->hostParams) {
+      plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT |
+                                                   CLAP_PARAM_RESCAN_INFO);
+    }
     return true;
   } catch (...) {
     return false;
@@ -265,6 +293,7 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
     for (uint32_t i = 0; i < numEvents; ++i) {
       handleEvent(plugin, proc->in_events->get(proc->in_events, i));
     }
+    sendHostUpdates(plugin, proc->out_events, frames > 0 ? frames - 1 : 0);
     return CLAP_PROCESS_CONTINUE;
   }
 
@@ -317,6 +346,7 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
   while (eventIndex < numEvents) {
     handleEvent(plugin, proc->in_events->get(proc->in_events, eventIndex++));
   }
+  sendHostUpdates(plugin, proc->out_events, frames > 0 ? frames - 1 : 0);
   return CLAP_PROCESS_CONTINUE;
 }
 
@@ -329,7 +359,14 @@ const void* pluginGetExtension(const clap_plugin_t*, const char* id) {
   return nullptr;
 }
 
-void pluginOnMainThread(const clap_plugin_t*) {}
+void pluginOnMainThread(const clap_plugin_t* p) {
+  Plugin* plugin = self(p);
+  if (plugin->synth.takeEngineChanged() && plugin->hostParams) {
+    // VALUES too: recovers any swapped value whose try_push failed.
+    plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT |
+                                                 CLAP_PARAM_RESCAN_INFO);
+  }
+}
 
 }  // namespace
 

@@ -5,10 +5,14 @@
 #include <cmath>
 #include <cstdio>
 
+#include "engine/audio_input_engine.h"
+#include "engine/engine_registry.h"
 #include "engine/plaits_engine.h"
 #include "params/param_ids.h"
 
 namespace eg13 {
+
+static_assert(kSourceParamCount <= size_t(kMaxSlotParams), "ParamValues must hold every Source P");
 
 namespace {
 
@@ -40,18 +44,30 @@ const PartParamDef kPartDefs[kPartParamCount] = {
     {PartParam::BendRange, "Bend Range", 0, 24, 2, true, ParamFormat::BendRange},
     {PartParam::Mono, "Mono", 0, 1, 0, true, ParamFormat::OnOff},
     {PartParam::Output, "Output", 0, 2, 0, true, ParamFormat::OutputBus},
+    {PartParam::InputSource, "Input Source", 0, 2, 0, true, ParamFormat::InputSource},
 };
 
 const std::array<ParamSpec, kParamCount>& table() {
   static const std::array<ParamSpec, kParamCount> specs = [] {
     std::array<ParamSpec, kParamCount> t{};
     const EngineInfo& info = PlaitsEngine::staticInfo();
+    const EngineInfo& fxInfo = AudioInputEngine::staticInfo();
     for (int part = 0; part < kNumParts; ++part) {
+      t[sourceEngineParamIndex(part)] = {params::id(uint32_t(part), params::Slot::Source, 0), "Engine",
+                                         kSourceModules[part], 0.0f, float(kSourceEngineSelectorMax),
+                                         0.0f, part == 0 ? 4.0f : 0.0f, true,
+                                         ParamFormat::SourceEngine};
       for (int p = 0; p < int(kSourceParamCount); ++p) {
-        const float def = info.params[p].defaultValue;
+        const bool used = p < info.paramCount;
+        const float def = used ? info.params[p].defaultValue : 0.0f;
+        float effectDef = def;
+        if (part == 0) {  // EG13 FX: Part A plays the Audio Input engine
+          effectDef = p < fxInfo.paramCount ? fxInfo.params[p].defaultValue : 0.0f;
+        }
         t[sourceParamIndex(part, p)] = {params::id(uint32_t(part), params::Slot::Source, uint32_t(p + 1)),
-                                        info.params[p].name, kSourceModules[part], 0.0f, 1.0f, def, def,
-                                        false, ParamFormat::Engine};
+                                        used ? info.params[p].name : "(unused)", kSourceModules[part],
+                                        0.0f, 1.0f, def,
+                                        effectDef, false, ParamFormat::Engine};
       }
       for (const PartParamDef& d : kPartDefs) {
         t[partParamIndex(part, d.param)] = {params::id(uint32_t(part), params::Slot::Part, uint32_t(d.param)),
@@ -59,12 +75,13 @@ const std::array<ParamSpec, kParamCount>& table() {
                                             d.defaultValue, d.defaultValue, d.stepped, d.format};
       }
     }
+    t[partParamIndex(0, PartParam::Trigger)].effectDefault = 1.0f;  // EG13 FX: Part A always on
     auto master = [](MasterParam m) {
       return params::id(params::kMasterPart, params::Slot::Part, uint32_t(m));
     };
     t[masterParamIndex(MasterParam::Level)] = {master(MasterParam::Level), "Level", "Master", 0, 1,
-                                               0.8f, 0.8f, false, ParamFormat::Percent};
-    t[masterParamIndex(MasterParam::Dry)] = {master(MasterParam::Dry), "Dry", "Master", 0, 1, 0, 1,
+                                               0.8f, 1.0f, false, ParamFormat::Percent};
+    t[masterParamIndex(MasterParam::Dry)] = {master(MasterParam::Dry), "Dry", "Master", 0, 1, 0, 0,
                                              false, ParamFormat::Percent};
     t[masterParamIndex(MasterParam::Mode)] = {master(MasterParam::Mode), "Mode", "Master", 0, 3, 0, 0,
                                               true, ParamFormat::PartMode};
@@ -78,6 +95,13 @@ const std::array<ParamSpec, kParamCount>& table() {
 const char* pick(const char* const* names, int count, float value) {
   const int i = std::clamp(int(std::lround(value)), 0, count - 1);
   return names[i];
+}
+
+// Index of a Source P (0..kSourceParamCount-1) for a table index, or -1.
+int sourceParamOf(size_t index) {
+  if (index >= size_t(kNumParts) * kParamsPerPart) return -1;
+  const int local = int(index % kParamsPerPart) - 1;
+  return local >= 0 && local < int(kSourceParamCount) ? local : -1;
 }
 
 }  // namespace
@@ -107,7 +131,7 @@ float clampParam(size_t index, double value) {
 
 float glideSeconds(float normalized) { return 2.0f * normalized * normalized; }
 
-void formatParam(size_t index, double value, char* buf, size_t size) {
+void formatParam(size_t index, double value, char* buf, size_t size, int sourceEngine) {
   static const char* const kNotes[12] = {"C", "C#", "D", "D#", "E", "F",
                                          "F#", "G", "G#", "A", "A#", "B"};
   static const char* const kVoiceModes[3] = {"Poly", "Mono", "Legato"};
@@ -115,12 +139,26 @@ void formatParam(size_t index, double value, char* buf, size_t size) {
   static const char* const kOnOff[2] = {"Off", "On"};
   static const char* const kOutputs[3] = {"Main", "Bus 2", "Other part"};
   static const char* const kModes[4] = {"Single", "Layer", "Split", "Multi"};
+  static const char* const kInputSources[3] = {"External", "Other part", "Both"};
 
   const ParamSpec& s = paramSpec(index);
   const float v = clampParam(index, value);
   switch (s.format) {
-    case ParamFormat::Engine:
-      PlaitsEngine::staticInfo().params[index % kParamsPerPart].format(v, buf, size);
+    case ParamFormat::Engine: {
+      const EngineInfo& info = sourceEngineInfo(sourceEngine);
+      const int p = sourceParamOf(index);
+      if (p >= 0 && p < info.paramCount) {
+        info.params[p].format(v, buf, size);
+      } else {
+        std::snprintf(buf, size, "-");
+      }
+      break;
+    }
+    case ParamFormat::SourceEngine:
+      std::snprintf(buf, size, "%s", sourceEngineInfo(sourceEngineFromSelector(v)).displayName);
+      break;
+    case ParamFormat::InputSource:
+      std::snprintf(buf, size, "%s", pick(kInputSources, 3, v));
       break;
     case ParamFormat::Percent:
       std::snprintf(buf, size, "%d%%", int(std::lround(v * 100.0f)));
@@ -182,6 +220,13 @@ void formatParam(size_t index, double value, char* buf, size_t size) {
       std::snprintf(buf, size, "%s", pick(kModes, 4, v));
       break;
   }
+}
+
+const char* paramName(size_t index, int sourceEngine) {
+  const int p = sourceParamOf(index);
+  if (p < 0) return paramSpec(index).name;
+  const EngineInfo& info = sourceEngineInfo(sourceEngine);
+  return p < info.paramCount ? info.params[p].name : "(unused)";
 }
 
 }  // namespace eg13

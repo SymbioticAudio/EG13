@@ -5,6 +5,7 @@
 #include <set>
 #include <string>
 
+#include "engine/audio_input_engine.h"
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 
@@ -20,8 +21,10 @@ std::string text(size_t index, double value) {
 
 }  // namespace
 
-TEST_CASE("The table has 48 parameters with unique IDs") {
-  REQUIRE(kParamCount == 48);
+TEST_CASE("The table has 68 parameters with unique IDs") {
+  REQUIRE(kSourceParamCount == 16);
+  REQUIRE(kParamsPerPart == 32);
+  REQUIRE(kParamCount == 68);
   std::set<uint32_t> ids;
   for (size_t i = 0; i < kParamCount; ++i) ids.insert(paramSpec(i).id);
   REQUIRE(ids.size() == kParamCount);
@@ -53,13 +56,18 @@ TEST_CASE("Index helpers agree with parameter IDs") {
   REQUIRE(std::string(paramSpec(sourceParamIndex(1, 0)).module) == "Part B/Source");
 }
 
-TEST_CASE("Dry defaults differ between the instrument and the FX") {
-  const size_t dry = masterParamIndex(MasterParam::Dry);
-  REQUIRE(paramDefault(dry, PluginKind::Instrument) == 0.0f);
-  REQUIRE(paramDefault(dry, PluginKind::Effect) == 1.0f);
-  const size_t voices = partParamIndex(0, PartParam::VoiceCount);
-  REQUIRE(paramDefault(voices, PluginKind::Instrument) == 8.0f);
-  REQUIRE(paramDefault(voices, PluginKind::Effect) == 8.0f);
+TEST_CASE("EG13 FX defaults form its init patch") {
+  REQUIRE(paramDefault(masterParamIndex(MasterParam::Dry), PluginKind::Effect) == 0.0f);
+  REQUIRE(paramDefault(masterParamIndex(MasterParam::Level), PluginKind::Effect) == 1.0f);
+  REQUIRE(paramDefault(masterParamIndex(MasterParam::Level), PluginKind::Instrument) == 0.8f);
+  REQUIRE(paramDefault(sourceEngineParamIndex(0), PluginKind::Effect) == 4.0f);
+  REQUIRE(paramDefault(sourceEngineParamIndex(1), PluginKind::Effect) == 0.0f);
+  REQUIRE(paramDefault(sourceEngineParamIndex(0), PluginKind::Instrument) == 0.0f);
+  REQUIRE(paramDefault(partParamIndex(0, PartParam::Trigger), PluginKind::Effect) == 1.0f);
+  REQUIRE(paramDefault(partParamIndex(1, PartParam::Trigger), PluginKind::Effect) == 0.0f);
+  REQUIRE(paramDefault(sourceParamIndex(0, 0), PluginKind::Effect) ==
+          AudioInputEngine::staticInfo().params[0].defaultValue);
+  REQUIRE(paramDefault(partParamIndex(0, PartParam::VoiceCount), PluginKind::Effect) == 8.0f);
 }
 
 TEST_CASE("clampParam clamps, rounds stepped values and maps NaN to the minimum") {
@@ -104,4 +112,62 @@ TEST_CASE("glideSeconds maps 0..1 to 0..2 s quadratically") {
   REQUIRE(glideSeconds(0.0f) == 0.0f);
   REQUIRE(glideSeconds(0.5f) == 0.5f);
   REQUIRE(glideSeconds(1.0f) == 2.0f);
+}
+
+TEST_CASE("Engine selectors and Input source have permanent IDs") {
+  REQUIRE(paramSpec(sourceEngineParamIndex(0)).id == params::id(0, params::Slot::Source, 0));
+  REQUIRE(paramSpec(sourceEngineParamIndex(1)).id == params::id(1, params::Slot::Source, 0));
+  REQUIRE(paramSpec(sourceEngineParamIndex(0)).maxValue == 31.0f);
+  REQUIRE(paramSpec(sourceEngineParamIndex(0)).stepped);
+  REQUIRE(std::string(paramSpec(sourceEngineParamIndex(0)).name) == "Engine");
+  REQUIRE(paramSpec(partParamIndex(1, PartParam::InputSource)).id ==
+          params::id(1, params::Slot::Part, 15));
+  REQUIRE(paramSpec(sourceParamIndex(0, 0)).id == params::id(0, params::Slot::Source, 1));
+  REQUIRE(paramSpec(partParamIndex(0, PartParam::Level)).id == params::id(0, params::Slot::Part, 1));
+}
+
+TEST_CASE("Source P9..P16 have their own IDs after P1..P8") {
+  for (int part = 0; part < kNumParts; ++part) {
+    for (int p = 8; p < 16; ++p) {
+      const uint32_t id = params::id(uint32_t(part), params::Slot::Source, uint32_t(p + 1));
+      REQUIRE(paramSpec(sourceParamIndex(part, p)).id == id);
+      REQUIRE(paramIndex(id) == int(sourceParamIndex(part, p)));
+      REQUIRE(paramSpec(sourceParamIndex(part, p)).minValue == 0.0f);
+      REQUIRE(paramSpec(sourceParamIndex(part, p)).maxValue == 1.0f);
+    }
+  }
+  // Layout per part: selector, P1..P16, then the part settings.
+  REQUIRE(partParamIndex(0, PartParam::Level) == 17);
+  REQUIRE(sourceEngineParamIndex(1) == 32);
+  REQUIRE(masterParamIndex(MasterParam::Level) == 64);
+}
+
+TEST_CASE("Engine selector and Input source format readable values") {
+  REQUIRE(text(sourceEngineParamIndex(0), 0) == "Macro Oscillator");
+  REQUIRE(text(sourceEngineParamIndex(0), 2) == "Modal Synth");
+  REQUIRE(text(sourceEngineParamIndex(0), 4) == "Audio Input");
+  REQUIRE(text(sourceEngineParamIndex(0), 20) == "Macro Oscillator");
+  REQUIRE(text(partParamIndex(0, PartParam::InputSource), 0) == "External");
+  REQUIRE(text(partParamIndex(0, PartParam::InputSource), 1) == "Other part");
+  REQUIRE(text(partParamIndex(0, PartParam::InputSource), 2) == "Both");
+}
+
+TEST_CASE("Source parameters format and name through the selected engine") {
+  char buf[64];
+  formatParam(sourceParamIndex(0, 0), 0.5 / 47.0, buf, sizeof(buf), 1);
+  REQUIRE(std::string(buf) == "CSAW");
+  REQUIRE(std::string(paramName(sourceParamIndex(0, 0), 1)) == "Shape");
+  REQUIRE(std::string(paramName(sourceParamIndex(0, 0), 0)) == "Model");
+  REQUIRE(std::string(paramName(sourceParamIndex(0, 7), 1)) == "(unused)");
+  formatParam(sourceParamIndex(0, 7), 0.5, buf, sizeof(buf), 1);
+  REQUIRE(std::string(buf) == "-");
+  REQUIRE(std::string(paramName(masterParamIndex(MasterParam::Dry), 3)) == "Dry");
+  // Slot 16 on the Macro Oscillator (8 params) is unused.
+  REQUIRE(std::string(paramName(sourceParamIndex(0, 15), 0)) == "(unused)");
+  formatParam(sourceParamIndex(0, 15), 0.5, buf, sizeof(buf), 0);
+  REQUIRE(std::string(buf) == "-");
+  REQUIRE(std::string(paramName(sourceParamIndex(1, 15), 0)) == "(unused)");
+  REQUIRE(std::string(paramSpec(sourceParamIndex(1, 15)).name) == "(unused)");
+  REQUIRE(paramDefault(sourceParamIndex(1, 15), PluginKind::Instrument) == 0.0f);
+  REQUIRE(paramDefault(sourceParamIndex(0, 15), PluginKind::Effect) == 0.0f);
 }

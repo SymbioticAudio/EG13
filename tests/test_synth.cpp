@@ -5,9 +5,11 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "alloc_counter.h"
+#include "engine/engine_registry.h"
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 #include "synth/synth.h"
@@ -61,7 +63,7 @@ TEST_CASE("Synth starts at the defaults for its kind") {
     REQUIRE(instrument.param(paramSpec(i).id) == double(paramDefault(i, PluginKind::Instrument)));
     REQUIRE(fx.param(paramSpec(i).id) == double(paramDefault(i, PluginKind::Effect)));
   }
-  REQUIRE(fx.param(masterId(MasterParam::Dry)) == 1.0);
+  REQUIRE(fx.param(masterId(MasterParam::Dry)) == 0.0);
 }
 
 TEST_CASE("setParam clamps, rounds and rejects NaN and unknown IDs") {
@@ -183,20 +185,11 @@ TEST_CASE("Bus 2 carries parts routed to it, and falls back to main when not con
   REQUIRE(test::rms(fallback.l, 480, 4800) > 0.1);
 }
 
-TEST_CASE("A part set to Other part is heard on main until M2") {
-  Synth synth(PluginKind::Instrument, sine);
-  synth.setParam(partId(0, PartParam::Output), 2);
-  synth.prepare(kRate, kBlock);
-  synth.noteOn(0, 60, 1.0f);
-  Stereo main(4800), bus2(4800);
-  run(synth, main, 0, 4800, nullptr, &bus2);
-  REQUIRE(test::rms(main.l, 480, 4800) > 0.1);
-  REQUIRE(test::rms(bus2.l, 0, 4800) == 0.0);
-}
-
 TEST_CASE("FX passes its input through, delayed by the reported latency") {
   for (double rate : {44100.0, 48000.0}) {
     Synth synth(PluginKind::Effect);
+    synth.setParam(masterId(MasterParam::Dry), 1.0);
+    synth.setParam(partId(0, PartParam::Trigger), 0);
     synth.prepare(rate, kBlock);
     const int latency = synth.latencySamples();
     const Stereo in = sineInput(8820, rate);
@@ -212,6 +205,8 @@ TEST_CASE("FX passes its input through, delayed by the reported latency") {
 
 TEST_CASE("FX passthrough survives in-place buffers") {
   Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Dry), 1.0);
+  synth.setParam(partId(0, PartParam::Trigger), 0);
   synth.prepare(kRate, kBlock);
   const size_t latency = size_t(synth.latencySamples());
   const Stereo original = sineInput(4800, kRate);
@@ -407,6 +402,8 @@ TEST_CASE("Two loads in a row while active never block") {
 
 TEST_CASE("Master level does not scale Dry") {
   Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Dry), 1.0);
+  synth.setParam(partId(0, PartParam::Trigger), 0);
   synth.setParam(params::kMasterLevel, 0.0);
   synth.prepare(kRate, kBlock);
   const size_t latency = size_t(synth.latencySamples());
@@ -420,6 +417,8 @@ TEST_CASE("Master level does not scale Dry") {
 
 TEST_CASE("Dry drops stale input after a gap") {
   Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Dry), 1.0);
+  synth.setParam(partId(0, PartParam::Trigger), 0);
   synth.prepare(44100.0, kBlock);
   const Stereo in = sineInput(4410, 44100.0);
   const Stereo silent(13230);
@@ -432,6 +431,7 @@ TEST_CASE("Dry drops stale input after a gap") {
 
 TEST_CASE("Single mode mutes Part B audio") {
   Synth synth(PluginKind::Effect, sine);
+  synth.setParam(partId(0, PartParam::Trigger), 0);
   synth.setParam(masterId(MasterParam::Dry), 0.0);
   synth.setParam(partId(1, PartParam::Trigger), 1);
   synth.prepare(kRate, kBlock);
@@ -445,6 +445,8 @@ TEST_CASE("Single mode mutes Part B audio") {
 
 TEST_CASE("Mono in-place input is delayed once") {
   Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Dry), 1.0);
+  synth.setParam(partId(0, PartParam::Trigger), 0);
   synth.prepare(kRate, kBlock);
   const size_t latency = size_t(synth.latencySamples());
   const Stereo original = sineInput(4800, kRate);
@@ -456,4 +458,391 @@ TEST_CASE("Mono in-place input is delayed once") {
   for (size_t i = latency; i < 4800; ++i) {
     REQUIRE(std::fabs(buffer[i] - original.l[i - latency]) < 1e-4f);
   }
+}
+
+namespace {
+
+uint32_t sourceId(int part, int p) { return paramSpec(sourceParamIndex(part, p)).id; }
+uint32_t engineId(int part) { return paramSpec(sourceEngineParamIndex(part)).id; }
+
+void runBlocks(Synth& synth, int blocks, int n = kBlock) {
+  std::vector<float> l(static_cast<size_t>(n)), r(static_cast<size_t>(n));
+  float* out[2] = {l.data(), r.data()};
+  for (int b = 0; b < blocks; ++b) synth.process(nullptr, out, nullptr, n);
+}
+
+}  // namespace
+
+TEST_CASE("Switching engines swaps P values and reports them") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.setParam(sourceId(0, 1), 0.9);  // Macro Harmonics
+  synth.setParam(engineId(0), 1);       // Digital Oscillator
+  runBlocks(synth, 1);
+  REQUIRE(synth.engine(0) == 1);
+  REQUIRE(synth.param(sourceId(0, 0)) == double(sourceEngineInfo(1).params[0].defaultValue));
+  HostUpdate updates[2 * kSourceParamCount];
+  REQUIRE(synth.takeHostUpdates(updates, int(2 * kSourceParamCount)) == int(kSourceParamCount));
+  REQUIRE(updates[0].id == sourceId(0, 0));
+  REQUIRE(updates[15].id == sourceId(0, 15));
+  REQUIRE(synth.takeEngineChanged());
+  REQUIRE_FALSE(synth.takeEngineChanged());
+
+  synth.setParam(sourceId(0, 1), 0.3);  // Digital Timbre
+  synth.setParam(engineId(0), 0);
+  runBlocks(synth, 1);
+  REQUIRE(synth.param(sourceId(0, 1)) == double(0.9f));
+  synth.setParam(engineId(0), 1);
+  runBlocks(synth, 1);
+  REQUIRE(synth.param(sourceId(0, 1)) == double(0.3f));
+  synth.setActive(false);
+}
+
+TEST_CASE("Engine-aware names and text follow the selected engine") {
+  Synth synth(PluginKind::Instrument);
+  synth.setParam(engineId(1), 3);  // inactive: applies at once
+  REQUIRE(std::string(synth.paramName(sourceParamIndex(1, 0))) == "Model");
+  REQUIRE(std::string(synth.paramName(sourceParamIndex(1, 5))) == "Exciter");
+  char buf[64];
+  synth.formatParam(sourceParamIndex(1, 0), 0.5 / 6.0, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Modal");
+}
+
+TEST_CASE("An unknown engine selector value plays the Macro Oscillator") {
+  Synth synth(PluginKind::Instrument);
+  synth.setParam(engineId(0), 17);
+  synth.prepare(kRate, kBlock);
+  runBlocks(synth, 1);
+  REQUIRE(synth.engine(0) == 0);
+}
+
+TEST_CASE("EG13 FX init patch passes audio at unity through Part A") {
+  Synth synth(PluginKind::Effect);
+  synth.prepare(44100.0, kBlock);
+  REQUIRE(synth.engine(0) == int(SourceEngine::AudioInput));
+  const size_t latency = size_t(synth.latencySamples());
+  const Stereo in = sineInput(13230, 44100.0);
+  Stereo out(13230);
+  run(synth, out, 0, 13230, &in);
+  for (size_t i = latency + 2205; i < 13230; ++i) {
+    REQUIRE(std::fabs(out.l[i] - in.l[i - latency]) < 1e-4f);
+  }
+}
+
+TEST_CASE("FX: processed input is aligned with Dry") {
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Dry), 1.0);
+  synth.prepare(44100.0, kBlock);
+  const size_t latency = size_t(synth.latencySamples());
+  Stereo in(13230);
+  in.l[8000] = in.r[8000] = 0.5f;
+  Stereo out(13230);
+  run(synth, out, 0, 13230, &in);
+  REQUIRE(std::fabs(out.l[8000 + latency] - 1.0f) < 1e-3f);  // wet + dry on the same sample
+  REQUIRE(std::fabs(out.l[8000 + latency - 1]) < 1e-3f);
+  REQUIRE(std::fabs(out.l[8000 + latency + 1]) < 1e-3f);
+}
+
+TEST_CASE("Part B can take Part A as its input") {
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.setParam(partId(0, PartParam::Output), 2);  // Part A: other part only
+  synth.setParam(engineId(1), 4);                    // Part B: Audio Input
+  synth.setParam(partId(1, PartParam::Trigger), 1);
+  synth.setParam(partId(1, PartParam::InputSource), 1);
+  synth.prepare(44100.0, kBlock);
+  const size_t latency = size_t(synth.latencySamples());
+  const Stereo in = sineInput(13230, 44100.0);
+  Stereo out(13230);
+  run(synth, out, 0, 13230, &in);
+  for (size_t i = 2 * latency + 4410; i < 13230; ++i) {
+    REQUIRE(std::fabs(out.l[i] - in.l[i - 2 * latency]) < 1e-3f);
+  }
+}
+
+TEST_CASE("A part with Output = Other part only is not heard") {
+  Synth synth(PluginKind::Instrument, sine);
+  synth.setParam(partId(0, PartParam::Output), 2);
+  synth.prepare(kRate, kBlock);
+  synth.noteOn(0, 60, 1.0f);
+  Stereo out(4800);
+  run(synth, out, 0, 4800);
+  for (float s : out.l) REQUIRE(s == 0.0f);
+}
+
+TEST_CASE("A feedback loop between parts stays bounded") {
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.setParam(sourceId(0, 0), 1.0);  // Part A gain +12 dB
+  synth.setParam(partId(0, PartParam::InputSource), 2);  // external + other part
+  synth.setParam(engineId(1), 4);
+  synth.setParam(sourceId(1, 0), 1.0);
+  synth.setParam(partId(1, PartParam::Trigger), 1);
+  synth.setParam(partId(1, PartParam::InputSource), 1);
+  synth.prepare(44100.0, kBlock);
+  const Stereo in = sineInput(88200, 44100.0);
+  Stereo out(88200);
+  run(synth, out, 0, 88200, &in);
+  for (float s : out.l) {
+    REQUIRE(std::isfinite(s));
+    REQUIRE(std::fabs(s) < 32.0f);  // each feed is limited to 2; gains of 4 keep it far below
+  }
+}
+
+TEST_CASE("loadParams adopts the snapshot's engine and stash") {
+  Synth synth(PluginKind::Instrument);
+  ParamSnapshot values = synth.defaultSnapshot();
+  values[sourceEngineParamIndex(0)] = 2.0f;  // Modal Synth
+  values[sourceParamIndex(0, 3)] = 0.4f;     // its Strike
+  EngineStash stash = Synth::defaultStash();
+  stash[stashIndex(0, 0, 1)] = 0.77f;        // Macro Harmonics, kept for later
+  synth.loadParams(values, &stash);
+  REQUIRE(synth.engine(0) == 2);
+  REQUIRE(synth.param(sourceId(0, 3)) == double(0.4f));
+  const EngineStash saved = synth.engineStash();
+  REQUIRE(saved[stashIndex(0, 0, 1)] == 0.77f);
+  REQUIRE(saved[stashIndex(0, 2, 3)] == 0.4f);  // current engine: live value
+  synth.prepare(kRate, kBlock);
+  synth.setParam(engineId(0), 0);
+  runBlocks(synth, 1);
+  REQUIRE(synth.param(sourceId(0, 1)) == double(0.77f));
+}
+
+TEST_CASE("Engine switching and input routing do not allocate") {
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.setParam(masterId(MasterParam::Dry), 0.5);
+  synth.prepare(44100.0, kBlock);
+  synth.setActive(true);
+  Stereo in = sineInput(kBlock, 44100.0), out(kBlock), bus2(kBlock);
+  run(synth, out, 0, kBlock, &in, &bus2);
+  HostUpdate updates[16];
+  test::ScopedAllocationCounter counter;
+  for (int block = 0; block < 200; ++block) {
+    if (block == 10) synth.setParam(engineId(1), 4);
+    if (block == 20) synth.setParam(partId(1, PartParam::Trigger), 1);
+    if (block == 30) synth.setParam(partId(1, PartParam::InputSource), 1);
+    if (block == 40) synth.setParam(partId(0, PartParam::InputSource), 2);
+    if (block == 50) synth.setParam(partId(0, PartParam::Output), 2);
+    if (block == 60) synth.setParam(partId(1, PartParam::Output), 1);
+    if (block == 70) synth.setParam(engineId(0), 1);
+    if (block == 80) synth.noteOn(0, 60, 0.8f);
+    if (block == 90) synth.setParam(engineId(0), 2);
+    if (block == 100) synth.setParam(engineId(0), 3);
+    if (block == 110) synth.setParam(engineId(0), 0);
+    if (block == 120) synth.setParam(engineId(0), 4);
+    if (block == 130) synth.setParam(engineId(1), 2);
+    if (block == 140) synth.setParam(partId(1, PartParam::InputSource), 2);
+    if (block == 150) synth.reset();
+    if (block == 160) synth.setParam(engineId(1), 4);
+    run(synth, out, 0, kBlock, &in, &bus2);
+    synth.takeHostUpdates(updates, 16);
+    synth.takeEngineChanged();
+  }
+  const size_t allocations = counter.count();
+  REQUIRE(allocations == 0);
+  synth.setActive(false);
+}
+
+TEST_CASE("P values sent after an engine change in the same block stay") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.beginBlock();
+  synth.setParam(engineId(0), 3);       // Resonator
+  synth.setParam(sourceId(0, 2), 0.66); // then its P3, same block
+  runBlocks(synth, 1);
+  REQUIRE(synth.engine(0) == 3);
+  REQUIRE(synth.param(sourceId(0, 2)) == double(0.66f));
+  synth.setParam(engineId(0), 1);
+  synth.setParam(engineId(0), 3);  // two switches before the host takes updates
+  HostUpdate updates[2 * kSourceParamCount];
+  // One entry per P, latest value.
+  REQUIRE(synth.takeHostUpdates(updates, int(2 * kSourceParamCount)) == int(kSourceParamCount));
+  REQUIRE(updates[2].value == 0.66f);
+  synth.setActive(false);
+}
+
+namespace {
+
+const int kVaryingSizes[] = {5, 507, 64, 256};
+
+// Feeds `in` through the synth in the cycling block sizes above (all <= 512).
+void runVarying(Synth& synth, Stereo& out, const Stereo& in, size_t total) {
+  size_t done = 0;
+  for (int k = 0; done < total; ++k) {
+    const int count = int(std::min<size_t>(size_t(kVaryingSizes[k % 4]), total - done));
+    const float* i[2] = {in.l.data() + done, in.r.data() + done};
+    float* o[2] = {out.l.data() + done, out.r.data() + done};
+    synth.process(i, o, nullptr, count);
+    done += size_t(count);
+  }
+}
+
+// B: Audio Input on the external input, other part only. A: Audio Input on
+// Other part. Each Audio Input part delays by the latency L, so main out is
+// the input delayed by 2L + the B -> A feed's fixed delay.
+void checkFeedDelay(int maxBlock, size_t feedDelay) {
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.setParam(partId(0, PartParam::InputSource), 1);
+  synth.setParam(engineId(1), 4);
+  synth.setParam(partId(1, PartParam::Trigger), 1);
+  synth.setParam(partId(1, PartParam::Output), 2);
+  synth.prepare(44100.0, maxBlock);
+  const size_t delay = 2 * size_t(synth.latencySamples()) + feedDelay;
+  const size_t total = 22050;
+  const Stereo in = sineInput(total, 44100.0);
+  Stereo out(total);
+  if (maxBlock >= 512) {
+    runVarying(synth, out, in, total);
+  } else {
+    run(synth, out, 0, total, &in, nullptr, maxBlock);
+  }
+  INFO("maxBlock " << maxBlock << " latency " << synth.latencySamples() << " total delay " << delay);
+  for (size_t i = delay + 4410; i < total; ++i) {
+    REQUIRE(std::fabs(out.l[i] - in.l[i - delay]) < 1e-3f);
+    REQUIRE(std::fabs(out.r[i] - in.r[i - delay]) < 1e-3f);
+  }
+}
+
+}  // namespace
+
+TEST_CASE("Part A hears Part B kFeedBlock samples later, whatever the host block sizes") {
+  REQUIRE(Synth::kFeedBlock == 64);
+  checkFeedDelay(512, 64);   // varying blocks 5, 507, 64, 256
+  checkFeedDelay(4096, 64);  // a large host maxBlock does not lengthen the delay
+}
+
+TEST_CASE("The B -> A feed delay is the host block when it is shorter than kFeedBlock") {
+  checkFeedDelay(32, 32);
+}
+
+TEST_CASE("The B -> A feed does not allocate with varying block sizes") {
+  constexpr int kMaxBlock = 512;
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.setParam(partId(0, PartParam::InputSource), 2);
+  synth.setParam(engineId(1), 4);
+  synth.setParam(partId(1, PartParam::Trigger), 1);
+  synth.setParam(partId(1, PartParam::InputSource), 1);
+  synth.prepare(44100.0, kMaxBlock);
+  synth.setActive(true);
+  const Stereo in = sineInput(44100, 44100.0);
+  Stereo out(44100);
+  runVarying(synth, out, in, 4410);
+  test::ScopedAllocationCounter counter;
+  runVarying(synth, out, in, 22050);
+  synth.reset();
+  runVarying(synth, out, in, 22050);
+  const size_t allocations = counter.count();
+  REQUIRE(allocations == 0);
+  synth.setActive(false);
+}
+
+TEST_CASE("reset clears the B -> A feed") {
+  constexpr int kMaxBlock = 512;
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.setParam(partId(0, PartParam::InputSource), 1);
+  synth.setParam(engineId(1), 4);
+  synth.setParam(partId(1, PartParam::Trigger), 1);
+  synth.setParam(partId(1, PartParam::Output), 2);
+  synth.prepare(44100.0, kMaxBlock);
+  const Stereo in = sineInput(8820, 44100.0);
+  Stereo out(8820);
+  run(synth, out, 0, 8820, &in);
+  synth.reset();
+  const Stereo silent(4410);
+  Stereo after(4410);
+  run(synth, after, 0, 4410, &silent);
+  for (float s : after.l) REQUIRE(s == 0.0f);
+}
+
+TEST_CASE("takeHostUpdates keeps what does not fit") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.setParam(engineId(0), 1);
+  HostUpdate updates[kSourceParamCount];
+  constexpr int kAll = int(kSourceParamCount);
+  REQUIRE(synth.takeHostUpdates(updates, 3) == 3);
+  REQUIRE(updates[0].id == sourceId(0, 0));
+  REQUIRE(synth.takeHostUpdates(updates, kAll) == kAll - 3);
+  REQUIRE(updates[0].id == sourceId(0, 3));
+  REQUIRE(updates[kAll - 4].id == sourceId(0, kAll - 1));
+  REQUIRE(synth.takeHostUpdates(updates, kAll) == 0);
+  synth.setActive(false);
+}
+
+TEST_CASE("loadParams drops host updates from before the load") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.setParam(engineId(0), 2);
+  synth.loadParams(synth.defaultSnapshot());
+  runBlocks(synth, 1);
+  HostUpdate updates[16];
+  REQUIRE(synth.takeHostUpdates(updates, 16) == 0);
+  synth.setActive(false);
+  synth.setParam(engineId(0), 3);  // inactive load drops them too
+  synth.loadParams(synth.defaultSnapshot());
+  REQUIRE(synth.takeHostUpdates(updates, 16) == 0);
+}
+
+TEST_CASE("An engine switch never shows the new selector with the old engine's values") {
+  Synth synth(PluginKind::Instrument);
+  synth.setParam(sourceId(0, 1), 0.9);  // Macro Harmonics
+  synth.setParam(engineId(0), 1);
+  const ParamSnapshot s = synth.snapshot();
+  REQUIRE(s[sourceEngineParamIndex(0)] == 1.0f);
+  REQUIRE(s[sourceParamIndex(0, 1)] == sourceEngineInfo(1).params[1].defaultValue);
+  REQUIRE(synth.engineStash()[stashIndex(0, 0, 1)] == 0.9f);
+}
+
+TEST_CASE("The engine stash round-trips all 16 Source slots") {
+  Synth synth(PluginKind::Instrument);
+  for (int p = 0; p < int(kSourceParamCount); ++p) synth.setParam(sourceId(1, p), 0.01 * (p + 1));
+  synth.setParam(engineId(1), 2);  // Modal Synth
+  const EngineInfo& modal = sourceEngineInfo(2);
+  for (int p = 0; p < int(kSourceParamCount); ++p) {
+    INFO(p);
+    const float expected = p < modal.paramCount ? modal.params[p].defaultValue : 0.0f;
+    REQUIRE(synth.param(sourceId(1, p)) == double(expected));
+    REQUIRE(synth.engineStash()[stashIndex(1, 0, p)] == float(0.01 * (p + 1)));
+  }
+  synth.setParam(sourceId(1, 15), 0.5);  // Modal Synth's slot 16
+  synth.setParam(engineId(1), 0);
+  for (int p = 0; p < int(kSourceParamCount); ++p) {
+    INFO(p);
+    REQUIRE(synth.param(sourceId(1, p)) == double(float(0.01 * (p + 1))));
+  }
+  synth.setParam(engineId(1), 2);
+  REQUIRE(synth.param(sourceId(1, 15)) == 0.5);
+}
+
+TEST_CASE("Two parts switching fill the host-update queue without dropping any") {
+  Synth synth(PluginKind::Instrument);
+  synth.setParam(engineId(0), 1);
+  synth.setParam(engineId(1), 3);
+  synth.setParam(engineId(0), 2);  // coalesces with part A's earlier entries
+  HostUpdate updates[2 * kSourceParamCount + 1];
+  REQUIRE(synth.takeHostUpdates(updates, int(2 * kSourceParamCount + 1)) == int(2 * kSourceParamCount));
+  REQUIRE(updates[0].value == sourceEngineInfo(2).params[0].defaultValue);
+}
+
+TEST_CASE("process before prepare outputs silence") {
+  Synth synth(PluginKind::Instrument);
+  std::vector<float> l(64, 1.0f), r(64, 1.0f), bl(64, 1.0f), br(64, 1.0f);
+  float* out[2] = {l.data(), r.data()};
+  float* bus2[2] = {bl.data(), br.data()};
+  synth.process(nullptr, out, bus2, 64);
+  const auto silent = [](const std::vector<float>& x) {
+    return std::all_of(x.begin(), x.end(), [](float s) { return s == 0.0f; });
+  };
+  REQUIRE(silent(l));
+  REQUIRE(silent(r));
+  REQUIRE(silent(bl));
+  REQUIRE(silent(br));
 }

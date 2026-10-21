@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "engine/voice_engine.h"
 
@@ -16,5 +17,8 @@ struct SourceSpec {
 using SourceFactory = SourceSpec (*)();
 
 SourceSpec makePlaitsSource();
+
+SourceSpec makeSource(int engine);  // index = SourceEngine; unknown -> Macro
+std::vector<SourceSpec> makeAllSources();
 
 }  // namespace eg13

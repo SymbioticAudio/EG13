@@ -4,7 +4,7 @@
 
 namespace eg13 {
 
-constexpr int kMaxSlotParams = 8;
+constexpr int kMaxSlotParams = 16;  // engines with fewer ignore the extra slots
 
 // Post-modulation slot parameter values, normalized 0..1.
 struct ParamValues {
@@ -24,6 +24,7 @@ struct EngineInfo {
   const char* displayName;  // shown in the UI
   int paramCount;
   const EngineParamInfo* params;
+  bool usesInput;  // the engine reads the `in` argument of process()
 };
 
 // Per-voice sound generator or processor (Source, Filter, Shaper slots).
@@ -36,7 +37,7 @@ class VoiceEngine {
   virtual void noteOn(float note, float velocity) = 0;  // note: float MIDI note
   virtual void noteOff() = 0;
   virtual void setNote(float note) = 0;  // pitch change without a new note (glide, bend)
-  // out[0], out[1]: n samples each. in may be nullptr.
+  // out[0], out[1]: n samples each, n <= the maxBlock given to prepare(). in may be nullptr.
   virtual void process(const float* const* in, float* const* out,
                        const ParamValues& p, int n) = 0;
   virtual const EngineInfo& info() const = 0;

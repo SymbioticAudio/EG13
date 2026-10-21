@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include "engine/engine_registry.h"
 #include "part/part.h"
 #include "synth/param_table.h"
 #include "synth/plugin_kind.h"
@@ -16,13 +17,32 @@ namespace eg13 {
 
 using ParamSnapshot = std::array<float, kParamCount>;
 
+// Every engine's remembered P1..P16, per part.
+constexpr size_t kStashSize = size_t(kNumParts) * size_t(kNumSourceEngines) * kSourceParamCount;
+constexpr size_t stashIndex(int part, int engine, int p) {
+  return (size_t(part) * size_t(kNumSourceEngines) + size_t(engine)) * kSourceParamCount + size_t(p);
+}
+using EngineStash = std::array<float, kStashSize>;
+
+struct HostUpdate {
+  uint32_t id;
+  float value;
+};
+// Host-update queue capacity: one entry per Source P per part (coalesced per id).
+constexpr size_t kMaxHostUpdates = size_t(kNumParts) * kSourceParamCount;
+
 // Two parts, MIDI routing by mode, main and Bus 2 outputs, Dry input and
 // atomic parameter snapshots.
 class Synth {
  public:
-  explicit Synth(PluginKind kind, SourceFactory factory = makePlaitsSource);
+  explicit Synth(PluginKind kind);                // every source engine
+  Synth(PluginKind kind, SourceFactory factory);  // one engine per voice (tests)
   Synth(const Synth&) = delete;
   Synth& operator=(const Synth&) = delete;
+
+  // B -> A feed delay in samples (or maxBlock, if shorter), independent of the
+  // host's block sizes. process() runs the parts in chunks of at most this.
+  static constexpr int kFeedBlock = 64;
 
   PluginKind kind() const { return kind_; }
 
@@ -47,11 +67,28 @@ class Synth {
   double param(uint32_t id) const;
   ParamSnapshot defaultSnapshot() const;
   ParamSnapshot snapshot() const;
-  // Main thread. Applied whole at the next beginBlock/process when active.
-  void loadParams(const ParamSnapshot& values);
+  // Main thread. Applied whole at the next beginBlock/process when active. A
+  // stash replaces every engine's remembered settings; without one they reset.
+  void loadParams(const ParamSnapshot& values, const EngineStash* stash = nullptr);
   void resetParamsToDefaults() { loadParams(defaultSnapshot()); }
+  EngineStash engineStash() const;  // main thread; current engines' entries = live P values
+  static EngineStash defaultStash();  // each engine's own defaults
+  int engine(int part) const;       // main thread
+  // Main thread. Engine-aware: Source P1..P16 follow the part's selected engine.
+  const char* paramName(size_t index) const;
+  void formatParam(size_t index, double value, char* buf, size_t size) const;
+
+  // Audio thread: P values that engine switches changed, for the host. Copies
+  // up to max; the rest stay queued for the next call. With max >=
+  // kMaxHostUpdates one call always takes everything. A selector change
+  // through setParam switches at once: the part's P1..P16 go to the old
+  // engine's stash entry and the new engine's entry is loaded.
+  int takeHostUpdates(HostUpdate* out, int max);
+  // Main thread: true once after any engine switch (names and text changed).
+  bool takeEngineChanged() { return engineChanged_.exchange(false, std::memory_order_acq_rel); }
 
   // in: nullable, may alias mainOut. bus2Out: nullable. n <= maxBlock.
+  // Before prepare it only zeroes the outputs.
   void process(const float* const* in, float* const* mainOut, float* const* bus2Out, int n);
 
   int latencySamples() const { return latency_; }
@@ -67,6 +104,12 @@ class Synth {
   void applyPending();
   PartSettings readPartSettings(int part) const;
   static int clampChannel(int channel);
+  void switchEngine(int part, int next);  // from setParam, before storing the selector
+  void queueHostUpdate(const HostUpdate& update);
+  void routeInput(int part, const float* const* in, int n);
+  // One chunk of process(): n <= feedDelay_, so A only reads B samples already written.
+  void processChunk(const float* const* in, float* const* mainOut, float* const* bus2Out, int n);
+  static float softLimit(float x);
 
   PluginKind kind_;
   std::array<std::unique_ptr<Part>, kNumParts> parts_;
@@ -83,6 +126,17 @@ class Synth {
   size_t dryPos_ = 0;
   std::vector<float> partOut_[kNumParts][2];
   uint8_t routed_[16][128] = {};
+
+  std::array<std::atomic<float>, kStashSize> stash_;
+  EngineStash pendingStash_{};
+  std::array<int, kNumParts> currentEngine_{};  // setParam's thread
+  HostUpdate hostUpdates_[kMaxHostUpdates] = {};
+  int hostUpdateCount_ = 0;
+  std::atomic<bool> engineChanged_{false};
+  std::vector<float> partIn_[kNumParts][2];
+  std::vector<float> feedRing_[2];  // B's output for A, delayed by feedDelay_
+  size_t feedDelay_ = 0;            // min(maxBlock, kFeedBlock)
+  size_t feedPos_ = 0;
 };
 
 }  // namespace eg13

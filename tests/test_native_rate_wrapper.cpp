@@ -134,3 +134,146 @@ TEST_CASE("Onset after reset lands at the reported latency") {
     REQUIRE(std::fabs(double(peak) - double(w.latencySamples())) <= tolerance);
   }
 }
+
+namespace {
+
+std::vector<float> renderWithInput(VoiceEngine& engine, const std::vector<float>& input, int chunk) {
+  const int n = int(input.size());
+  std::vector<float> left(static_cast<size_t>(n)), right(static_cast<size_t>(n));
+  const ParamValues p;
+  for (int done = 0; done < n;) {
+    const int count = std::min(chunk, n - done);
+    const float* in[2] = {input.data() + done, input.data() + done};
+    float* out[2] = {left.data() + done, right.data() + done};
+    engine.process(in, out, p, count);
+    done += count;
+  }
+  REQUIRE(right == left);
+  return left;
+}
+
+int peakIndex(const std::vector<float>& x) {
+  return int(std::max_element(x.begin(), x.end(), [](float a, float b) {
+               return std::fabs(a) < std::fabs(b);
+             }) - x.begin());
+}
+
+}  // namespace
+
+TEST_CASE("A host-rate engine passes input straight through") {
+  NativeRateWrapper wrapped(std::make_unique<test::EchoEngine>(), 0.0, 16);
+  wrapped.prepare(44100.0, 256);
+  REQUIRE(wrapped.latencySamples() == 0);
+  REQUIRE(wrapped.inputLatencySamples() == 0);
+  std::vector<float> input(1000, 0.0f);
+  input[100] = 1.0f;
+  const auto out = renderWithInput(wrapped, input, 256);
+  REQUIRE(out == input);
+}
+
+TEST_CASE("Input path latency is reported and constant") {
+  for (double rate : {44100.0, 48000.0, 96000.0}) {
+    NativeRateWrapper wrapped(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+    wrapped.prepare(rate, 256);
+    const int latency = wrapped.inputLatencySamples();
+    INFO("rate " << rate << " input latency " << latency);
+    REQUIRE(latency > 0);
+    REQUIRE(double(latency) / rate <= 0.012);
+
+    std::vector<float> input(8000, 0.0f);
+    input[3000] = 1.0f;
+    const auto big = renderWithInput(wrapped, input, 256);
+    const int delay = peakIndex(big) - 3000;
+    const int tolerance = int(std::ceil(16.0 * rate / 32000.0)) + 2;
+    INFO("delay " << delay);
+    REQUIRE(std::abs(delay - latency) <= tolerance);
+    REQUIRE(wrapped.inputUnderruns() == 0);
+
+    NativeRateWrapper other(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+    other.prepare(rate, 256);
+    REQUIRE(renderWithInput(other, input, 1) == big);
+  }
+}
+
+TEST_CASE("Extra delay adds exactly that many samples") {
+  NativeRateWrapper wrapped(std::make_unique<test::ImpulseEngine>(), 48000.0, 12);
+  wrapped.prepare(48000.0, 256);
+  wrapped.setExtraDelay(100);
+  REQUIRE(wrapped.extraDelaySamples() == 100);
+  REQUIRE(wrapped.latencySamples() == 100);
+  wrapped.noteOn(60.0f, 1.0f);
+  const auto out = render(wrapped, ParamValues{}, 1000, 64);
+  REQUIRE(peakIndex(out) == 100);
+}
+
+TEST_CASE("Engines that don't use input never see it") {
+  NativeRateWrapper wrapped(std::make_unique<test::ImpulseEngine>(), 32000.0, 16);
+  wrapped.prepare(48000.0, 256);
+  REQUIRE(wrapped.inputLatencySamples() == 0);
+  std::vector<float> input(4000, 0.5f);
+  const auto out = renderWithInput(wrapped, input, 256);
+  for (float s : out) REQUIRE(s == 0.0f);
+}
+
+TEST_CASE("Input conversion does not allocate") {
+  NativeRateWrapper wrapped(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+  wrapped.prepare(44100.0, 256);
+  wrapped.setExtraDelay(37);
+  std::vector<float> input(256, 0.25f), l(256), r(256);
+  const float* in[2] = {input.data(), input.data()};
+  float* out[2] = {l.data(), r.data()};
+  const ParamValues p;
+  wrapped.process(in, out, p, 256);
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int block = 0; block < 100; ++block) wrapped.process(block % 2 ? in : nullptr, out, p, 256);
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
+}
+
+TEST_CASE("Input path survives host rates below the native rate") {
+  struct Case { double native; double host; int block; };
+  for (const Case c : {Case{32000.0, 22050.0, 16}, Case{48000.0, 32000.0, 24},
+                       Case{48000.0, 16000.0, 24}}) {
+    INFO("native " << c.native << " host " << c.host);
+    const int n = int(3.0 * c.host), at = int(c.host);
+    std::vector<float> input(static_cast<size_t>(n), 0.0f);
+    input[size_t(at)] = 1.0f;
+    for (int mixed = 0; mixed < 2; ++mixed) {
+      NativeRateWrapper wrapped(std::make_unique<test::EchoEngine>(), c.native, c.block);
+      wrapped.prepare(c.host, 256);
+      const int latency = wrapped.inputLatencySamples();
+      std::vector<float> out(static_cast<size_t>(n));
+      const ParamValues p;
+      const int sizes[3] = {1, 129, 256};
+      int k = 0;
+      for (int done = 0; done < n; ++k) {
+        const int count = std::min(mixed ? sizes[k % 3] : 256, n - done);
+        const float* in[2] = {input.data() + done, input.data() + done};
+        float* o[2] = {out.data() + done, out.data() + done};
+        wrapped.process(in, o, p, count);
+        done += count;
+      }
+      REQUIRE(wrapped.inputOverruns() == 0);
+      REQUIRE(wrapped.inputUnderruns() == 0);
+      const int tolerance = int(std::ceil(double(c.block) * c.host / c.native)) + 2;
+      INFO("latency " << latency << " delay " << peakIndex(out) - at);
+      REQUIRE(std::abs(peakIndex(out) - at - latency) <= tolerance);
+    }
+  }
+}
+
+TEST_CASE("Host-rate engines are prepared for host-sized blocks") {
+  auto probe = std::make_unique<test::MaxBlockProbeEngine>();
+  test::MaxBlockProbeEngine* raw = probe.get();
+  NativeRateWrapper wrapped(std::move(probe), 0.0, 16);
+  wrapped.prepare(44100.0, 512);
+  REQUIRE(raw->preparedMax >= 512);
+  std::vector<float> l(512), r(512);
+  float* out[2] = {l.data(), r.data()};
+  wrapped.process(nullptr, out, ParamValues{}, 512);
+  REQUIRE(raw->largest == 512);
+  REQUIRE(raw->largest <= raw->preparedMax);
+}

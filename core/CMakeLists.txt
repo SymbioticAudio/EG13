@@ -1,5 +1,10 @@
 add_library(eg13_core STATIC
   engine/plaits_engine.cpp
+  engine/braids_engine.cpp
+  engine/elements_engine.cpp
+  engine/rings_engine.cpp
+  engine/audio_input_engine.cpp
+  engine/engine_registry.cpp
   engine/native_rate_wrapper.cpp
   synth/param_table.cpp
   synth/synth.cpp

@@ -10,6 +10,25 @@ file(GLOB EG13_PLAITS_SOURCES CONFIGURE_DEPENDS
 add_library(eg13_eurorack STATIC
   ${EG13_PLAITS_SOURCES}
   ${EURORACK_DIR}/plaits/resources.cc
+  ${EURORACK_DIR}/braids/macro_oscillator.cc
+  ${EURORACK_DIR}/braids/analog_oscillator.cc
+  ${EURORACK_DIR}/braids/digital_oscillator.cc
+  ${EURORACK_DIR}/braids/resources.cc
+  ${EURORACK_DIR}/elements/dsp/part.cc
+  ${EURORACK_DIR}/elements/dsp/voice.cc
+  ${EURORACK_DIR}/elements/dsp/ominous_voice.cc
+  ${EURORACK_DIR}/elements/dsp/exciter.cc
+  ${EURORACK_DIR}/elements/dsp/resonator.cc
+  ${EURORACK_DIR}/elements/dsp/string.cc
+  ${EURORACK_DIR}/elements/dsp/tube.cc
+  ${EURORACK_DIR}/elements/dsp/multistage_envelope.cc
+  ${EURORACK_DIR}/elements/resources.cc
+  ${EURORACK_DIR}/rings/dsp/part.cc
+  ${EURORACK_DIR}/rings/dsp/resonator.cc
+  ${EURORACK_DIR}/rings/dsp/string.cc
+  ${EURORACK_DIR}/rings/dsp/fm_voice.cc
+  ${EURORACK_DIR}/rings/dsp/string_synth_part.cc
+  ${EURORACK_DIR}/rings/resources.cc
   ${EURORACK_DIR}/stmlib/dsp/units.cc
   ${EG13_EURORACK_PATCHES}/stmlib/utils/random.cc)
 target_include_directories(eg13_eurorack SYSTEM BEFORE PUBLIC ${EG13_EURORACK_PATCHES})
