@@ -90,4 +90,35 @@ class Declicker {
   bool snap_ = true;
 };
 
+// Per-sample linear ramp across one process() call, from the value the previous call ended on
+// to this call's target: stmlib's ParameterInterpolator (stmlib/dsp/parameter_interpolator.h:
+// 38-51), which Plaits, Rings and Warps run on their DSP parameters within each block. Used by
+// engines with no firmware pot filter (the VCV Ripples and Shelves models read their knobs every
+// sample, Ripples.cpp:74-76, Shelves.cpp:125-136; the SVF follows Plaits' noise engine,
+// plaits/dsp/engine/noise_engine.cc:76-78). The first call after reset() holds its target.
+class ParamRamp {
+ public:
+  void reset() { snap_ = true; }
+
+  void begin(float target, int n) {
+    start_ = snap_ ? target : end_;
+    end_ = target;
+    n_ = n;
+    step_ = n > 0 ? (end_ - start_) / float(n) : 0.0f;
+    snap_ = false;
+  }
+
+  // Sample i (0..n-1) of the current call; the last one is exactly the target.
+  float at(int i) const { return i + 1 >= n_ ? end_ : start_ + step_ * float(i + 1); }
+
+  float value() const { return end_; }  // where the current call ends
+
+ private:
+  float start_ = 0.0f;
+  float end_ = 0.0f;
+  float step_ = 0.0f;
+  int n_ = 0;
+  bool snap_ = true;
+};
+
 }  // namespace eg13
