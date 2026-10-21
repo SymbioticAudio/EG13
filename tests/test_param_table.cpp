@@ -6,6 +6,8 @@
 #include <string>
 
 #include "engine/audio_input_engine.h"
+#include "engine/engine_registry.h"
+#include "engine/ripples_engine.h"
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 
@@ -21,10 +23,12 @@ std::string text(size_t index, double value) {
 
 }  // namespace
 
-TEST_CASE("The table has 68 parameters with unique IDs") {
+TEST_CASE("The table has 104 parameters with unique IDs") {
   REQUIRE(kSourceParamCount == 16);
-  REQUIRE(kParamsPerPart == 32);
-  REQUIRE(kParamCount == 68);
+  REQUIRE(kFilterParamCount == 4);
+  REQUIRE(kShaperParamCount == 12);
+  REQUIRE(kParamsPerPart == 50);
+  REQUIRE(kParamCount == 104);
   std::set<uint32_t> ids;
   for (size_t i = 0; i < kParamCount; ++i) ids.insert(paramSpec(i).id);
   REQUIRE(ids.size() == kParamCount);
@@ -136,10 +140,12 @@ TEST_CASE("Source P9..P16 have their own IDs after P1..P8") {
       REQUIRE(paramSpec(sourceParamIndex(part, p)).maxValue == 1.0f);
     }
   }
-  // Layout per part: selector, P1..P16, then the part settings.
-  REQUIRE(partParamIndex(0, PartParam::Level) == 17);
-  REQUIRE(sourceEngineParamIndex(1) == 32);
-  REQUIRE(masterParamIndex(MasterParam::Level) == 64);
+  // Layout per part: Source selector + P1..P16, Filter + P1..P4, Shaper + P1..P12, part settings.
+  REQUIRE(filterEngineParamIndex(0) == 17);
+  REQUIRE(shaperEngineParamIndex(0) == 22);
+  REQUIRE(partParamIndex(0, PartParam::Level) == 35);
+  REQUIRE(sourceEngineParamIndex(1) == 50);
+  REQUIRE(masterParamIndex(MasterParam::Level) == 100);
 }
 
 TEST_CASE("Engine selector and Input source format readable values") {
@@ -171,3 +177,94 @@ TEST_CASE("Source parameters format and name through the selected engine") {
   REQUIRE(paramDefault(sourceParamIndex(1, 15), PluginKind::Instrument) == 0.0f);
   REQUIRE(paramDefault(sourceParamIndex(0, 15), PluginKind::Effect) == 0.0f);
 }
+
+TEST_CASE("Filter and Shaper parameters have permanent IDs") {
+  for (int part = 0; part < kNumParts; ++part) {
+    const uint32_t p = uint32_t(part);
+    REQUIRE(paramSpec(filterEngineParamIndex(part)).id == params::id(p, params::Slot::Filter, 0));
+    REQUIRE(paramSpec(shaperEngineParamIndex(part)).id == params::id(p, params::Slot::Shaper, 0));
+    for (int i = 0; i < int(kFilterParamCount); ++i) {
+      REQUIRE(paramSpec(filterParamIndex(part, i)).id == params::id(p, params::Slot::Filter, uint32_t(i + 1)));
+      REQUIRE(paramSpec(filterParamIndex(part, i)).maxValue == 1.0f);
+      REQUIRE_FALSE(paramSpec(filterParamIndex(part, i)).stepped);
+    }
+    for (int i = 0; i < int(kShaperParamCount); ++i) {
+      REQUIRE(paramSpec(shaperParamIndex(part, i)).id == params::id(p, params::Slot::Shaper, uint32_t(i + 1)));
+    }
+    for (size_t selector : {filterEngineParamIndex(part), shaperEngineParamIndex(part)}) {
+      REQUIRE(paramSpec(selector).stepped);
+      REQUIRE(paramSpec(selector).minValue == 0.0f);
+      REQUIRE(paramSpec(selector).maxValue == 31.0f);
+      REQUIRE(std::string(paramSpec(selector).name) == "Type");
+    }
+  }
+  REQUIRE(std::string(paramSpec(filterParamIndex(1, 0)).module) == "Part B/Filter");
+  REQUIRE(std::string(paramSpec(shaperParamIndex(0, 11)).module) == "Part A/Shaper");
+  // Source IDs are unchanged.
+  REQUIRE(paramSpec(sourceParamIndex(0, 0)).id == params::id(0, params::Slot::Source, 1));
+  REQUIRE(paramSpec(sourceParamIndex(1, 15)).id == params::id(1, params::Slot::Source, 16));
+}
+
+TEST_CASE("Filter and Shaper defaults per plugin") {
+  for (int part = 0; part < kNumParts; ++part) {
+    REQUIRE(paramDefault(filterEngineParamIndex(part), PluginKind::Instrument) == 0.0f);
+    REQUIRE(paramDefault(shaperEngineParamIndex(part), PluginKind::Instrument) == 0.0f);
+    REQUIRE(paramDefault(shaperEngineParamIndex(part), PluginKind::Effect) == 0.0f);
+  }
+  REQUIRE(paramDefault(filterEngineParamIndex(0), PluginKind::Effect) == float(FilterEngine::Analog));
+  REQUIRE(paramDefault(filterEngineParamIndex(1), PluginKind::Effect) == 0.0f);
+  REQUIRE(paramDefault(filterParamIndex(0, 0), PluginKind::Effect) ==
+          RipplesEngine::staticInfo().params[0].defaultValue);
+  REQUIRE(paramDefault(filterParamIndex(0, 0), PluginKind::Instrument) == 0.0f);  // Off: unused
+  REQUIRE(std::string(paramSpec(filterParamIndex(0, 0)).name) == "(unused)");
+}
+
+TEST_CASE("Filter and Shaper parameters name and format through their engines") {
+  char buf[64];
+  const PartEngines analog{0, int(FilterEngine::Analog), int(ShaperEngine::Eq)};
+  REQUIRE(std::string(paramName(filterParamIndex(0, 0), analog)) == "Frequency");
+  formatParam(filterParamIndex(0, 0), 1.0, buf, sizeof(buf), analog);
+  REQUIRE(std::string(buf) == "20.00 kHz");
+  REQUIRE(std::string(paramName(filterParamIndex(0, 3), analog)) == "(unused)");
+  formatParam(filterParamIndex(0, 3), 0.5, buf, sizeof(buf), analog);
+  REQUIRE(std::string(buf) == "-");
+  REQUIRE(std::string(paramName(shaperParamIndex(1, 11), analog)) == "Output");
+  formatParam(shaperParamIndex(1, 11), 0.5 / 7.0, buf, sizeof(buf), analog);
+  REQUIRE(std::string(buf) == "EQ");
+  const PartEngines off;
+  REQUIRE(std::string(paramName(shaperParamIndex(0, 0), off)) == "(unused)");
+  REQUIRE(std::string(paramName(sourceParamIndex(0, 0), off)) == "Model");
+  formatParam(filterEngineParamIndex(0), 1, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Analog Filter");
+  formatParam(filterEngineParamIndex(0), 3, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "State Variable Filter");
+  formatParam(filterEngineParamIndex(0), 17, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Off");
+  formatParam(shaperEngineParamIndex(0), 1, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Ring Mod / Vocoder");
+}
+
+TEST_CASE("Slot lookups find every slot parameter and selector") {
+  int counted[kNumSlotKinds] = {};
+  for (size_t i = 0; i < kParamCount; ++i) {
+    SlotKind kind = SlotKind::Source;
+    int part = -1, p = -1;
+    if (slotParamOf(i, &kind, &part, &p)) {
+      REQUIRE(slotParamIndex(kind, part, p) == i);
+      ++counted[int(kind)];
+    }
+    if (slotSelectorOf(i, &kind, &part)) REQUIRE(slotEngineParamIndex(kind, part) == i);
+  }
+  REQUIRE(counted[0] == 2 * 16);
+  REQUIRE(counted[1] == 2 * 4);
+  REQUIRE(counted[2] == 2 * 12);
+  for (int e = 0; e < slotEngineCount(SlotKind::Filter); ++e) {
+    REQUIRE(slotEngineInfo(SlotKind::Filter, e).paramCount <= int(kFilterParamCount));
+  }
+  for (int e = 0; e < slotEngineCount(SlotKind::Shaper); ++e) {
+    REQUIRE(slotEngineInfo(SlotKind::Shaper, e).paramCount <= int(kShaperParamCount));
+  }
+  REQUIRE(slotEngineFromSelector(SlotKind::Shaper, 2.0) == 2);
+  REQUIRE(slotEngineFromSelector(SlotKind::Filter, 9.0) == 0);
+}
+

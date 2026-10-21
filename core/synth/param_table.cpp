@@ -5,19 +5,23 @@
 #include <cmath>
 #include <cstdio>
 
-#include "engine/audio_input_engine.h"
 #include "engine/engine_registry.h"
-#include "engine/plaits_engine.h"
 #include "params/param_ids.h"
 
 namespace eg13 {
 
 static_assert(kSourceParamCount <= size_t(kMaxSlotParams), "ParamValues must hold every Source P");
+static_assert(kShaperParamCount <= size_t(kMaxSlotParams), "ParamValues must hold every Shaper P");
 
 namespace {
 
-const char* const kSourceModules[kNumParts] = {"Part A/Source", "Part B/Source"};
+const char* const kSlotModules[kNumSlotKinds][kNumParts] = {
+    {"Part A/Source", "Part B/Source"},
+    {"Part A/Filter", "Part B/Filter"},
+    {"Part A/Shaper", "Part B/Shaper"},
+};
 const char* const kPartModules[kNumParts] = {"Part A", "Part B"};
+const SlotKind kSlotKinds[kNumSlotKinds] = {SlotKind::Source, SlotKind::Filter, SlotKind::Shaper};
 
 struct PartParamDef {
   PartParam param;
@@ -47,27 +51,55 @@ const PartParamDef kPartDefs[kPartParamCount] = {
     {PartParam::InputSource, "Input Source", 0, 2, 0, true, ParamFormat::InputSource},
 };
 
+params::Slot idSlot(SlotKind kind) {
+  return kind == SlotKind::Source   ? params::Slot::Source
+         : kind == SlotKind::Filter ? params::Slot::Filter
+                                    : params::Slot::Shaper;
+}
+
+// Default engine per slot, part and plugin. EG13 FX's Part A is its init patch's chain (spec §6:
+// Audio Input -> Analog Filter); everything else starts on the slot's first engine (Macro
+// Oscillator, Off, Off). The instrument init patch arrives with modulation in M4.
+int defaultEngine(SlotKind kind, int part, PluginKind plugin) {
+  if (plugin == PluginKind::Effect && part == 0) {
+    if (kind == SlotKind::Source) return int(SourceEngine::AudioInput);
+    if (kind == SlotKind::Filter) return int(FilterEngine::Analog);
+  }
+  return 0;
+}
+
+int engineFor(SlotKind kind, const PartEngines& e) {
+  return kind == SlotKind::Source ? e.source : kind == SlotKind::Filter ? e.filter : e.shaper;
+}
+
 const std::array<ParamSpec, kParamCount>& table() {
   static const std::array<ParamSpec, kParamCount> specs = [] {
     std::array<ParamSpec, kParamCount> t{};
-    const EngineInfo& info = PlaitsEngine::staticInfo();
-    const EngineInfo& fxInfo = AudioInputEngine::staticInfo();
     for (int part = 0; part < kNumParts; ++part) {
-      t[sourceEngineParamIndex(part)] = {params::id(uint32_t(part), params::Slot::Source, 0), "Engine",
-                                         kSourceModules[part], 0.0f, float(kSourceEngineSelectorMax),
-                                         0.0f, part == 0 ? 4.0f : 0.0f, true,
-                                         ParamFormat::SourceEngine};
-      for (int p = 0; p < int(kSourceParamCount); ++p) {
-        const bool used = p < info.paramCount;
-        const float def = used ? info.params[p].defaultValue : 0.0f;
-        float effectDef = def;
-        if (part == 0) {  // EG13 FX: Part A plays the Audio Input engine
-          effectDef = p < fxInfo.paramCount ? fxInfo.params[p].defaultValue : 0.0f;
+      for (SlotKind kind : kSlotKinds) {
+        const int instrument = defaultEngine(kind, part, PluginKind::Instrument);
+        const int effect = defaultEngine(kind, part, PluginKind::Effect);
+        const ParamFormat selectorFormat = kind == SlotKind::Source   ? ParamFormat::SourceEngine
+                                           : kind == SlotKind::Filter ? ParamFormat::FilterEngine
+                                                                      : ParamFormat::ShaperEngine;
+        const float selectorMax = float(kind == SlotKind::Source   ? kSourceEngineSelectorMax
+                                        : kind == SlotKind::Filter ? kFilterEngineSelectorMax
+                                                                   : kShaperEngineSelectorMax);
+        const char* module = kSlotModules[int(kind)][part];
+        t[slotEngineParamIndex(kind, part)] = {params::id(uint32_t(part), idSlot(kind), 0),
+                                               kind == SlotKind::Source ? "Engine" : "Type",
+                                               module, 0.0f, selectorMax, float(instrument), float(effect),
+                                               true, selectorFormat};
+        const EngineInfo& inst = slotEngineInfo(kind, instrument);
+        const EngineInfo& fx = slotEngineInfo(kind, effect);
+        for (int p = 0; p < int(slotParamCount(kind)); ++p) {
+          const bool used = p < inst.paramCount;
+          t[slotParamIndex(kind, part, p)] = {params::id(uint32_t(part), idSlot(kind), uint32_t(p + 1)),
+                                              used ? inst.params[p].name : "(unused)", module, 0.0f, 1.0f,
+                                              used ? inst.params[p].defaultValue : 0.0f,
+                                              p < fx.paramCount ? fx.params[p].defaultValue : 0.0f, false,
+                                              ParamFormat::Engine};
         }
-        t[sourceParamIndex(part, p)] = {params::id(uint32_t(part), params::Slot::Source, uint32_t(p + 1)),
-                                        used ? info.params[p].name : "(unused)", kSourceModules[part],
-                                        0.0f, 1.0f, def,
-                                        effectDef, false, ParamFormat::Engine};
       }
       for (const PartParamDef& d : kPartDefs) {
         t[partParamIndex(part, d.param)] = {params::id(uint32_t(part), params::Slot::Part, uint32_t(d.param)),
@@ -97,14 +129,53 @@ const char* pick(const char* const* names, int count, float value) {
   return names[i];
 }
 
-// Index of a Source P (0..kSourceParamCount-1) for a table index, or -1.
-int sourceParamOf(size_t index) {
-  if (index >= size_t(kNumParts) * kParamsPerPart) return -1;
-  const int local = int(index % kParamsPerPart) - 1;
-  return local >= 0 && local < int(kSourceParamCount) ? local : -1;
+}  // namespace
+
+int slotEngineCount(SlotKind kind) {
+  return kind == SlotKind::Source   ? kNumSourceEngines
+         : kind == SlotKind::Filter ? kNumFilterEngines
+                                    : kNumShaperEngines;
 }
 
-}  // namespace
+int slotEngineFromSelector(SlotKind kind, double value) {
+  return kind == SlotKind::Source   ? sourceEngineFromSelector(value)
+         : kind == SlotKind::Filter ? filterEngineFromSelector(value)
+                                    : shaperEngineFromSelector(value);
+}
+
+const EngineInfo& slotEngineInfo(SlotKind kind, int engine) {
+  return kind == SlotKind::Source   ? sourceEngineInfo(engine)
+         : kind == SlotKind::Filter ? filterEngineInfo(engine)
+                                    : shaperEngineInfo(engine);
+}
+
+bool slotParamOf(size_t index, SlotKind* kind, int* part, int* p) {
+  if (index >= size_t(kNumParts) * kParamsPerPart) return false;
+  const size_t local = index % kParamsPerPart;
+  for (SlotKind k : kSlotKinds) {
+    const size_t first = slotOffset(k) + 1;
+    if (local >= first && local < first + slotParamCount(k)) {
+      *kind = k;
+      *part = int(index / kParamsPerPart);
+      *p = int(local - first);
+      return true;
+    }
+  }
+  return false;
+}
+
+bool slotSelectorOf(size_t index, SlotKind* kind, int* part) {
+  if (index >= size_t(kNumParts) * kParamsPerPart) return false;
+  const size_t local = index % kParamsPerPart;
+  for (SlotKind k : kSlotKinds) {
+    if (local == slotOffset(k)) {
+      *kind = k;
+      *part = int(index / kParamsPerPart);
+      return true;
+    }
+  }
+  return false;
+}
 
 const ParamSpec& paramSpec(size_t index) { return table()[index]; }
 
@@ -132,6 +203,12 @@ float clampParam(size_t index, double value) {
 float glideSeconds(float normalized) { return 2.0f * normalized * normalized; }
 
 void formatParam(size_t index, double value, char* buf, size_t size, int sourceEngine) {
+  PartEngines engines;
+  engines.source = sourceEngine;
+  formatParam(index, value, buf, size, engines);
+}
+
+void formatParam(size_t index, double value, char* buf, size_t size, const PartEngines& engines) {
   static const char* const kNotes[12] = {"C", "C#", "D", "D#", "E", "F",
                                          "F#", "G", "G#", "A", "A#", "B"};
   static const char* const kVoiceModes[3] = {"Poly", "Mono", "Legato"};
@@ -145,9 +222,11 @@ void formatParam(size_t index, double value, char* buf, size_t size, int sourceE
   const float v = clampParam(index, value);
   switch (s.format) {
     case ParamFormat::Engine: {
-      const EngineInfo& info = sourceEngineInfo(sourceEngine);
-      const int p = sourceParamOf(index);
-      if (p >= 0 && p < info.paramCount) {
+      SlotKind kind = SlotKind::Source;
+      int part = 0, p = 0;
+      slotParamOf(index, &kind, &part, &p);
+      const EngineInfo& info = slotEngineInfo(kind, engineFor(kind, engines));
+      if (p < info.paramCount && info.params[p].format != nullptr) {
         info.params[p].format(v, buf, size);
       } else {
         std::snprintf(buf, size, "-");
@@ -156,6 +235,12 @@ void formatParam(size_t index, double value, char* buf, size_t size, int sourceE
     }
     case ParamFormat::SourceEngine:
       std::snprintf(buf, size, "%s", sourceEngineInfo(sourceEngineFromSelector(v)).displayName);
+      break;
+    case ParamFormat::FilterEngine:
+      std::snprintf(buf, size, "%s", filterEngineInfo(filterEngineFromSelector(v)).displayName);
+      break;
+    case ParamFormat::ShaperEngine:
+      std::snprintf(buf, size, "%s", shaperEngineInfo(shaperEngineFromSelector(v)).displayName);
       break;
     case ParamFormat::InputSource:
       std::snprintf(buf, size, "%s", pick(kInputSources, 3, v));
@@ -223,9 +308,16 @@ void formatParam(size_t index, double value, char* buf, size_t size, int sourceE
 }
 
 const char* paramName(size_t index, int sourceEngine) {
-  const int p = sourceParamOf(index);
-  if (p < 0) return paramSpec(index).name;
-  const EngineInfo& info = sourceEngineInfo(sourceEngine);
+  PartEngines engines;
+  engines.source = sourceEngine;
+  return paramName(index, engines);
+}
+
+const char* paramName(size_t index, const PartEngines& engines) {
+  SlotKind kind = SlotKind::Source;
+  int part = 0, p = 0;
+  if (!slotParamOf(index, &kind, &part, &p)) return paramSpec(index).name;
+  const EngineInfo& info = slotEngineInfo(kind, engineFor(kind, engines));
   return p < info.paramCount ? info.params[p].name : "(unused)";
 }
 

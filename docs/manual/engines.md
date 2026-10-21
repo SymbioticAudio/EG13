@@ -1,6 +1,10 @@
 # Engines
 
-Every engine shows its controls as P1, P2, … in the host. A slot has more parameters than most engines use: the unused ones are named "(unused)" and show "-". The Source slot has 16 parameters.
+Every engine shows its controls as P1, P2, … in the host. A slot has more parameters than most engines use: the unused ones are named "(unused)" and show "-". The Source slot has 16 parameters, the Filter slot 4 and the Shaper slot 12, plus a selector for the engine in each slot (the Filter's and Shaper's are called *Type*).
+
+In the host, each part has these parameter groups: *Part A/Source*, *Part A/Filter*, *Part A/Shaper* (and the same for *Part B*), plus *Part A* and *Part B* for the part settings. The Source's selector is called *Engine*; the Filter's and Shaper's are called *Type*. Types are stepped parameters with a fixed range of 0 to 31, so adding engines later never changes the range; a value with no engine selects **Off**. A Filter or Shaper P1.. is named by its engine (for example *Frequency* for the Analog Filter) and shows "(unused)" and "-" beyond the engine's own controls.
+
+Defaults: every part starts with Filter *Type* **Off** and Shaper *Type* **Off**. The exception is EG13 FX, whose Part A starts with Filter *Type* set to **Analog Filter** (with the Analog Filter's own default controls), after the Audio Input source. The P defaults of an unused slot are those of its default engine.
 
 ## Sources
 
