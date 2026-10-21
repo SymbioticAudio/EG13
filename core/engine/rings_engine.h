@@ -29,6 +29,7 @@ class RingsEngine final : public VoiceEngine {
   static int modelIndex(float normalized);    // P1 -> 0..5
   static int exciterIndex(float normalized);  // P6 thirds -> 0 Internal, 1 Input, 2 Both
   static float frequencyOffset(float normalized);  // P7 -> -12..+12 semitones
+  static int polyphonyVoices(float normalized);    // P9 thirds -> 1, 2 or 4 voices
 
  private:
   struct Impl;
@@ -41,6 +42,7 @@ class RingsEngine final : public VoiceEngine {
   float velocity_ = 1.0f;  // the Resonator responds to input before any note (FX use)
   bool strum_ = false;
   int model_ = -1;
+  int polyphony_ = 1;
 };
 
 }  // namespace eg13

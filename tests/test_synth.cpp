@@ -834,8 +834,15 @@ TEST_CASE("Two parts switching fill the host-update queue without dropping any")
 
 TEST_CASE("process before prepare outputs silence") {
   Synth synth(PluginKind::Instrument);
-  std::vector<float> l(64, 1.0f), r(64, 1.0f);
+  std::vector<float> l(64, 1.0f), r(64, 1.0f), bl(64, 1.0f), br(64, 1.0f);
   float* out[2] = {l.data(), r.data()};
-  synth.process(nullptr, out, nullptr, 64);
-  REQUIRE(std::all_of(l.begin(), l.end(), [](float s) { return s == 0.0f; }));
+  float* bus2[2] = {bl.data(), br.data()};
+  synth.process(nullptr, out, bus2, 64);
+  const auto silent = [](const std::vector<float>& x) {
+    return std::all_of(x.begin(), x.end(), [](float s) { return s == 0.0f; });
+  };
+  REQUIRE(silent(l));
+  REQUIRE(silent(r));
+  REQUIRE(silent(bl));
+  REQUIRE(silent(br));
 }

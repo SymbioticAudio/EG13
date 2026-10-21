@@ -23,6 +23,9 @@ void formatModel(float v, char* buf, size_t size) {
 void formatExciter(float v, char* buf, size_t size) {
   std::snprintf(buf, size, "%s", kExciterNames[RingsEngine::exciterIndex(v)]);
 }
+void formatPolyphony(float v, char* buf, size_t size) {
+  std::snprintf(buf, size, "%d", RingsEngine::polyphonyVoices(v));
+}
 void formatPercent(float v, char* buf, size_t size) {
   std::snprintf(buf, size, "%d%%", int(std::lround(clamp01(v) * 100.0f)));
 }
@@ -30,7 +33,7 @@ void formatSemitones(float v, char* buf, size_t size) {
   std::snprintf(buf, size, "%+.1f st", double(RingsEngine::frequencyOffset(v)));
 }
 
-const EngineParamInfo kParams[8] = {
+const EngineParamInfo kParams[9] = {
     {"Model", 0.5f / 6.0f, formatModel},
     {"Structure", 0.5f, formatPercent},
     {"Brightness", 0.5f, formatPercent},
@@ -39,11 +42,13 @@ const EngineParamInfo kParams[8] = {
     {"Exciter", 0.5f / 3.0f, formatExciter},  // stepped thirds; default Internal
     {"Frequency", 0.5f, formatSemitones},
     {"Spread", 1.0f, formatPercent},
+    {"Polyphony", 0.5f / 3.0f, formatPolyphony},  // stepped thirds; default 1 voice
 };
 
-const EngineInfo kInfo = {"rings", "Resonator", 8, kParams, true};
+const EngineInfo kInfo = {"rings", "Resonator", 9, kParams, true};
 
 constexpr float kMaxKnob = 0.9995f;  // Rings' own clamp for structure, damping, position
+constexpr float kTonic = 60.0f;      // reference the played note is measured from
 
 }  // namespace
 
@@ -73,6 +78,11 @@ int RingsEngine::exciterIndex(float normalized) {
   return i < 3 ? i : 2;
 }
 
+int RingsEngine::polyphonyVoices(float normalized) {
+  const int i = int(clamp01(normalized) * 3.0f);
+  return 1 << (i < 3 ? i : 2);  // the firmware's button cycles 1, 2, 4 (rings/ui.cc:282-291)
+}
+
 float RingsEngine::frequencyOffset(float normalized) { return (clamp01(normalized) - 0.5f) * 24.0f; }
 
 void RingsEngine::prepare(double hostRate, int) {
@@ -86,6 +96,7 @@ void RingsEngine::reset() {
   std::memset(static_cast<void*>(&impl_->part), 0, sizeof(impl_->part));
   impl_->part.Init(impl_->reverb);
   impl_->part.set_polyphony(1);
+  polyphony_ = 1;
   strum_ = false;
   model_ = -1;
 }
@@ -112,6 +123,15 @@ void RingsEngine::renderBlock(const float* const* in, const ParamValues& p, floa
     s.part.set_model(rings::ResonatorModel(model));
     model_ = model;
   }
+  // Like the firmware's polyphony button (rings/ui.cc:282-291): set_polyphony
+  // only marks the resonators dirty; Process re-inits them in place on the next
+  // block (part.cc ConfigureResonators), with no allocation. Calling it only on
+  // a change keeps ringing voices from being re-initialised every block.
+  const int polyphony = polyphonyVoices(p.p[8]);
+  if (polyphony != polyphony_) {
+    s.part.set_polyphony(polyphony);
+    polyphony_ = polyphony;
+  }
   rings::Patch patch;
   patch.structure = std::min(clamp01(p.p[1]), kMaxKnob);
   patch.brightness = clamp01(p.p[2]);
@@ -130,9 +150,14 @@ void RingsEngine::renderBlock(const float* const* in, const ParamValues& p, floa
   state.strum = strum_;
   state.internal_exciter = exciter != 1 || in == nullptr;
   state.internal_strum = false;
-  state.internal_note = true;
-  state.tonic = note_ + frequencyOffset(p.p[6]) + pitchOffset_;
-  state.note = 0.0f;
+  // The played note goes in as the V/OCT note against a fixed C4 tonic, as the
+  // firmware does with V/OCT patched (rings/cv_scaler.cc:193-197; Frequency is
+  // the transpose knob). Part keeps a note per voice from it (part.cc:480-494),
+  // so with polyphony above 1 earlier strums keep their own pitch; the tonic is
+  // shared by every voice.
+  state.internal_note = false;
+  state.tonic = kTonic + frequencyOffset(p.p[6]) + pitchOffset_;
+  state.note = note_ - kTonic;
   state.fm = 0.0f;
   state.chord = std::clamp(int(std::lround(patch.structure * 10.0f)), 0, 10);
   strum_ = false;
@@ -144,10 +169,18 @@ void RingsEngine::renderBlock(const float* const* in, const ParamValues& p, floa
   std::memset(s.even, 0, sizeof(s.even));
   s.part.Process(state, patch, s.in, s.odd, s.even, size_t(count));
 
+  // At polyphony 1 out/aux are one voice's odd/even pickups (rings/dsp/part.cc:
+  // 530-535) and the fold is out - aux, the firmware's own per-voice fold
+  // (part.cc:540). Above 1 each voice is folded already and whole voices are
+  // dispatched to out (0, 2) and aux (1, 3) with the same sign (part.cc:536-542),
+  // so the mono sum is out + aux. String +
+  // Reverb negates aux after the reverb at any polyphony (part.cc:559-561).
+  const float evenSign =
+      polyphony_ == 1 || model_ == rings::RESONATOR_MODEL_STRING_AND_REVERB ? -1.0f : 1.0f;
   const float spread = clamp01(p.p[7]);
   for (int i = 0; i < count; ++i) {
     const float odd = s.odd[i];
-    const float even = -s.even[i];  // firmware fold is out - aux (rings/dsp/part.cc:541)
+    const float even = evenSign * s.even[i];
     out[0][offset + i] = (odd + (1.0f - spread) * even) * velocity_;
     out[1][offset + i] = (even + (1.0f - spread) * odd) * velocity_;
   }

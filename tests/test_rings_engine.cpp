@@ -2,7 +2,9 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -10,11 +12,16 @@
 #include <vector>
 
 #include "alloc_counter.h"
+#include "engine/engine_registry.h"
 #include "engine/native_rate_wrapper.h"
 #include "engine/rings_engine.h"
+#include "params/param_ids.h"
 #include "rings/dsp/part.h"
 #include "rings/dsp/patch.h"
 #include "rings/dsp/performance_state.h"
+#include "stmlib/utils/random.h"
+#include "synth/param_table.h"
+#include "synth/synth.h"
 #include "test_helpers.h"
 
 using namespace eg13;
@@ -70,14 +77,35 @@ TEST_CASE("Resonator describes itself") {
   const auto& info = RingsEngine::staticInfo();
   REQUIRE(std::string(info.id) == "rings");
   REQUIRE(std::string(info.displayName) == "Resonator");
-  REQUIRE(info.paramCount == 8);
+  REQUIRE(info.paramCount == 9);
   REQUIRE(info.usesInput);
+  const char* const names[9] = {"Model",    "Structure", "Brightness", "Damping",  "Position",
+                                "Exciter",  "Frequency", "Spread",     "Polyphony"};
+  for (int i = 0; i < 9; ++i) REQUIRE(std::string(info.params[i].name) == names[i]);
   char buf[64];
   info.params[0].format(info.params[0].defaultValue, buf, sizeof(buf));
   REQUIRE(std::string(buf) == "Modal");
   info.params[5].format(info.params[5].defaultValue, buf, sizeof(buf));
   REQUIRE(std::string(buf) == "Internal");
   REQUIRE(RingsEngine::modelIndex(1.0f) == 5);
+}
+
+TEST_CASE("Polyphony is stepped 1 / 2 / 4, default 1") {
+  REQUIRE(RingsEngine::polyphonyVoices(0.0f) == 1);
+  REQUIRE(RingsEngine::polyphonyVoices(0.33f) == 1);
+  REQUIRE(RingsEngine::polyphonyVoices(0.34f) == 2);
+  REQUIRE(RingsEngine::polyphonyVoices(0.66f) == 2);
+  REQUIRE(RingsEngine::polyphonyVoices(0.67f) == 4);
+  REQUIRE(RingsEngine::polyphonyVoices(1.0f) == 4);
+  REQUIRE(RingsEngine::polyphonyVoices(std::numeric_limits<float>::quiet_NaN()) == 1);
+  const auto& param = RingsEngine::staticInfo().params[8];
+  REQUIRE(param.defaultValue == 0.5f / 3.0f);
+  char buf[64];
+  const char* const shown[3] = {"1", "2", "4"};
+  for (int i = 0; i < 3; ++i) {
+    param.format((float(i) + 0.5f) / 3.0f, buf, sizeof(buf));
+    REQUIRE(std::string(buf) == shown[i]);
+  }
 }
 
 TEST_CASE("Resonator stays in tune through the wrapper") {
@@ -288,4 +316,253 @@ TEST_CASE("Resonator processing does not allocate") {
     allocations = counter.count();
   }
   REQUIRE(allocations == 0);
+}
+
+namespace {
+
+constexpr float kPoly1 = 0.5f / 3.0f;
+constexpr float kPoly2 = 1.5f / 3.0f;
+constexpr float kPoly4 = 2.5f / 3.0f;
+
+// Hann-windowed Goertzel magnitude of x[begin, end) at f Hz.
+double magnitudeAt(const std::vector<float>& x, double rate, size_t begin, size_t end, double f) {
+  const size_t count = end - begin;
+  const double pi = 3.14159265358979323846;
+  const double coeff = 2.0 * std::cos(2.0 * pi * f / rate);
+  double s1 = 0.0, s2 = 0.0;
+  for (size_t i = 0; i < count; ++i) {
+    const double hann = 0.5 - 0.5 * std::cos(2.0 * pi * double(i) / double(count));
+    const double s0 = double(x[begin + i]) * hann + coeff * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  return std::sqrt(std::max(0.0, s1 * s1 + s2 * s2 - coeff * s1 * s2));
+}
+
+double noteHz(float note) { return 440.0 * std::pow(2.0, (double(note) - 69.0) / 12.0); }
+
+// How far f stands out of its neighbourhood: magnitude at f over the mean
+// magnitude a quarter tone either side.
+double peakness(const std::vector<float>& x, double rate, size_t begin, size_t end, double f) {
+  const double q = std::pow(2.0, 1.0 / 24.0);
+  const double side = 0.5 * (magnitudeAt(x, rate, begin, end, f / q) +
+                             magnitudeAt(x, rate, begin, end, f * q));
+  return magnitudeAt(x, rate, begin, end, f) / std::max(side, 1e-12);
+}
+
+constexpr float kStrumNotes[4] = {57.0f, 62.0f, 66.0f, 71.0f};
+constexpr int kStrumGap = 12000;  // 0.25 s at the native rate
+
+// Four strums of different notes with no note-off, mono (Spread 0). Returns L;
+// the fourth strum lands at 3 * kStrumGap.
+std::vector<float> renderFourStrums(float polyphony, int tail) {
+  ParamValues p = defaults();
+  p.p[7] = 0.0f;
+  p.p[8] = polyphony;
+  RingsEngine engine;
+  engine.prepare(RingsEngine::kNativeRate, 256);
+  std::vector<float> l;
+  for (float note : kStrumNotes) {
+    engine.noteOn(note, 1.0f);
+    const auto s = render(engine, p, note == kStrumNotes[3] ? tail : kStrumGap);
+    l.insert(l.end(), s.l.begin(), s.l.end());
+  }
+  return l;
+}
+
+}  // namespace
+
+TEST_CASE("Polyphony 4: four strums of different notes all keep sounding") {
+  const double rate = RingsEngine::kNativeRate;
+  const auto poly4 = renderFourStrums(kPoly4, 24000);
+  const auto poly1 = renderFourStrums(kPoly1, 24000);
+  const size_t begin = 3 * kStrumGap + 2400, end = begin + 19200;  // 0.05 s .. 0.45 s after
+  const double latest = magnitudeAt(poly4, rate, begin, end, noteHz(kStrumNotes[3]));
+  for (int k = 0; k < 4; ++k) {
+    const double f = noteHz(kStrumNotes[k]);
+    const double m4 = magnitudeAt(poly4, rate, begin, end, f);
+    const double m1 = magnitudeAt(poly1, rate, begin, end, f);
+    const double peak = peakness(poly4, rate, begin, end, f);
+    INFO("strum " << k + 1 << " at " << f << " Hz: poly4 " << m4 << " (peakness " << peak
+                  << "), poly1 " << m1 << ", latest strum " << latest);
+    REQUIRE(peak > 4.0);             // a spectral peak at each strummed note
+    REQUIRE(m4 > 0.05 * latest);     // the earlier strums still sound against the latest one
+    if (k < 3) REQUIRE(m4 > 10.0 * m1);  // and far more than at polyphony 1
+  }
+}
+
+TEST_CASE("Polyphony 1: a new strum at another note silences the earlier one") {
+  const double rate = RingsEngine::kNativeRate;
+  const auto poly1 = renderFourStrums(kPoly1, 24000);
+  const size_t begin = 3 * kStrumGap + 2400, end = begin + 19200;
+  const double latest = magnitudeAt(poly1, rate, begin, end, noteHz(kStrumNotes[3]));
+  REQUIRE(peakness(poly1, rate, begin, end, noteHz(kStrumNotes[3])) > 4.0);
+  for (int k = 0; k < 3; ++k) {
+    const double f = noteHz(kStrumNotes[k]);
+    const double m = magnitudeAt(poly1, rate, begin, end, f);
+    INFO("strum " << k + 1 << " at " << f << " Hz: " << m << ", latest strum " << latest);
+    REQUIRE(m < 0.01 * latest);
+  }
+}
+
+namespace {
+
+// Upstream Rings as the engine drives it (defaults, Exciter Internal, no input,
+// native rate, 24-sample blocks) with the given polyphony and model, strummed
+// at each block in strumBlocks with the matching note. The engine passes the
+// played note as performance_state.note relative to a C4 tonic, as the
+// firmware does with V/OCT patched (rings/cv_scaler.cc:193-197).
+void renderUpstreamPoly(int polyphony, rings::ResonatorModel model, const std::vector<int>& strumBlocks,
+                        const std::vector<float>& notes, int blocks, std::vector<float>& out,
+                        std::vector<float>& aux) {
+  auto u = std::make_unique<UpstreamRings>();
+  std::memset(static_cast<void*>(&u->part), 0, sizeof(u->part));
+  u->part.Init(u->reverb);
+  u->part.set_polyphony(1);
+  u->part.set_model(model);
+  u->part.set_polyphony(polyphony);
+  constexpr int kN = RingsEngine::kNativeBlock;
+  float in[kN] = {};
+  out.assign(size_t(blocks * kN), 0.0f);
+  aux.assign(size_t(blocks * kN), 0.0f);
+  float note = notes[0];
+  for (int b = 0; b < blocks; ++b) {
+    bool strum = false;
+    for (size_t s = 0; s < strumBlocks.size(); ++s) {
+      if (strumBlocks[s] == b) {
+        strum = true;
+        note = notes[s];
+      }
+    }
+    rings::Patch patch;
+    patch.structure = 0.5f;
+    patch.brightness = 0.5f;
+    patch.damping = 0.5f;
+    patch.position = 0.5f;
+    rings::PerformanceState state;
+    state.strum = strum;
+    state.internal_exciter = true;
+    state.internal_strum = false;
+    state.internal_note = false;
+    state.tonic = 60.0f;
+    state.note = note - 60.0f;
+    state.fm = 0.0f;
+    state.chord = 5;
+    u->part.Process(state, patch, in, out.data() + b * kN, aux.data() + b * kN, size_t(kN));
+  }
+}
+
+}  // namespace
+
+// part.cc:530-543: at polyphony 1 out/aux carry one voice's odd/even pickups
+// (folded out - aux); above 1 each voice is already folded (out - aux) and
+// whole voices go to out (0, 2) and aux (1, 3), so the mono sum is out + aux.
+// String + Reverb negates aux after the reverb (part.cc:559-561) at any
+// polyphony, so there the fold stays out - aux.
+TEST_CASE("Spread folds whole voices the way the firmware dispatches them above polyphony 1") {
+  constexpr int kBlocks = 600;
+  constexpr int kN = RingsEngine::kNativeBlock;
+  const std::vector<int> strumBlocks = {0, 150, 300, 450};
+  const std::vector<float> notes = {57.0f, 62.0f, 66.0f, 71.0f};
+  struct Case {
+    int voices;
+    float polyParam;
+    int model;
+  };
+  for (const Case c : {Case{2, kPoly2, 3}, Case{4, kPoly4, 3}, Case{4, kPoly4, 2}, Case{2, kPoly2, 5}}) {
+    std::vector<float> odd, even;
+    stmlib::Random::Seed(1);  // the String pluck draws noise; both renders draw the same
+    renderUpstreamPoly(c.voices, rings::ResonatorModel(c.model), strumBlocks, notes, kBlocks, odd, even);
+    const float evenSign = c.model == 5 ? -1.0f : 1.0f;
+    for (float spread : {0.0f, 1.0f}) {
+      ParamValues p = defaults();
+      p.p[0] = (float(c.model) + 0.5f) / 6.0f;
+      p.p[7] = spread;
+      p.p[8] = c.polyParam;
+      RingsEngine engine;
+      engine.prepare(RingsEngine::kNativeRate, 256);
+      stmlib::Random::Seed(1);
+      std::vector<float> l(size_t(kBlocks * kN)), r(size_t(kBlocks * kN));
+      size_t next = 0;
+      for (int b = 0; b < kBlocks; ++b) {
+        if (next < strumBlocks.size() && strumBlocks[next] == b) engine.noteOn(notes[next++], 1.0f);
+        float* out[2] = {l.data() + b * kN, r.data() + b * kN};
+        engine.process(nullptr, out, p, kN);
+      }
+      INFO("voices " << c.voices << " model " << c.model << " spread " << spread);
+      REQUIRE(test::rms(odd, 0, odd.size()) > 0.001);
+      REQUIRE(test::rms(even, 0, even.size()) > 0.001);
+      for (size_t i = 0; i < l.size(); ++i) {
+        if (spread == 0.0f) {
+          REQUIRE(l[i] == r[i]);
+          REQUIRE(std::fabs(l[i] - (odd[i] + evenSign * even[i])) <= 1e-6f);
+        } else {
+          REQUIRE(l[i] == odd[i]);
+          REQUIRE(r[i] == evenSign * even[i]);
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("Changing polyphony does not allocate") {
+  RingsEngine engine;
+  engine.prepare(RingsEngine::kNativeRate, 256);
+  std::vector<float> l(256), r(256);
+  float* out[2] = {l.data(), r.data()};
+  ParamValues p = defaults();
+  engine.noteOn(60.0f, 1.0f);
+  engine.process(nullptr, out, p, 256);
+  const float settings[4] = {kPoly4, kPoly2, kPoly1, kPoly4};
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int block = 0; block < 100; ++block) {
+      if (block % 25 == 0) p.p[8] = settings[block / 25];
+      if (block % 10 == 5) engine.noteOn(55.0f + float(block % 7), 0.8f);
+      if (block == 50) p.p[0] = 0.4f;  // model change at polyphony 1
+      engine.process(nullptr, out, p, 256);
+    }
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
+}
+
+// For information: the budget is judged at polyphony 1 by "CPU: 16 voices per
+// engine stay within budget". Same load, Resonator only, at each polyphony.
+TEST_CASE("CPU: Resonator at polyphony 1, 2 and 4", "[.benchmark]") {
+  constexpr double kRate = 48000.0;
+  constexpr int kBlock = 128;
+  constexpr int kSeconds = 5;
+  for (const float polyphony : {kPoly1, kPoly2, kPoly4}) {
+    Synth synth(PluginKind::Instrument);
+    synth.setParam(paramSpec(masterParamIndex(MasterParam::Mode)).id, double(PartMode::Layer));
+    for (int part = 0; part < kNumParts; ++part) {
+      synth.setParam(paramSpec(sourceEngineParamIndex(part)).id, double(SourceEngine::Resonator));
+      synth.setParam(paramSpec(sourceParamIndex(part, 8)).id, double(polyphony));
+    }
+    for (int part = 0; part < kNumParts; ++part) {
+      REQUIRE(synth.param(paramSpec(sourceParamIndex(part, 8)).id) == double(polyphony));
+    }
+    synth.prepare(kRate, kBlock);
+    synth.setActive(true);
+    std::vector<float> in(kBlock, 0.1f), l(kBlock), r(kBlock);
+    const float* input[2] = {in.data(), in.data()};
+    float* out[2] = {l.data(), r.data()};
+    synth.process(input, out, nullptr, kBlock);  // warm up
+    for (int key = 48; key < 56; ++key) synth.noteOn(0, key, 0.8f);
+    const int blocks = int(kRate) * kSeconds / kBlock;
+    const auto start = std::chrono::steady_clock::now();
+    for (int b = 0; b < blocks; ++b) {
+      if (b % 375 == 0) {
+        for (int key = 48; key < 56; ++key) synth.noteOn(0, key, 0.8f);
+      }
+      synth.process(input, out, nullptr, kBlock);
+    }
+    const double seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    std::printf("Resonator polyphony %d %6.2f%% of one core (16 voices, 48 kHz, 128-sample blocks)\n",
+                RingsEngine::polyphonyVoices(polyphony), 100.0 * seconds / double(kSeconds));
+    synth.setActive(false);
+  }
 }
