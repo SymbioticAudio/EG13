@@ -54,7 +54,45 @@ const EngineInfo kInfo = {"elements", "Modal Synth", 16, kParams, true};
 constexpr float kMaxKnob = 0.9995f;
 constexpr float kMaxStrikeTimbre = 0.995f;
 
-float knob(float v, float max = kMaxKnob) { return std::min(clamp01(v), max); }
+// Firmware control smoothing, applied once per 16-sample block at 32 kHz like CvScaler::Read,
+// which runs once per audio block (elements.cc:84, codec.h:99 kAudioChunkSize = 16):
+// - every pot: pot_lp += 0.01 * (pot - pot_lp) (cv_scaler.cc:148-150);
+// - then BIND clamps and, for lp_coefficient != 1, adds a second one-pole
+//   (cv_scaler.cc:153-165, coefficients at :177-186).
+// The pot scanner's multiplexing (one pot sampled every 2 * POT_LAST blocks) is not modelled.
+constexpr float kPotLp = 0.01f;
+
+struct Control {
+  float bindLp;  // BIND's lp_coefficient; 1 means no second filter
+  float max;     // BIND's upper clamp; 1 for the unbound pots (Contour and the levels)
+};
+
+const Control kControls[16] = {
+    {1.0f, 1.0f},                // Model: stepped, not smoothed
+    {1.0f, 1.0f},                // Contour       cv_scaler.cc:172
+    {1.0f, 1.0f},                // Bow           :173
+    {1.0f, 1.0f},                // Blow          :174
+    {1.0f, 1.0f},                // Strike        :175
+    {0.05f, kMaxKnob},           // Flow          :178
+    {0.05f, kMaxKnob},           // Mallet        :180
+    {1.0f, kMaxKnob},            // Bow Timbre    :177
+    {1.0f, kMaxKnob},            // Blow Timbre   :179
+    {1.0f, kMaxStrikeTimbre},    // Strike Timbre :181
+    {0.05f, kMaxKnob},           // Geometry      :182
+    {1.0f, kMaxKnob},            // Brightness    :183
+    {1.0f, kMaxKnob},            // Damping       :184
+    {0.01f, kMaxKnob},           // Position      :185
+    {0.01f, 1.0f},               // Space         :186 (BIND allows 2; a pot alone reaches 1)
+    {1.0f, 1.0f},                // Ext In: stepped, not smoothed
+};
+constexpr int kFirstSmoothed = 1;
+constexpr int kLastSmoothed = 14;
+
+// The per-block coefficient for a block of `count` native samples.
+float blockCoefficient(float perBlock, int count) {
+  if (count == ElementsEngine::kNativeBlock) return perBlock;
+  return 1.0f - std::pow(1.0f - perBlock, float(count) / float(ElementsEngine::kNativeBlock));
+}
 
 }  // namespace
 
@@ -85,6 +123,31 @@ int ElementsEngine::extInIndex(float normalized) {
   return i < kNumExtIn ? i : kNumExtIn - 1;
 }
 
+float ElementsEngine::smoothedParam(int index) const {
+  return index >= kFirstSmoothed && index <= kLastSmoothed ? smoothed_[index] : 0.0f;
+}
+
+void ElementsEngine::smooth(const ParamValues& p, int count) {
+  if (snap_) {
+    for (int i = kFirstSmoothed; i <= kLastSmoothed; ++i) {
+      potLp_[i] = clamp01(p.p[i]);
+      smoothed_[i] = std::min(potLp_[i], kControls[i].max);
+    }
+    snap_ = false;
+    return;
+  }
+  const float potLp = blockCoefficient(kPotLp, count);
+  for (int i = kFirstSmoothed; i <= kLastSmoothed; ++i) {
+    potLp_[i] += potLp * (clamp01(p.p[i]) - potLp_[i]);
+    const float value = std::min(potLp_[i], kControls[i].max);
+    if (kControls[i].bindLp < 1.0f) {
+      smoothed_[i] += blockCoefficient(kControls[i].bindLp, count) * (value - smoothed_[i]);
+    } else {
+      smoothed_[i] = value;
+    }
+  }
+}
+
 void ElementsEngine::prepare(double hostRate, int) {
   pitchOffset_ = float(12.0 * std::log2(kNativeRate / hostRate));
   reset();
@@ -104,6 +167,7 @@ void ElementsEngine::reset() {
   deliveredGate_ = false;
   pendingStrike_ = false;
   model_ = -1;
+  snap_ = true;
 }
 
 void ElementsEngine::noteOn(float note, float velocity) {
@@ -132,26 +196,26 @@ void ElementsEngine::renderBlock(const float* const* in, const ParamValues& p, f
     s.part.set_resonator_model(elements::ResonatorModel(model));
     model_ = model;
   }
-  // Pot-only mapping of CvScaler::Read (CV term at 0): Contour and the three levels are the
-  // linear pot as is; the rest are the linear pot clamped by BIND. Space's BIND range is 0..2,
-  // but a pot alone reaches only 0..1 (freeze at >= 1.75 needs CV), so it maps 0..1 too.
-  // CvScaler's per-control one-pole smoothing is left to the host's parameter smoothing.
+  // Pot-only mapping of CvScaler::Read (CV term at 0) through the firmware's smoothing:
+  // Contour and the three levels are the filtered linear pot; the rest are clamped by BIND
+  // and, for Flow, Mallet, Geometry, Position and Space, filtered again (see kControls).
+  smooth(p, count);
   elements::Patch* patch = s.part.mutable_patch();
-  patch->exciter_envelope_shape = clamp01(p.p[1]);
-  patch->exciter_bow_level = clamp01(p.p[2]);
-  patch->exciter_blow_level = clamp01(p.p[3]);
-  patch->exciter_strike_level = clamp01(p.p[4]);
-  patch->exciter_blow_meta = knob(p.p[5]);
-  patch->exciter_strike_meta = knob(p.p[6]);
-  patch->exciter_bow_timbre = knob(p.p[7]);
-  patch->exciter_blow_timbre = knob(p.p[8]);
-  patch->exciter_strike_timbre = knob(p.p[9], kMaxStrikeTimbre);
+  patch->exciter_envelope_shape = smoothed_[1];
+  patch->exciter_bow_level = smoothed_[2];
+  patch->exciter_blow_level = smoothed_[3];
+  patch->exciter_strike_level = smoothed_[4];
+  patch->exciter_blow_meta = smoothed_[5];
+  patch->exciter_strike_meta = smoothed_[6];
+  patch->exciter_bow_timbre = smoothed_[7];
+  patch->exciter_blow_timbre = smoothed_[8];
+  patch->exciter_strike_timbre = smoothed_[9];
   patch->exciter_signature = 0.0f;
-  patch->resonator_geometry = knob(p.p[10]);
-  patch->resonator_brightness = knob(p.p[11]);
-  patch->resonator_damping = knob(p.p[12]);
-  patch->resonator_position = knob(p.p[13]);
-  patch->space = clamp01(p.p[14]);
+  patch->resonator_geometry = smoothed_[10];
+  patch->resonator_brightness = smoothed_[11];
+  patch->resonator_damping = smoothed_[12];
+  patch->resonator_position = smoothed_[13];
+  patch->space = smoothed_[14];
 
   elements::PerformanceState state;
   // Elements only re-excites on a gate rising edge: retriggers get one low block first.

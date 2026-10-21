@@ -29,6 +29,8 @@ class ElementsEngine final : public VoiceEngine {
   static const EngineInfo& staticInfo();
   static int modelIndex(float normalized);  // P1 -> 0..2
   static int extInIndex(float normalized);  // P16 -> 0 Off, 1 Blow, 2 Strike, 3 Both
+  // Test hook: the smoothed value last written to the Patch for P2..P15 (index 1..14).
+  float smoothedParam(int index) const;
 
  private:
   struct Impl;
@@ -43,6 +45,11 @@ class ElementsEngine final : public VoiceEngine {
   bool deliveredGate_ = false;  // gate level last given to Part
   bool pendingStrike_ = false;  // a note-on not yet delivered as a rising edge
   int model_ = -1;
+  // CvScaler-style smoothing of P2..P15: the general pot low-pass and BIND's extra one-pole.
+  void smooth(const ParamValues& p, int count);
+  float potLp_[kMaxSlotParams] = {};
+  float smoothed_[kMaxSlotParams] = {};
+  bool snap_ = true;  // the first render after reset jumps straight to the targets
 };
 
 }  // namespace eg13

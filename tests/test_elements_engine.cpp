@@ -156,7 +156,8 @@ TEST_CASE("Modal Synth processing does not allocate") {
       if (block == 50) p.p[0] = 0.9f;  // model change
       // Sweep every parameter, Ext In through all four routings included.
       for (int i = 1; i < 16; ++i) p.p[i] = float((block * 7 + i * 3) % 20) / 19.0f;
-      engine.process(block % 2 ? input : nullptr, out, p, 256);
+      engine.process(block % 2 ? input : nullptr, out, p, block % 3 ? 256 : 250);  // partial
+      if (block == 75) engine.reset();  // re-snaps the smoothers
     }
     allocations = counter.count();
   }
@@ -246,10 +247,12 @@ std::vector<float> noise(size_t n, float gain) {
 // held: play a note with the three internal exciters at zero, so any output comes from the
 // input. Elements multiplies the blow input by the exciter envelope (dsp/voice.cc), so the Blow
 // route is silent without a gate, as on the hardware.
-Stereo renderInput(int extIn, const std::vector<float>* input, bool held = false) {
+// internal: keep the default internal Strike on during the held note.
+Stereo renderInput(int extIn, const std::vector<float>* input, bool held = false,
+                   bool internal = false) {
   ParamValues p = defaults();
   p.p[15] = (float(extIn) + 0.5f) / 4.0f;
-  if (held) p.p[2] = p.p[3] = p.p[4] = 0.0f;  // Bow, Blow, Strike
+  if (held && !internal) p.p[2] = p.p[3] = p.p[4] = 0.0f;  // Bow, Blow, Strike
   stmlib::Random::Seed(0x21);
   ElementsEngine engine;
   engine.prepare(ElementsEngine::kNativeRate, 256);
@@ -318,10 +321,88 @@ TEST_CASE("Ext In routes the input to the Blow and Strike exciters") {
   REQUIRE(blowVsStrike > 0.5);
 }
 
-TEST_CASE("Ext In with no input is silent") {
+TEST_CASE("Ext In with no input adds nothing") {
+  // A held note with the default internal Strike sounds; with a null input every route must
+  // match Off routing of a real input, i.e. the input contributes nothing.
+  const std::vector<float> in = noise(16000, 0.3f);
+  const Stereo offWithInput = renderInput(0, &in, true, true);
+  REQUIRE(rmsStereo(offWithInput) > 0.01);
   for (int route = 0; route < 4; ++route) {
     INFO(route);
     REQUIRE(rmsStereo(renderInput(route, nullptr)) < 1e-4);
-    REQUIRE(rmsStereo(renderInput(route, nullptr, true)) < 1e-4);
+    const Stereo nullInput = renderInput(route, nullptr, true, true);
+    REQUIRE(nullInput.l == offWithInput.l);
+    REQUIRE(nullInput.r == offWithInput.r);
   }
+}
+
+TEST_CASE("Modal Synth smooths its continuous controls like the firmware") {
+  // CvScaler: every pot gets a 0.01 one-pole per 16-sample block; Flow, Mallet and Geometry
+  // add a 0.05 one-pole, Position and Space a 0.01 one-pole (cv_scaler.cc:148-150, 178-186).
+  ElementsEngine engine;
+  engine.prepare(ElementsEngine::kNativeRate, 256);
+  std::vector<float> l(16), r(16);
+  float* out[2] = {l.data(), r.data()};
+  ParamValues p = defaults();
+  p.p[14] = 0.0f;  // Space
+  engine.process(nullptr, out, p, 16);
+  REQUIRE(engine.smoothedParam(14) == 0.0f);  // first render after reset snaps
+
+  // One block after a step: general pot filter only, or that followed by BIND's filter.
+  ParamValues step = p;
+  step.p[1] = 0.0f;   // Contour 1 -> 0
+  step.p[5] = 1.0f;   // Flow 0.5 -> 1
+  step.p[11] = 1.0f;  // Brightness 0.5 -> 1 (clamped at 0.9995)
+  step.p[14] = 1.0f;  // Space 0 -> 1
+  engine.process(nullptr, out, step, 16);
+  REQUIRE_THAT(engine.smoothedParam(1), Catch::Matchers::WithinAbs(0.99, 1e-6));
+  REQUIRE_THAT(engine.smoothedParam(5), Catch::Matchers::WithinAbs(0.5 + 0.05 * 0.005, 1e-6));
+  REQUIRE_THAT(engine.smoothedParam(11), Catch::Matchers::WithinAbs(0.505, 1e-6));
+  REQUIRE_THAT(engine.smoothedParam(14), Catch::Matchers::WithinAbs(0.0001, 1e-7));
+
+  // Space keeps rising gradually: no block moves it more than one 0.01 pole can, and the
+  // two cascaded 50 ms poles (0.99 per block at 2 kHz) reach ~27% after 100 blocks and
+  // settle within 1000 blocks (0.5 s).
+  float previous = engine.smoothedParam(14);
+  float at100 = 0.0f;
+  for (int block = 2; block <= 1000; ++block) {
+    engine.process(nullptr, out, step, 16);
+    const float v = engine.smoothedParam(14);
+    INFO("block " << block << " value " << v);
+    REQUIRE(v >= previous);
+    REQUIRE(v - previous <= 0.01f);
+    if (block == 100) at100 = v;
+    previous = v;
+  }
+  INFO("after 100 blocks " << at100 << ", after 1000 " << previous);
+  REQUIRE(at100 > 0.2f);
+  REQUIRE(at100 < 0.35f);
+  REQUIRE(previous > 0.999f);
+
+  // A host block of 64 samples smooths like four native blocks.
+  ElementsEngine a, b;
+  a.prepare(ElementsEngine::kNativeRate, 256);
+  b.prepare(ElementsEngine::kNativeRate, 256);
+  std::vector<float> l64(64), r64(64);
+  float* out64[2] = {l64.data(), r64.data()};
+  a.process(nullptr, out, p, 16);
+  b.process(nullptr, out, p, 16);
+  a.process(nullptr, out64, step, 64);
+  for (int i = 0; i < 4; ++i) b.process(nullptr, out, step, 16);
+  REQUIRE(a.smoothedParam(14) == b.smoothedParam(14));
+
+  // A partial block advances the filter by its share of a native block.
+  ElementsEngine c;
+  c.prepare(ElementsEngine::kNativeRate, 256);
+  c.process(nullptr, out, p, 16);
+  c.process(nullptr, out, step, 8);
+  c.process(nullptr, out, step, 8);
+  const float halves = c.smoothedParam(1);
+  REQUIRE_THAT(halves, Catch::Matchers::WithinAbs(0.99, 1e-5));
+
+  // reset() snaps again on the next render.
+  engine.reset();
+  engine.process(nullptr, out, p, 16);
+  REQUIRE(engine.smoothedParam(14) == 0.0f);
+  REQUIRE(engine.smoothedParam(1) == 1.0f);
 }
