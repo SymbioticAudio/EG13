@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iterator>
 
+#include "engine/engine_registry.h"
 #include "synth/param_table.h"
 #include "voice/processor_factory.h"
 
@@ -321,7 +322,7 @@ void Part::controlVoice(int v, const PartParams& params, const ModPartInputs& pa
   VoiceControl& c = controls_[v];
   modulation_.processVoice(v, params.mod, part, voiceInputs(v), params.slots, &c, length);
   c.gain = params.voiceGain;
-  c.sourceGain = 1.0f;
+  c.sourceGain = sourceTrim(settings_.engine) * inputScale_;  // gain staging (rulings 25, 26)
   voices_[size_t(v)]->beginTick(c, length);
   controlValid_[v] = true;
   voiceRetrigger_[v] = false;
@@ -337,6 +338,11 @@ void Part::startTick(const PartParams& params, int offset) {
   }
   if (gate && !partGate_) partRetrigger_ = true;
   partGate_ = gate;
+  // Audio Input voices all carry the same Input: scale each by the number with an open gate, so
+  // a chord plays the Input at one voice's level.
+  int open = 0;
+  for (const auto& voice : voices_) open += voice->active() && voice->gate() ? 1 : 0;
+  inputScale_ = settings_.engine == int(SourceEngine::AudioInput) ? 1.0f / float(std::max(1, open)) : 1.0f;
   ModVoiceInputs voices[kVoices];
   for (int v = 0; v < kVoices; ++v) voices[v] = voiceInputs(v);
   const ModPartInputs part = partInputs(params, offset);

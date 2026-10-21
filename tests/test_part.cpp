@@ -18,6 +18,7 @@
 #include "test_engines.h"
 #include "test_helpers.h"
 #include "test_mod_engines.h"
+#include "voice/source_factory.h"
 #include "voice/processor_factory.h"
 
 using namespace eg13;
@@ -969,4 +970,52 @@ TEST_CASE("An Always-on part's first key sets its sources as a new note does") {
   runModulated(part, 32, params);
   REQUIRE(part.lastControl(0).params.source.p[0] == 0.0f);  // 0 until released again
   REQUIRE(part.lastControl(0).params.source.p[1] == 1.0f);
+}
+
+TEST_CASE("Each Source's trim reaches its voices") {
+  for (int engine = 0; engine < kNumSourceEngines; ++engine) {
+    Part part(steady, test::testModEngines);
+    part.prepare(kRate, kBlock);
+    PartSettings s;
+    s.engine = engine;  // the test voices have one engine; the trim follows the setting
+    part.applySettings(s);
+    part.noteOn(60, 1.0f);
+    runModulated(part, 32, PartParams{});
+    INFO("engine " << engine);
+    REQUIRE(part.lastControl(0).sourceGain == sourceTrim(engine));
+  }
+  REQUIRE(sourceTrimDb(int(SourceEngine::Macro)) == 0.0f);
+  REQUIRE(sourceTrimDb(int(SourceEngine::Digital)) == -3.0f);
+  REQUIRE(sourceTrimDb(int(SourceEngine::Modal)) == 12.0f);
+  REQUIRE(sourceTrimDb(int(SourceEngine::Resonator)) == 12.0f);
+  REQUIRE(sourceTrimDb(int(SourceEngine::AudioInput)) == 0.0f);
+  REQUIRE(std::fabs(sourceTrim(int(SourceEngine::Modal)) - 3.98107f) < 1e-4f);
+}
+
+TEST_CASE("An Audio Input chord plays the Input at one voice's level") {
+  auto level = [](int notes) {
+    Part part([] { return makeSource(int(SourceEngine::AudioInput)); }, test::testModEngines);
+    part.prepare(kRate, kBlock);
+    PartSettings s;
+    s.engine = int(SourceEngine::AudioInput);
+    part.applySettings(s);
+    PartParams params;
+    params.slots.source = test::defaultParams(sourceEngineInfo(int(SourceEngine::AudioInput)));
+    std::vector<float> in(9600);
+    for (size_t i = 0; i < in.size(); ++i) in[i] = 0.25f * float(std::sin(6.283185307179586 * 220.0 * double(i) / kRate));
+    for (int k = 0; k < notes; ++k) part.noteOn(60 + 4 * k, 1.0f);
+    std::vector<float> l(9600), r(9600);
+    for (int done = 0; done < 9600; done += kBlock) {
+      const int count = std::min(int(kBlock), 9600 - done);
+      const float* input[2] = {in.data() + done, in.data() + done};
+      float* out[2] = {l.data() + done, r.data() + done};
+      VoiceInputs vin;
+      vin.input = input;
+      part.process(vin, out, params, count);
+    }
+    return test::rms(l, 4800, 9600);
+  };
+  const double one = level(1);
+  REQUIRE(one > 0.1);
+  REQUIRE(std::fabs(level(4) / one - 1.0) < 0.01);
 }

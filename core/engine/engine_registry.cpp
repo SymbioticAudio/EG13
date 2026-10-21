@@ -42,6 +42,19 @@ const EngineInfo& sourceEngineInfo(int engine) {
   return PlaitsEngine::staticInfo();
 }
 
+float sourceTrimDb(int engine) {
+  switch (SourceEngine(engine)) {
+    case SourceEngine::Digital: return -3.0f;
+    case SourceEngine::Modal: return 12.0f;
+    case SourceEngine::Resonator: return 12.0f;
+    case SourceEngine::Macro:
+    case SourceEngine::AudioInput: break;
+  }
+  return 0.0f;
+}
+
+float sourceTrim(int engine) { return std::pow(10.0f, sourceTrimDb(engine) / 20.0f); }
+
 int filterEngineFromSelector(double value) { return fromSelector(value, kNumFilterEngines); }
 
 int shaperEngineFromSelector(double value) { return fromSelector(value, kNumShaperEngines); }

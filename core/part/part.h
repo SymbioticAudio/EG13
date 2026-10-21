@@ -187,6 +187,7 @@ class Part {
   bool partRetrigger_ = false;
   uint32_t seed_ = 0x13579BDFu;  // the Random source's seed (setSeedBase)
   uint32_t random_ = 0x13579BDFu;
+  float inputScale_ = 1.0f;  // Audio Input chord scaling: 1 / open Audio Input voices (ruling 26)
 };
 
 }  // namespace eg13

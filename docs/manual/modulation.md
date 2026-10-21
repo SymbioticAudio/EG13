@@ -106,3 +106,12 @@ Modulation is time-aligned with the sound it shapes. The engines take a moment t
 - A route to *Pan* moves the voice from the centre (−50 % fully left, +50 % fully right), using the part's own pan law (the centre keeps full level on both sides).
 - A voice stops, and is free for a new note, when its note is off and its sound after the Amp has been silent (below −90 dBFS) for 50 ms. It also stops when the sound reaching its Shaper has been silent that long, as before, so a Ring Mod / Vocoder whose internal oscillator would sound forever does not hold the voice.
 - In an *Always on* part the Amp stays open (its voice is always on). Its per-voice envelopes and LFOs still follow the keys you hold: the first key down triggers them, so an envelope routed to the Amp turns an always-on drone into a keyed sound.
+
+## Levels
+
+EG13 keeps room for chords and evens out its Sources (gain staging):
+
+- **Voice Gain** (a master setting): each voice plays 12 dB lower (*−12 dB*, the instrument's default), so a chord of eight loud voices does not overload the mix. *0 dB* plays each voice at full level: EG13 FX starts there (it usually plays one voice), and projects saved before modulation existed load with it, so they keep their level.
+- **Source trims**: each Source is turned up or down at its output, before the Filter, so one held note at the engine's default settings comes out about as loud on every Source: the Digital Oscillator 3 dB down, the Modal Synth and the Resonator 12 dB up, the Macro Oscillator and Audio Input unchanged. This also means the Filter and the Shaper see similar levels from every Source.
+- **Audio Input chords**: every Audio Input voice carries the same Input, so EG13 divides each one by the number of keys held. A chord plays the Input at one voice's level instead of several times louder.
+- **Soft Clip** (a master setting, on by default): the main and Bus 2 outputs pass unchanged below −3 dBFS; above that they bend smoothly towards full scale and never go over it. A NaN is silenced. Switch it off to hear EG13's output exactly (the host may then clip it).

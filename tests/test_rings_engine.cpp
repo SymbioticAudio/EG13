@@ -790,3 +790,25 @@ TEST_CASE("Resonator AUX is upstream Rings' aux output at polyphony 2 and 4 and 
     REQUIRE(r[1] == r[0]);
   }
 }
+
+TEST_CASE("A new note's velocity glides the Resonator's gain over 5 ms") {
+  RingsEngine engine;
+  engine.prepare(RingsEngine::kNativeRate, 256);
+  std::vector<float> l(256), r(256);
+  float* out[2] = {l.data(), r.data()};
+  ParamValues p = defaults();
+  p.p[8] = kPoly2;
+  engine.noteOn(60.0f, 1.0f);
+  engine.process(nullptr, out, p, 256);
+  REQUIRE(engine.velocityGain() == 1.0f);
+  engine.noteOn(64.0f, 0.25f);
+  engine.process(nullptr, out, p, 24);  // one native block, half a millisecond
+  REQUIRE(engine.velocityGain() > 0.8f);
+  REQUIRE(engine.velocityGain() < 1.0f);
+  for (int b = 0; b < 10; ++b) engine.process(nullptr, out, p, 256);  // 53 ms
+  REQUIRE(std::fabs(engine.velocityGain() - 0.25f) < 1e-3f);
+  engine.reset();
+  engine.noteOn(60.0f, 0.5f);
+  engine.process(nullptr, out, p, 24);
+  REQUIRE(engine.velocityGain() == 0.5f);  // a note after a reset starts at its velocity
+}

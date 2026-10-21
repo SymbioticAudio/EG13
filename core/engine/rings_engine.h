@@ -36,6 +36,8 @@ class RingsEngine final : public VoiceEngine {
   float smoothedParam(int index) const;
   // Test hook: the de-clicked Spread applied to the last output sample.
   float smoothedSpread() const { return spread_.value(); }
+  // Test hook: the de-clicked velocity gain applied to the last output sample.
+  float velocityGain() const { return velocityGain_.value(); }
 
  private:
   struct Impl;
@@ -52,6 +54,9 @@ class RingsEngine final : public VoiceEngine {
   bool aux_ = false;  // write out[2]: Rings' even (AUX jack) output, for the Ring Mod modulator
   PotSmoother pots_;  // CvScaler pot smoothing, once per native block
   Declicker spread_;  // EG13-only Spread, per sample
+  // The velocity gain moves over 5 ms instead of stepping (M4, provisional ruling 27): with
+  // polyphony above 1 a new strum's velocity still rescales earlier strums, without a click.
+  Declicker velocityGain_;
 };
 
 }  // namespace eg13

@@ -1,13 +1,13 @@
 # Known limitations
 
-- **Levels and headroom:** EG13 does not yet manage gain between voices and parts. Sixteen loud voices can peak well above full scale (5 to 13 times, measured on chords). Some Filter and Shaper settings are much louder than their input (measured with a half-scale saw):
+- **Levels and headroom:** EG13 evens out its Sources and keeps room for chords (see *Levels* in the modulation page), but the parts' own sum can still exceed full scale with very loud chords, and the inter-part soft limiter only protects loops, not levels. Before Voice Gain, sixteen loud voices peaked well above full scale (5 to 13 times, measured on chords). Some Filter and Shaper settings are much louder than their input (measured with a half-scale saw):
   - Several Classic Filters types at full Resonance peak at about 4.5, about +13 dB above full scale.
   - The EQ at its extremes (+18 dB with a loud input) clips inside, and the output can briefly ring to about 4 times full scale.
   - The Ring Mod / Vocoder at its defaults is 4.6 dB louder than its input (peak 1.24 from 0.5), and up to 12.3 dB louder at Algorithm *Fold* (peak 2.0). Its output never exceeds Warps' own 16-bit range (3.2 times full scale).
   - At their defaults the filters and the EQ keep the level (within 0.05 dB).
 
-  Keep the master level down. A later version adds gain staging and a soft clipper on the master output.
-- **Resonator velocity:** a new note's velocity rescales the whole Resonator output, including voices still ringing, which can click (to be fixed in a later version).
+  Keep the master level down; the master Soft Clip (on by default) bends whatever still goes over −3 dBFS and never lets it pass full scale.
+- **Resonator velocity:** with Polyphony 2 or 4, a new note's velocity also changes the level of earlier notes still ringing (over 5 ms, without a click). A level per string would need a change inside the original module's code.
 - **Modal Synth input:** the firmware's noise gate on the external input is not ported.
 - **Part B in Single mode** still runs and uses CPU, so it can feed Part A.
 - **Ring Mod / Vocoder noise carrier:** with Osc Shape *Saw / Noise* in the vocoder range, the noise comes from a random generator shared by the voices on one audio thread, so two renders of the same notes are not sample-identical.

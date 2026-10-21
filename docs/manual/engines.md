@@ -49,6 +49,7 @@ Controls: **Model** (Modal, Sympathetic, String, FM Voice, Sympathetic Q, String
 
 - **Exciter:** *Internal* (each note strums the resonator), *Input* (the part's Input excites it; notes only set the pitch), or *Both*.
 - **Polyphony** 1, 2 or 4: with more than one voice, earlier strums keep ringing at their own pitch while new ones start.
+- Velocity sets the Resonator's level. A new note's velocity takes 5 ms to take effect, so it does not click; with Polyphony above 1 it also changes the level of earlier strings still ringing, as there is one level for the whole Resonator.
 - **Spread** 0 folds the module's odd and even outputs to mono, the way the module does when only OUT is patched. Spread 1 puts the odd output on the left and the even output on the right.
 - The played note reaches the Resonator as the module's V/OCT input against a tonic of C4 plus **Frequency**.
   - With the Sympathetic String model at Structure below about 1/7, the strings drone at that tonic, as on the hardware with V/OCT patched.

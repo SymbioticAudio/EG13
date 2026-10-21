@@ -13,6 +13,14 @@ constexpr int kSourceEngineSelectorMax = 31;  // fixed host range so adding engi
 int sourceEngineFromSelector(double value);  // unknown values -> Macro
 const EngineInfo& sourceEngineInfo(int engine);
 
+// Gain staging (M4, provisional ruling 25): each Source's trim at its output, before the Filter,
+// so a single held note at the engine's defaults peaks near the Macro Oscillator's (planning
+// measurement at 48 kHz, velocity 1, C3: peaks 0.66, 0.97, 0.17, 0.17; Audio Input passes its
+// input). In dB and as a gain; unknown engines 0 dB. A trim is constant per engine, so it needs
+// no delay ring: it sits at the Source output, ahead of the Task 10 latency alignment.
+float sourceTrimDb(int engine);
+float sourceTrim(int engine);
+
 // Filter and Shaper engine ids. Saved in projects: never renumber.
 enum class FilterEngine : int { Off = 0, Analog = 1, Classic = 2, StateVariable = 3 };
 constexpr int kNumFilterEngines = 4;
