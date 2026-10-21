@@ -16,5 +16,6 @@ When a control jumps (an automation step, or a modulation change), each engine f
 - **LFO:** Tides glides Frequency, Shape, Slope, Smoothness and Shift itself across each of its 8-sample blocks (an eighth of a millisecond). Mode, Output, Range and Sync switch at once.
 - **Random / S&H:** no smoothing, as on the module: controls are read every 5 samples of its own 32 kHz. X Steps, below its middle, smooths the random values themselves.
 - **Function Generator:** no smoothing, as on the module: controls are read every 4 samples of its own 48 kHz. Mode and Waveform switch at once.
+- **Modulation:** EG13 works out the routes every 16 samples (a third of a millisecond at 48 kHz) and moves the Amp, the pan and the gains in a straight line across those 16 samples, so modulating them does not zipper. Routes into an engine's controls reach that engine every 16 samples and are smoothed as listed above for that engine. Without an Amp route the Amp opens and closes over 5 ms.
 
-After a reset, or when a voice starts from silence, every control starts at its current value with no glide (except inside the Ring Mod / Vocoder, as noted above).
+After a reset, or when a voice starts from silence, every control starts at its current value with no glide (except inside the Ring Mod / Vocoder, as noted above); the Amp starts closed and opens as described in [Modulation](modulation.md).

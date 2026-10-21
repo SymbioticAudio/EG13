@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
@@ -33,6 +34,23 @@ std::vector<float> run(Voice& voice, int n, const ParamValues& p = ParamValues{}
     done += count;
   }
   return left;
+}
+
+SourceSpec constant() { return {std::make_unique<test::ConstantEngine>(), 0.0, 16}; }
+
+struct Rendered {
+  std::vector<float> l, r;
+};
+
+// Renders `ticks` control ticks of 16 samples through the M4 path with the same controls.
+Rendered renderTicks(Voice& voice, const VoiceControl& c, int ticks) {
+  Rendered out{std::vector<float>(size_t(ticks) * 16, 0.0f), std::vector<float>(size_t(ticks) * 16, 0.0f)};
+  for (int t = 0; t < ticks; ++t) {
+    voice.beginTick(c, 16);
+    float* o[2] = {out.l.data() + t * 16, out.r.data() + t * 16};
+    voice.render(VoiceInputs{}, o, 16);
+  }
+  return out;
 }
 
 }  // namespace
@@ -603,6 +621,152 @@ TEST_CASE("Voice processing with every engine and slot switches does not allocat
       }
       if (block == 30) voice.trigger(64, 0.7f);
       voice.process(VoiceInputs{input, input, in.data()}, out, p, 256);
+    }
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
+}
+
+TEST_CASE("Without an Amp route the Amp follows the gate with 5 ms ramps") {
+  // Pre-flight ruling G10: at 44.1, 48 and 96 kHz, with the ramp's length derived from the rate.
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  CAPTURE(rate);
+  const double rampSamples = rate * Voice::kAmpRampSeconds;    // 220.5, 240, 480
+  const int ramp = int(std::ceil(rampSamples));                 // samples until fully open
+  const int ticks = int(std::ceil(2.0 * rampSamples / 16.0));   // 10 ms of ticks
+  const size_t last = size_t(ticks) * 16 - 1;
+  Voice voice(constant());
+  voice.prepare(rate, 256);
+  voice.trigger(60, 1.0f);
+  const VoiceControl c;  // not routed, centre, unity gains
+  const Rendered on = renderTicks(voice, c, ticks);
+  for (int i = 0; i < ramp; ++i) {
+    const float level = float(std::min(1.0, double(i + 1) / rampSamples));
+    REQUIRE(std::fabs(on.l[size_t(i)] - 0.5f * level) < 1e-5f);
+  }
+  REQUIRE(on.l[last] == 0.5f);
+  REQUIRE(voice.ampLevel() == 1.0f);
+  voice.release();
+  const Rendered off = renderTicks(voice, c, ticks);
+  for (int i = 0; i < ramp; ++i) {
+    const float level = float(std::max(0.0, 1.0 - double(i + 1) / rampSamples));
+    REQUIRE(std::fabs(off.l[size_t(i)] - 0.5f * level) < 1e-5f);
+  }
+  REQUIRE(off.l[last] == 0.0f);
+}
+
+TEST_CASE("A routed Amp follows its level, moving across each tick") {
+  Voice voice(constant());
+  voice.prepare(48000.0, 256);
+  voice.trigger(60, 1.0f);
+  VoiceControl c;
+  c.ampRouted = true;
+  c.amp = 0.5f;
+  Rendered out = renderTicks(voice, c, 1);
+  for (int i = 0; i < 16; ++i) REQUIRE(std::fabs(out.l[size_t(i)] - 0.5f * 0.5f * float(i + 1) / 16.0f) < 1e-6f);
+  c.amp = 1.5f;  // clamped
+  out = renderTicks(voice, c, 1);
+  REQUIRE(out.l[15] == 0.5f);
+  c.amp = 0.0f;  // routed at zero: silent even with the gate held
+  out = renderTicks(voice, c, 2);
+  REQUIRE(out.l[31] == 0.0f);
+}
+
+TEST_CASE("Pan, Voice Gain and Source gain shape the voice") {
+  Voice voice(constant());
+  voice.prepare(48000.0, 256);
+  voice.trigger(60, 1.0f);
+  VoiceControl c;
+  c.ampRouted = true;
+  c.amp = 1.0f;
+  c.pan = 1.0f;          // right
+  c.gain = 0.25f;        // -12 dB
+  c.sourceGain = 2.0f;   // before the (Off) Filter
+  const Rendered out = renderTicks(voice, c, 4);
+  // First tick: pan and gains snap (a note's first tick from silence); the Amp opens across it.
+  REQUIRE(out.l[15] == 0.0f);
+  REQUIRE(std::fabs(out.r[15] - 0.5f * 2.0f * 0.25f) < 1e-6f);
+  REQUIRE(std::fabs(out.r[63] - 0.25f) < 1e-6f);
+  REQUIRE(out.l[63] == 0.0f);
+}
+
+TEST_CASE("Pan and gains glide across a tick after the first") {
+  Voice voice(constant());
+  voice.prepare(48000.0, 256);
+  voice.trigger(60, 1.0f);
+  VoiceControl c;
+  c.ampRouted = true;
+  c.amp = 1.0f;
+  renderTicks(voice, c, 2);
+  c.gain = 0.5f;
+  const Rendered out = renderTicks(voice, c, 1);
+  for (int i = 0; i < 16; ++i) {
+    const float gain = 1.0f + (0.5f - 1.0f) * float(i + 1) / 16.0f;
+    REQUIRE(std::fabs(out.l[size_t(i)] - 0.5f * gain) < 1e-6f);
+  }
+}
+
+TEST_CASE("The pitch control transposes the voice") {
+  Voice voice(sine());
+  voice.prepare(48000.0, 256);
+  voice.trigger(57, 1.0f);  // A3, 220 Hz
+  VoiceControl c;
+  c.pitch = 12.0f;
+  const Rendered out = renderTicks(voice, c, 3000);
+  REQUIRE(std::fabs(test::estimateFrequency(out.l, 48000.0, 4800, out.l.size()) - 440.0) < 0.5);
+}
+
+TEST_CASE("A voice is freed 50 ms after its Amp closes, even if its Source keeps sounding") {
+  Voice voice(constant());
+  voice.prepare(48000.0, 256);
+  voice.trigger(60, 1.0f);
+  const VoiceControl c;
+  renderTicks(voice, c, 30);  // the Amp fully open
+  voice.release();
+  int ticks = 0;
+  while (voice.active() && ticks < 1000) {
+    renderTicks(voice, c, 1);
+    ++ticks;
+  }
+  // 5 ms of release ramp, then 50 ms below -90 dBFS: 2640 samples, 165 ticks.
+  REQUIRE(ticks >= 165);
+  REQUIRE(ticks <= 166);
+}
+
+TEST_CASE("A voice's Amp starts closed on each note from silence") {
+  Voice voice(constant());
+  voice.prepare(48000.0, 256);
+  voice.trigger(60, 1.0f);
+  VoiceControl c;
+  c.pan = -1.0f;
+  renderTicks(voice, c, 400);
+  voice.reset();
+  voice.trigger(62, 1.0f);
+  c.pan = 1.0f;
+  const Rendered out = renderTicks(voice, c, 1);
+  REQUIRE(out.l[0] == 0.0f);  // pan snapped right, no glide from the left
+  REQUIRE(std::fabs(out.r[0] - 0.5f / 240.0f) < 1e-6f);  // the Amp opens from 0
+}
+
+TEST_CASE("Rendering the M4 path does not allocate") {
+  Voice voice(sine());
+  voice.prepare(48000.0, 256);
+  VoiceControl c;
+  std::vector<float> l(16), r(16);
+  float* o[2] = {l.data(), r.data()};
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int t = 0; t < 3000; ++t) {
+      if (t % 500 == 0) voice.trigger(48 + t / 500, 0.8f);
+      if (t % 500 == 400) voice.release();
+      c.ampRouted = (t / 250) % 2 == 0;
+      c.amp = 0.7f;
+      c.pan = float(t % 7) / 3.0f - 1.0f;
+      c.pitch = float(t % 5);
+      voice.beginTick(c, 16);
+      voice.render(VoiceInputs{}, o, 7);
+      voice.render(VoiceInputs{}, o, 9);
     }
     allocations = counter.count();
   }

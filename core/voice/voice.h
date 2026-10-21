@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "engine/native_rate_wrapper.h"
+#include "mod/voice_control.h"
 #include "voice/processor_slot.h"
 #include "voice/slot_params.h"
 #include "voice/source_factory.h"
@@ -22,11 +23,12 @@ struct VoiceInputs {
   const float* inputSide = nullptr;
 };
 
-// One synth voice: Source -> Filter -> Shaper (spec §2), plus note, glide and bend handling and
-// silence detection.
+// One synth voice: Source -> Filter -> Shaper -> Amp -> pan (spec §2), plus note, glide and bend
+// handling and silence detection.
 class Voice {
  public:
   static constexpr int kControlBlock = 16;  // pitch updates every 16 host samples
+  static constexpr double kAmpRampSeconds = 0.005;  // the gate-following Amp's ramps (spec §5.2)
 
   enum class Alignment { Notes, Input };
 
@@ -51,7 +53,18 @@ class Voice {
   void setPitchOffset(float semitones) { pitchOffset_ = semitones; }
   void setGlideSeconds(float seconds) { glideSeconds_ = seconds; }
 
-  // Adds n samples into out[0], out[1].
+  // M4 (Part's modulated path). beginTick(): the matrix's controls for the next `length`
+  // samples (the rest of the Part's 16-sample tick). render(): adds n samples (n <= what is left
+  // of the tick) of Source -> Filter -> Shaper with the tick's slot parameters and pitch, the
+  // Source gain before the Filter, then the Amp (routed, or following the gate with 5 ms ramps),
+  // the pan and the Voice Gain. Amp, pan and gains move in straight lines across the tick; on a
+  // note's first tick from silence the pan and gains start at their values (no glide).
+  void beginTick(const VoiceControl& control, int length);
+  void render(const VoiceInputs& in, float* const* out, int n);
+  float ampLevel() const { return amp_; }  // tests: the Amp after the last sample rendered
+
+  // M1-M3 path (tests, and parts without modulation): no Amp, pan or gains. Adds n samples into
+  // out[0], out[1].
   void process(const VoiceInputs& in, float* const* out, const SlotParams& p, int n);
   // Source parameters only (Filter and Shaper get zeros). in: the part's Input (nullable).
   void process(const float* const* in, float* const* out, const ParamValues& p, int n);
@@ -77,6 +90,9 @@ class Voice {
   // The slot picks from them by each engine's own selectors.
   SideSignals sideSignals(const VoiceInputs& in, int offset, int count);
   void restart(unsigned stages);  // reset the engines playing in these stages
+  // The chain for n samples; c == nullptr is the M1-M3 path.
+  void run(const VoiceInputs& in, float* const* out, const SlotParams& p, const VoiceControl* c, int n);
+  float tickPosition(int sample) const;  // 0..1 across the tick, after `sample` more samples
   void noteOn(unsigned stages);   // the held note, at the current pitch and velocity
   NativeRateWrapper& source() { return *sources_[size_t(current_)]; }
 
@@ -95,8 +111,23 @@ class Voice {
   unsigned retrigger_ = 0;  // stages to re-send the held note to after a NaN reset
   float velocity_ = 1.0f;
   bool active_ = false;
-  int silentSamples_ = 0;
+  int silentSamples_ = 0;  // the Shaper's input silent since the release
+  int outSilent_ = 0;      // the output after the Amp silent since the release (M4 path)
   int silenceLimit_ = 2400;
+  // The M4 path's tick: controls, position, and the Amp, pan and gains at its start and now.
+  VoiceControl control_;
+  int tickLength_ = kControlBlock;
+  int tickPos_ = 0;
+  bool fresh_ = true;  // the next tick is the note's first from silence: snap pan and gains
+  float ampStep_ = 1.0f / 240.0f;
+  float amp_ = 0.0f;
+  float ampFrom_ = 0.0f;
+  float pan_ = 0.0f;
+  float panFrom_ = 0.0f;
+  float gain_ = 1.0f;
+  float gainFrom_ = 1.0f;
+  float sourceGain_ = 1.0f;
+  float sourceGainFrom_ = 1.0f;
   float source_[3][kControlBlock] = {};  // Source L, R, AUX
   float filtered_[2][kControlBlock] = {};
   float side_[kControlBlock] = {};       // mono other part

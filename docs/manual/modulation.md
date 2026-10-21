@@ -91,3 +91,13 @@ Choosing an engine gives it its own settings, including its scope (Random / S&H 
 A mod engine that outputs NaN/Inf restarts and reads 0 for that tick.
 
 **Part Level** and routes into a per-part slot take per-note sources (velocity, a per-voice mod slot, …) from the most recently started voice.
+
+## Amp and voices
+
+Every voice ends with an **Amp** and a **pan**, after the Shaper.
+
+- If no route goes to *Amp*, the Amp simply follows the key: it opens over 5 ms when the note starts and closes over 5 ms when you let go. That cuts a sound that would otherwise ring on after the key (a struck Resonator, a Macro Oscillator drum): route an envelope to the Amp to shape the release.
+- If any route goes to *Amp*, the Amp's level is the sum of those routes (0 to 100 %). The init patch routes Mod 1's envelope to the Amp, scaled by velocity.
+- A route to *Pan* moves the voice from the centre (−50 % fully left, +50 % fully right), using the part's own pan law (the centre keeps full level on both sides).
+- A voice stops, and is free for a new note, when its note is off and its sound after the Amp has been silent (below −90 dBFS) for 50 ms. It also stops when the sound reaching its Shaper has been silent that long, as before, so a Ring Mod / Vocoder whose internal oscillator would sound forever does not hold the voice.
+- In an *Always on* part the Amp stays open (its voice is always on). Its per-voice envelopes and LFOs still follow the keys you hold: the first key down triggers them, so an envelope routed to the Amp turns an always-on drone into a keyed sound.

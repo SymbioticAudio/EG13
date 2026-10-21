@@ -50,6 +50,7 @@ Voice::Voice(std::vector<SourceSpec> sources, std::vector<SourceSpec> filters, s
 void Voice::prepare(double hostRate, int maxBlock, Alignment alignment) {
   hostRate_ = hostRate;
   silenceLimit_ = int(hostRate * kSilenceSeconds);
+  ampStep_ = float(1.0 / std::max(1.0, hostRate * kAmpRampSeconds));
   auto path = [alignment](const NativeRateWrapper& s) {
     return alignment == Alignment::Input && s.info().usesInput ? s.inputLatencySamples()
                                                                : s.outputLatencySamples();
@@ -78,6 +79,15 @@ void Voice::reset() {
   retrigger_ = 0;
   active_ = false;
   silentSamples_ = 0;
+  outSilent_ = 0;
+  control_ = VoiceControl{};
+  tickLength_ = kControlBlock;
+  tickPos_ = 0;
+  fresh_ = true;
+  amp_ = ampFrom_ = 0.0f;
+  pan_ = panFrom_ = 0.0f;
+  gain_ = gainFrom_ = 1.0f;
+  sourceGain_ = sourceGainFrom_ = 1.0f;
 }
 
 void Voice::restart(unsigned stages) {
@@ -120,12 +130,15 @@ void Voice::trigger(int key, float velocity) {
   if (!active_) {
     restart(kAllStages);  // drop stale converter samples and filter state from the previous note
     currentNote_ = double(targetNote_);
+    amp_ = 0.0f;   // the Amp opens from silence
+    fresh_ = true;  // the first tick snaps pan and gains
   } else if (glideSeconds_ <= 0.0f) {
     currentNote_ = double(targetNote_);
   }
   gate_ = true;
   active_ = true;
   silentSamples_ = 0;
+  outSilent_ = 0;
   noteOn(kAllStages);
 }
 
@@ -169,6 +182,32 @@ void Voice::process(const float* const* in, float* const* out, const ParamValues
 }
 
 void Voice::process(const VoiceInputs& in, float* const* out, const SlotParams& p, int n) {
+  run(in, out, p, nullptr, n);
+}
+
+void Voice::beginTick(const VoiceControl& control, int length) {
+  control_ = control;
+  tickLength_ = std::max(1, length);
+  tickPos_ = 0;
+  if (fresh_) {  // a note's first tick from silence: no glide from the previous note's values
+    pan_ = control.pan;
+    gain_ = control.gain;
+    sourceGain_ = control.sourceGain;
+    fresh_ = false;
+  }
+  ampFrom_ = amp_;
+  panFrom_ = pan_;
+  gainFrom_ = gain_;
+  sourceGainFrom_ = sourceGain_;
+}
+
+void Voice::render(const VoiceInputs& in, float* const* out, int n) { run(in, out, control_.params, &control_, n); }
+
+float Voice::tickPosition(int sample) const {
+  return std::min(1.0f, float(tickPos_ + sample) / float(tickLength_));
+}
+
+void Voice::run(const VoiceInputs& in, float* const* out, const SlotParams& p, const VoiceControl* c, int n) {
   if (!active_) return;
   if (retrigger_ != 0 && gate_) {  // the held note, to the stages a NaN reset (restart)
     noteOn(retrigger_);
@@ -182,7 +221,7 @@ void Voice::process(const VoiceInputs& in, float* const* out, const SlotParams& 
             : 0.0;
     currentNote_ = double(targetNote_) + (currentNote_ - double(targetNote_)) * coeff;
     if (std::fabs(currentNote_ - double(targetNote_)) < 1e-4) currentNote_ = double(targetNote_);
-    const float note = float(currentNote_) + pitchOffset_;
+    const float note = float(currentNote_) + pitchOffset_ + (c != nullptr ? c->pitch : 0.0f);
     source().setNote(note);
     filter_.setNote(note);
     shaper_.setNote(note);
@@ -193,6 +232,14 @@ void Voice::process(const VoiceInputs& in, float* const* out, const SlotParams& 
     if (!source().info().hasAux) {
       // Sources without an AUX output give their main output instead (spec §4).
       for (int i = 0; i < count; ++i) source_[2][i] = 0.5f * (source_[0][i] + source_[1][i]);
+    }
+    if (c != nullptr) {  // the Source's trim and chord scaling, before the Filter (M4 gain staging)
+      for (int i = 0; i < count; ++i) {
+        const float g = sourceGainFrom_ + (c->sourceGain - sourceGainFrom_) * tickPosition(i + 1);
+        source_[0][i] *= g;
+        source_[1][i] *= g;
+        source_[2][i] *= g;
+      }
     }
     const float* filterIn[2] = {source_[0], source_[1]};
     float* filterOut[2] = {filtered_[0], filtered_[1]};
@@ -208,26 +255,57 @@ void Voice::process(const VoiceInputs& in, float* const* out, const SlotParams& 
       restart(failed);
       retrigger_ = gate_ ? failed : 0;
       active_ = gate_;
+      if (c != nullptr) tickPos_ += count;
       return;
     }
     float peak = 0.0f;
+    float outPeak = 0.0f;
     for (int i = 0; i < count; ++i) {
-      out[0][done + i] += buffer_[0][i];
-      out[1][done + i] += buffer_[1][i];
+      float l = buffer_[0][i];
+      float r = buffer_[1][i];
+      if (c != nullptr) {
+        // The Amp (spec §5.2): the routes' level, or the gate with 5 ms ramps; then the pan
+        // (the part's balance law) and the Voice Gain, the Amp's gain.
+        const float t = tickPosition(i + 1);
+        if (c->ampRouted) {
+          amp_ = ampFrom_ + (clamp01(c->amp) - ampFrom_) * t;
+        } else {
+          const float target = gate_ ? 1.0f : 0.0f;
+          amp_ = target > amp_ ? std::min(target, amp_ + ampStep_) : std::max(target, amp_ - ampStep_);
+        }
+        pan_ = panFrom_ + (c->pan - panFrom_) * t;
+        gain_ = gainFrom_ + (c->gain - gainFrom_) * t;
+        const float g = amp_ * gain_;
+        l *= g * std::min(1.0f, 1.0f - pan_);
+        r *= g * std::min(1.0f, 1.0f + pan_);
+        outPeak = std::max(outPeak, std::max(std::fabs(l), std::fabs(r)));
+      }
+      out[0][done + i] += l;
+      out[1][done + i] += r;
       peak = std::max(peak, std::max(std::fabs(filtered_[0][i]), std::fabs(filtered_[1][i])));
+    }
+    if (c != nullptr) {
+      sourceGain_ = sourceGainFrom_ + (c->sourceGain - sourceGainFrom_) * tickPosition(count);
+      tickPos_ += count;
     }
     done += count;
 
     // Silence is measured at the Shaper input: the Ring Mod's internal oscillator keeps the
     // Shaper's output alive after the note has died. The Shaper latency lets its output flush.
+    // With the Amp (M4), a silent output frees the voice too (spec §5.2).
     if (!gate_ && peak < kSilenceThreshold) {
       silentSamples_ += count;
-      if (silentSamples_ >= silenceLimit_ + shaper_.latencySamples()) {
-        active_ = false;
-        return;
-      }
     } else {
       silentSamples_ = 0;
+    }
+    if (c != nullptr && !gate_ && outPeak < kSilenceThreshold) {
+      outSilent_ += count;
+    } else {
+      outSilent_ = 0;
+    }
+    if (silentSamples_ >= silenceLimit_ + shaper_.latencySamples() || (c != nullptr && outSilent_ >= silenceLimit_)) {
+      active_ = false;
+      return;
     }
   }
 }
