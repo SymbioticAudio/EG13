@@ -52,4 +52,39 @@ class PotSmoother {
   bool snap_ = true;
 };
 
+// Per-sample de-click one-pole for EG13-only gain and mix controls, which have no firmware
+// filter to reproduce. The first value after reset() snaps to its target; afterwards it snaps
+// once within 1e-6, or once a step no longer moves the float (it would stall short).
+class Declicker {
+ public:
+  explicit Declicker(double seconds, double rate = 48000.0) : seconds_(seconds) {
+    prepare(rate);
+  }
+
+  void prepare(double rate) {
+    coeff_ = seconds_ > 0.0 ? float(1.0 - std::exp(-1.0 / (seconds_ * rate))) : 1.0f;
+  }
+
+  void reset() { snap_ = true; }
+
+  float next(float target) {
+    if (snap_) {
+      value_ = target;
+      snap_ = false;
+      return value_;
+    }
+    const float smoothed = value_ + coeff_ * (target - value_);
+    value_ = smoothed == value_ || std::fabs(target - smoothed) < 1e-6f ? target : smoothed;
+    return value_;
+  }
+
+  float value() const { return value_; }
+
+ private:
+  double seconds_;
+  float coeff_ = 1.0f;
+  float value_ = 0.0f;
+  bool snap_ = true;
+};
+
 }  // namespace eg13

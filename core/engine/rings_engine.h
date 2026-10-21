@@ -33,6 +33,8 @@ class RingsEngine final : public VoiceEngine {
   static int polyphonyVoices(float normalized);    // P9 thirds -> 1, 2 or 4 voices
   // Test hook: the smoothed 0..1 value of P1..P9 (index 0..8) last given to Part.
   float smoothedParam(int index) const;
+  // Test hook: the de-clicked Spread applied to the last output sample.
+  float smoothedSpread() const { return spread_.value(); }
 
  private:
   struct Impl;
@@ -47,6 +49,7 @@ class RingsEngine final : public VoiceEngine {
   int model_ = -1;
   int polyphony_ = 1;
   PotSmoother pots_;  // CvScaler pot smoothing, once per native block
+  Declicker spread_;  // EG13-only Spread, per sample
 };
 
 }  // namespace eg13

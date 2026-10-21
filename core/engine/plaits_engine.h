@@ -34,6 +34,8 @@ class PlaitsEngine final : public VoiceEngine {
   static float frequencyOffset(float normalized);
   // Test hook: the smoothed 0..1 value of P1..P8 (index 0..7) last given to the voice.
   float smoothedParam(int index) const;
+  // Test hook: the de-clicked Aux Mix applied to the last output sample.
+  float smoothedAuxMix() const { return auxMix_.value(); }
 
  private:
   struct Impl;
@@ -47,6 +49,7 @@ class PlaitsEngine final : public VoiceEngine {
   bool retrigger_ = false;
   size_t pos_ = 0;
   PotSmoother pots_;  // Ui::Poll pot smoothing, once per native block
+  Declicker auxMix_;  // EG13-only Aux Mix, per sample
 };
 
 }  // namespace eg13

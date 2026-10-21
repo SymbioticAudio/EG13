@@ -65,9 +65,12 @@ const float kPotLp[9] = {
     0.01f,  // Position    :57
     1.0f,   // Exciter: stepped
     0.01f,  // Frequency   :53 (the transpose pot)
-    1.0f,   // Spread: EG13-only
+    1.0f,   // Spread: EG13-only, de-clicked per sample instead (kMixSeconds)
     1.0f,   // Polyphony: stepped
 };
+
+// Spread has no firmware filter; a ~5 ms per-sample one-pole keeps it from zippering.
+constexpr double kMixSeconds = 0.005;
 
 }  // namespace
 
@@ -80,7 +83,9 @@ struct RingsEngine::Impl {
 };
 
 RingsEngine::RingsEngine()
-    : impl_(std::make_unique<Impl>()), pots_(kPotLp, kInfo.paramCount, kNativeBlock) {
+    : impl_(std::make_unique<Impl>()),
+      pots_(kPotLp, kInfo.paramCount, kNativeBlock),
+      spread_(kMixSeconds) {
   reset();
 }
 
@@ -113,6 +118,7 @@ float RingsEngine::smoothedParam(int index) const {
 
 void RingsEngine::prepare(double hostRate, int) {
   pitchOffset_ = float(12.0 * std::log2(kNativeRate / hostRate));
+  spread_.prepare(hostRate);
   reset();
 }
 
@@ -126,6 +132,7 @@ void RingsEngine::reset() {
   strum_ = false;
   model_ = -1;
   pots_.reset();
+  spread_.reset();
 }
 
 void RingsEngine::noteOn(float note, float velocity) {
@@ -205,8 +212,9 @@ void RingsEngine::renderBlock(const float* const* in, const ParamValues& p, floa
   // Reverb negates aux after the reverb at any polyphony (part.cc:559-561).
   const float evenSign =
       polyphony_ == 1 || model_ == rings::RESONATOR_MODEL_STRING_AND_REVERB ? -1.0f : 1.0f;
-  const float spread = clamp01(p.p[7]);
+  const float spreadTarget = clamp01(p.p[7]);
   for (int i = 0; i < count; ++i) {
+    const float spread = spread_.next(spreadTarget);
     const float odd = s.odd[i];
     const float even = evenSign * s.even[i];
     out[0][offset + i] = (odd + (1.0f - spread) * even) * velocity_;

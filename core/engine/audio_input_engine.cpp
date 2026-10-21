@@ -40,7 +40,7 @@ const EngineInfo kInfo = {"input", "Audio Input", 3, kParams, true};
 // in the output (a click). A 1 ms one-pole on the linear gain spreads each step over a few
 // control periods (16 host samples, ~0.33 ms at 48 kHz) while keeping fast modulation.
 // Attack and Release need none: they only set the envelope's own one-pole rates.
-constexpr double kGainSmoothingSeconds = 0.001;
+// That one-pole is gain_, a Declicker{0.001} (audio_input_engine.h).
 
 }  // namespace
 
@@ -60,14 +60,14 @@ float AudioInputEngine::releaseSeconds(float normalized) {
 
 void AudioInputEngine::prepare(double hostRate, int) {
   rate_ = hostRate;
-  gainCoeff_ = float(1.0 - std::exp(-1.0 / (kGainSmoothingSeconds * hostRate)));
+  gain_.prepare(hostRate);
   reset();
 }
 
 void AudioInputEngine::reset() {
   gate_ = false;
   envelope_ = 0.0;
-  snap_ = true;
+  gain_.reset();
 }
 
 void AudioInputEngine::noteOn(float, float velocity) {
@@ -78,10 +78,6 @@ void AudioInputEngine::noteOn(float, float velocity) {
 void AudioInputEngine::process(const float* const* in, float* const* out, const ParamValues& p,
                                int n) {
   const float gain = std::pow(10.0f, gainDb(p.p[0]) / 20.0f);
-  if (snap_) {
-    gain_ = gain;
-    snap_ = false;
-  }
   const double attack = 1.0 - std::exp(-1.0 / (double(attackSeconds(p.p[1])) * rate_));
   const double release = 1.0 - std::exp(-1.0 / (double(releaseSeconds(p.p[2])) * rate_));
   const double target = gate_ ? double(velocity_) : 0.0;
@@ -90,10 +86,7 @@ void AudioInputEngine::process(const float* const* in, float* const* out, const 
     // half a float ulp, which would keep the 1e-6 snap from ever firing.
     envelope_ += (target - envelope_) * (target > envelope_ ? attack : release);
     if (std::fabs(target - envelope_) < 1e-6) envelope_ = target;
-    // Snaps once within 1e-6 or once a step no longer moves the float (it would stall).
-    const float smoothed = gain_ + gainCoeff_ * (gain - gain_);
-    gain_ = smoothed == gain_ || std::fabs(gain - smoothed) < 1e-6f ? gain : smoothed;
-    const float g = gain_ * float(envelope_);
+    const float g = gain_.next(gain) * float(envelope_);
     out[0][i] = in ? in[0][i] * g : 0.0f;
     out[1][i] = in ? in[1][i] * g : 0.0f;
   }

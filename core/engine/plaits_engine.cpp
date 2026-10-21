@@ -61,8 +61,11 @@ const float kPotLp[8] = {
     0.005f,  // Frequency  ui.cc:72-73 (transposition_)
     0.01f,   // Decay      Morph pot's hidden parameter
     0.01f,   // LPG Colour Timbre pot's hidden parameter
-    1.0f,    // Aux Mix: EG13-only
+    1.0f,    // Aux Mix: EG13-only, de-clicked per sample instead (kMixSeconds)
 };
+
+// Aux Mix has no firmware filter; a ~5 ms per-sample one-pole keeps it from zippering.
+constexpr double kMixSeconds = 0.005;
 
 }  // namespace
 
@@ -75,7 +78,9 @@ struct PlaitsEngine::Impl {
 };
 
 PlaitsEngine::PlaitsEngine()
-    : impl_(std::make_unique<Impl>()), pots_(kPotLp, kInfo.paramCount, kNativeBlock) {
+    : impl_(std::make_unique<Impl>()),
+      pots_(kPotLp, kInfo.paramCount, kNativeBlock),
+      auxMix_(kMixSeconds) {
   reset();
 }
 
@@ -100,6 +105,7 @@ float PlaitsEngine::smoothedParam(int index) const {
 
 void PlaitsEngine::prepare(double hostRate, int) {
   pitchOffset_ = float(12.0 * std::log2(kNativeRate / hostRate));
+  auxMix_.prepare(hostRate);
   reset();
 }
 
@@ -110,6 +116,7 @@ void PlaitsEngine::reset() {
   retrigger_ = false;
   pos_ = plaits::kBlockSize;
   pots_.reset();
+  auxMix_.reset();
 }
 
 void PlaitsEngine::noteOn(float note, float velocity) {
@@ -153,7 +160,8 @@ void PlaitsEngine::process(const float* const*, float* const* out, const ParamVa
       pos_ = 0;
     }
     const plaits::Voice::Frame& f = impl_->frames[pos_++];
-    const float s = ((1.0f - aux) * float(f.out) + aux * float(f.aux)) / 32768.0f;
+    const float mix = auxMix_.next(aux);
+    const float s = ((1.0f - mix) * float(f.out) + mix * float(f.aux)) / 32768.0f;
     out[0][i] = s;
     out[1][i] = s;
   }

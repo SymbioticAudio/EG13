@@ -672,10 +672,44 @@ TEST_CASE("Resonator processing with moving pots does not allocate") {
     for (int block = 0; block < 100; ++block) {
       p.p[1 + block % 4] = float(block % 7) / 6.0f;
       p.p[6] = float(block % 5) / 4.0f;
+      p.p[7] = float(block % 3) / 2.0f;  // Spread
       if (block == 50) engine.reset();
       engine.process(nullptr, out, p, 256);
     }
     allocations = counter.count();
   }
   REQUIRE(allocations == 0);
+}
+
+TEST_CASE("Resonator smooths Spread per sample") {
+  // Spread is EG13-only, so it gets a ~5 ms per-sample de-click one-pole.
+  const double rate = RingsEngine::kNativeRate;
+  const float c = float(1.0 - std::exp(-1.0 / (0.005 * rate)));
+  RingsEngine engine;
+  engine.prepare(rate, 256);
+  engine.noteOn(60.0f, 1.0f);
+  ParamValues p = defaults();
+  p.p[7] = 0.0f;
+  render(engine, p, 240);
+  REQUIRE(engine.smoothedSpread() == 0.0f);  // snapped
+  ParamValues step = p;
+  step.p[7] = 1.0f;
+  std::vector<float> l(1), r(1);
+  float* out[2] = {l.data(), r.data()};
+  float previous = engine.smoothedSpread();
+  for (int i = 1; i <= 4000; ++i) {
+    engine.process(nullptr, out, step, 1);
+    const float v = engine.smoothedSpread();
+    INFO("sample " << i << " value " << v);
+    REQUIRE(v >= previous);
+    // One pole step, or the final snap once a step can no longer move the float near 1
+    // (a stall at ~7e-6 from the target, about -100 dB).
+    REQUIRE(v - previous <= (v == 1.0f ? 1e-5f : c * (1.0f - previous) + 1e-6f));
+    if (i == 240) REQUIRE_THAT(v, Catch::Matchers::WithinAbs(1.0 - std::exp(-240.0 / (0.005 * rate)), 1e-4));
+    previous = v;
+  }
+  REQUIRE(previous == 1.0f);  // converged (~17 time constants) and snapped within 1e-6
+  engine.reset();
+  engine.process(nullptr, out, step, 1);
+  REQUIRE(engine.smoothedSpread() == 1.0f);
 }
