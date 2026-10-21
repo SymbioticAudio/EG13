@@ -57,3 +57,22 @@ One channel of the module in its full-control mode. One output.
 - A new note restarts the envelope, and the LFO at its Phase (per-voice scope).
 - The envelope runs from 0 to 100 %; the LFOs swing from −100 % to +100 % (the module's ±5 V).
 - Defaults: Envelope with the fastest attack, about 0.4 s decay and release, full sustain; LFO at about 2.2 Hz, sine.
+
+## The matrix
+
+Each of a part's twelve routes has a **source**, a **destination**, an **amount** from −100 % to +100 % (the host parameter *Route 1* … *Route 12*), and optionally a second source, **via**, that scales the amount (for example an LFO into pitch *via* the mod wheel: the wheel sets the vibrato depth). A route adds source × amount × via to its destination.
+
+**Sources**
+
+- Per note: *Velocity*, *Release Velocity* (how fast the key was let go; 0 until it is), *Note* (the keyboard position: C4 is 0, and 100 % into any filter's cutoff makes the filter follow the keyboard exactly, an octave per octave), *Gate* (100 % while the key is held), *Random* (a new value from 0 to 100 % on each note), *Pressure* (polyphonic aftertouch or MPE pressure), *Slide* (MPE slide, CC74), *Note Bend* (MPE per-note pitch bend: 100 % at the MPE Bend Range).
+- Per part: *Mod Wheel* (CC1), *Pitch Bend* (−100 % to +100 %), *Channel Pressure*, *CC A* to *CC D* (four controllers you choose with the part's CC A–D settings), *Transport Phase* (where the song is within the current bar, 0 to 100 %; it keeps running at the last tempo while the transport is stopped).
+- Each mod slot's outputs.
+
+**Destinations**: any control of the Source, Filter or Shaper (P1, P2, …), *Pitch*, *Amp*, *Pan*, *Part Level*, and any control of the part's mod slots. (Part FX controls arrive with the Part FX.)
+
+**How routes add up**: every control is a position from 0 to 100 %. The routes into it are added to where its knob is, and the result stops at 0 % and 100 %. So a cutoff at 70 % with +30 % from an envelope opens fully at the envelope's peak; two routes of +80 % into a control at 50 % stop at 100 %. A stepped control (a mode or a model) moves through its options the same way.
+
+- **Pitch** is in semitones: ±100 % is ±24 semitones (so 2 % is about half a semitone). Pitch routes come on top of the part's pitch bend and transpose.
+- **Pan** starts from the centre: −50 % is fully left, +50 % fully right.
+- **Amp**: see Amp and voices below.
+- **Part Level** adds to the part's Level setting.
