@@ -6,6 +6,9 @@
 #include <cstdio>
 
 #include "engine/engine_registry.h"
+#include "engine/shelves_engine.h"
+#include "engine/sst_filter_engine.h"
+#include "engine/warps_engine.h"
 #include "params/param_ids.h"
 
 namespace eg13 {
@@ -68,6 +71,47 @@ int defaultEngine(SlotKind kind, int part, PluginKind plugin) {
   return 0;
 }
 
+// Host defaults of the Filter and Shaper P's (final review I1; controller ruling, provisional).
+// CLAP reports one default per parameter and cannot change it while active, so a host's
+// reset-to-default sets the same value whatever engine is selected. Each value is chosen so
+// that a slot reset as a whole gives a sensible, audible result on every engine of the slot
+// (tests/test_levels.cpp, "Host defaults ..."). Engine switching still loads each engine's own
+// stash and EngineInfo defaults; these values are only what the host shows as "default" and
+// what a fresh project holds in a slot's P's.
+//
+// Filter: every filter's own defaults where they agree. P1 fully open (all three filters
+// default to it), P2 no resonance (the Analog Filter's and Classic Filters' default; the SVF
+// reads it as Q 0.5, flat with a soft knee, rather than its own 0.707), P3 the first option
+// (Analog Filter LP4, Classic Filters type 0 = 12 dB low-pass, SVF LP), P4 Character centred.
+const float kFilterHostDefaults[kFilterParamCount] = {
+    1.0f, 0.0f, 0.5f / float(SstFilterEngine::kTypeSteps), 0.5f};
+// Shaper: the EQ flat (every gain 0 dB, pad off, main output) on P2, P4, P7, P10, P11, P12;
+// where the EQ does not care (frequencies and Qs while their gain is 0 dB) the Ring Mod /
+// Vocoder's own defaults: P1 Algorithm Analog RM, P3 Carrier Level 0.47, P5 Carrier Internal
+// Osc, P6 Modulator Voice, P8 Osc Shape first, P9 Mode Modulation. The Ring Mod's other
+// controls then sit at the EQ's 0.5: Timbre 0.5 and Osc Pitch 0 st (its own defaults) and Mod
+// Level 0.5 (its default is 0.47, about 0.4 dB lower).
+const float kShaperHostDefaults[kShaperParamCount] = {
+    0.25f,
+    0.5f,
+    WarpsEngine::kDefaultLevel,
+    0.5f,
+    0.5f / float(WarpsEngine::kSelectorSteps),
+    0.5f / float(WarpsEngine::kSelectorSteps),
+    0.5f,
+    0.5f / float(WarpsEngine::kNumOscillatorModes),
+    0.25f,
+    0.5f,
+    0.25f,
+    0.5f / float(ShelvesEngine::kNumOutputs),
+};
+
+float hostDefault(SlotKind kind, int p, const EngineInfo& engine) {
+  if (kind == SlotKind::Filter) return kFilterHostDefaults[p];
+  if (kind == SlotKind::Shaper) return kShaperHostDefaults[p];
+  return p < engine.paramCount ? engine.params[p].defaultValue : 0.0f;  // Source: M2's rule
+}
+
 int engineFor(SlotKind kind, const PartEngines& e) {
   return kind == SlotKind::Source ? e.source : kind == SlotKind::Filter ? e.filter : e.shaper;
 }
@@ -96,8 +140,7 @@ const std::array<ParamSpec, kParamCount>& table() {
           const bool used = p < inst.paramCount;
           t[slotParamIndex(kind, part, p)] = {params::id(uint32_t(part), idSlot(kind), uint32_t(p + 1)),
                                               used ? inst.params[p].name : "(unused)", module, 0.0f, 1.0f,
-                                              used ? inst.params[p].defaultValue : 0.0f,
-                                              p < fx.paramCount ? fx.params[p].defaultValue : 0.0f, false,
+                                              hostDefault(kind, p, inst), hostDefault(kind, p, fx), false,
                                               ParamFormat::Engine};
         }
       }

@@ -215,7 +215,12 @@ TEST_CASE("Filter and Shaper defaults per plugin") {
   REQUIRE(paramDefault(filterEngineParamIndex(1), PluginKind::Effect) == 0.0f);
   REQUIRE(paramDefault(filterParamIndex(0, 0), PluginKind::Effect) ==
           RipplesEngine::staticInfo().params[0].defaultValue);
-  REQUIRE(paramDefault(filterParamIndex(0, 0), PluginKind::Instrument) == 0.0f);  // Off: unused
+  // Filter/Shaper P host defaults are one value per position, whatever the default engine
+  // (final review I1): Off ignores them, the other engines get a sensible reset.
+  REQUIRE(paramDefault(filterParamIndex(0, 0), PluginKind::Instrument) == 1.0f);
+  REQUIRE(paramDefault(filterParamIndex(1, 1), PluginKind::Instrument) == 0.0f);
+  REQUIRE(paramDefault(shaperParamIndex(0, 1), PluginKind::Instrument) == 0.5f);  // EQ gain 0 dB
+  REQUIRE(paramDefault(shaperParamIndex(1, 3), PluginKind::Effect) == 0.5f);
   REQUIRE(std::string(paramSpec(filterParamIndex(0, 0)).name) == "(unused)");
 }
 

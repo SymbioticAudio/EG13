@@ -101,3 +101,41 @@ TEST_CASE("Reported latency per plugin and host rate", "[levels]") {
     }
   }
 }
+
+// A host's reset-to-default sets each Filter/Shaper P to one fixed value whatever engine is
+// selected (CLAP cannot change a default while active). Those values must suit every engine of
+// the slot together: audible, finite, and for the filters and the EQ near the input's level.
+TEST_CASE("Host defaults of the Filter and Shaper P's suit every engine of the slot", "[levels]") {
+  for (SlotKind kind : {SlotKind::Filter, SlotKind::Shaper}) {
+    ParamValues hostDefaults;
+    for (int p = 0; p < int(slotParamCount(kind)); ++p) {
+      hostDefaults.p[p] = paramDefault(slotParamIndex(kind, 0, p), PluginKind::Instrument);
+      // One default per P position: the same for both parts and both plugins.
+      for (int part = 0; part < kNumParts; ++part) {
+        for (PluginKind plugin : {PluginKind::Instrument, PluginKind::Effect}) {
+          REQUIRE(paramDefault(slotParamIndex(kind, part, p), plugin) == hostDefaults.p[p]);
+        }
+      }
+    }
+    const int engines = kind == SlotKind::Filter ? kNumFilterEngines : kNumShaperEngines;
+    for (int e = 0; e < engines; ++e) {
+      ProcessorSlot slot(kind == SlotKind::Filter ? makeAllFilters() : makeAllShapers());
+      slot.prepare(kRate, 16);
+      slot.setEngine(e);
+      slot.reset();
+      const Level level = measure(slot, hostDefaults);
+      const EngineInfo& info = kind == SlotKind::Filter ? filterEngineInfo(e) : shaperEngineInfo(e);
+      std::printf("Host defaults: %-22s %+6.2f dB  peak %.3f\n", info.displayName, level.gainDb,
+                  double(level.peak));
+      REQUIRE(std::isfinite(level.gainDb));
+      REQUIRE(std::isfinite(level.peak));
+      if (kind == SlotKind::Shaper && e == int(ShaperEngine::RingMod)) {
+        REQUIRE(level.gainDb > -20.0);  // audible
+        REQUIRE(level.peak <= 32768.0f / 10240.0f);
+      } else {
+        REQUIRE(level.gainDb > -12.0);
+        REQUIRE(level.gainDb < 6.0);
+      }
+    }
+  }
+}

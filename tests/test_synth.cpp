@@ -11,6 +11,7 @@
 
 #include "alloc_counter.h"
 #include "engine/engine_registry.h"
+#include "engine/ripples_engine.h"
 #include "engine/warps_engine.h"
 #include "params/param_ids.h"
 #include "synth/param_table.h"
@@ -868,11 +869,14 @@ TEST_CASE("EG13 FX init patch runs Audio Input through the open Analog Filter") 
   REQUIRE(synth.engine(SlotKind::Filter, 0) == int(FilterEngine::Analog));
   REQUIRE(synth.engine(SlotKind::Filter, 1) == int(FilterEngine::Off));
   REQUIRE(synth.engine(SlotKind::Shaper, 0) == int(ShaperEngine::Off));
-  // The host sees the Analog Filter's own controls at its defaults (docs/manual/engines.md).
+  // The host sees the Analog Filter's own controls at the slot's host defaults, which give the
+  // Analog Filter's own default settings: fully open, no resonance, LP4 (docs/manual/engines.md).
+  const EngineInfo& analog = filterEngineInfo(int(FilterEngine::Analog));
   REQUIRE(std::string(synth.paramName(filterParamIndex(0, 0))) == "Frequency");
-  for (int p = 0; p < filterEngineInfo(int(FilterEngine::Analog)).paramCount; ++p) {
-    REQUIRE(synth.param(filterId(0, p)) == double(filterEngineInfo(int(FilterEngine::Analog)).params[p].defaultValue));
-  }
+  REQUIRE(synth.param(filterId(0, 0)) == double(analog.params[0].defaultValue));
+  REQUIRE(synth.param(filterId(0, 1)) == double(analog.params[1].defaultValue));
+  REQUIRE(RipplesEngine::modeIndex(float(synth.param(filterId(0, 2)))) ==
+          RipplesEngine::modeIndex(analog.params[2].defaultValue));
   synth.prepare(48000.0, kBlock);
   const size_t latency = size_t(synth.latencySamples());
   const Stereo in = sineInput(48000, 48000.0);
