@@ -96,6 +96,8 @@ If a mod engine ever produces an invalid value, it restarts and its outputs read
 
 Every voice ends with an **Amp** and a **pan**, after the Shaper.
 
+Modulation is time-aligned with the sound it shapes. The engines take a moment to produce a note's sound (see [Latency](latency.md)), so EG13 holds back each change until the sound it acts on gets there. The Filter and Shaper get their changes as the Source's sound reaches them. The Amp, pan and Part Level get theirs as the voice's finished sound arrives. An envelope on the Amp or the Filter therefore starts exactly with the note's first sound, and even a very short note is heard in full.
+
 - If no route goes to *Amp*, the Amp simply follows the key: it opens over 5 ms when the note starts and closes over 5 ms when you let go. That cuts a sound that would otherwise ring on after the key (a struck Resonator, a Macro Oscillator drum): route an envelope to the Amp to shape the release.
 - If any route goes to *Amp*, the Amp's level is the sum of those routes (0 to 100 %). The init patch routes Mod 1's envelope to the Amp, scaled by velocity.
 - A route to *Pan* moves the voice from the centre (−50 % fully left, +50 % fully right), using the part's own pan law (the centre keeps full level on both sides).

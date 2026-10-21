@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "alloc_counter.h"
+#include "engine/audio_input_engine.h"
 #include "engine/engine_registry.h"
 #include "engine/plaits_engine.h"
 #include "engine/warps_engine.h"
@@ -52,6 +53,56 @@ Rendered renderTicks(Voice& voice, const VoiceControl& c, int ticks) {
   }
   return out;
 }
+
+// A voice of real engines (every Source and Shaper, so the real latency) playing the Audio Input,
+// fed a steady 0.5. Its Filter slot holds Off and a test gain (out = in x 4 x P1, unity at 0.25)
+// that shows when the Filter's parameters change.
+class InputVoice {
+ public:
+  explicit InputVoice(double rate) : voice(makeAllSources(), gainFilters(), makeAllShapers()) {
+    voice.prepare(rate, 256);
+    voice.setEngine(int(SourceEngine::AudioInput));
+    params.source = test::defaultParams(AudioInputEngine::staticInfo());
+    params.source.p[1] = 0.0f;  // 1 ms attack
+    params.source.p[2] = 0.0f;  // 5 ms release
+  }
+
+  // `ticks` ticks of 16 samples from tick `first` on: the M4 path with control(tick) when m4,
+  // else the M1-M3 path (no Amp) with the same parameters. Releases at tick `release`.
+  template <typename Control>
+  Rendered render(int ticks, Control control, bool m4, int release = -1) {
+    Rendered out{std::vector<float>(size_t(ticks) * 16, 0.0f), std::vector<float>(size_t(ticks) * 16, 0.0f)};
+    const float* in[2] = {dc_.data(), dc_.data()};
+    VoiceInputs inputs;
+    inputs.input = in;
+    for (int t = 0; t < ticks; ++t) {
+      if (t == release) voice.release();
+      VoiceControl c = control(t);
+      c.params.source = params.source;
+      float* o[2] = {out.l.data() + t * 16, out.r.data() + t * 16};
+      if (m4) {
+        voice.beginTick(c, 16);
+        voice.render(inputs, o, 16);
+      } else {
+        voice.process(inputs, o, c.params, 16);
+      }
+    }
+    return out;
+  }
+
+  Voice voice;
+  SlotParams params;
+
+ private:
+  static std::vector<SourceSpec> gainFilters() {
+    std::vector<SourceSpec> filters = makeOffOnly();
+    filters.push_back({std::make_unique<test::GainEngine>(), 0.0, 16});
+    return filters;
+  }
+  std::vector<float> dc_ = std::vector<float>(16, 0.5f);
+};
+
+int ticksFor(double rate, double seconds) { return int(std::ceil(rate * seconds / 16.0)); }
 
 }  // namespace
 
@@ -717,25 +768,34 @@ TEST_CASE("The pitch control transposes the voice") {
 }
 
 TEST_CASE("A voice is freed 50 ms after its Amp closes, even if its Source keeps sounding") {
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  CAPTURE(rate);
   Voice voice(constant());
-  voice.prepare(48000.0, 256);
+  voice.prepare(rate, 256);
   voice.trigger(60, 1.0f);
   const VoiceControl c;
-  renderTicks(voice, c, 30);  // the Amp fully open
+  renderTicks(voice, c, ticksFor(rate, 0.01));  // the Amp fully open
   voice.release();
   int ticks = 0;
   while (voice.active() && ticks < 1000) {
     renderTicks(voice, c, 1);
     ++ticks;
   }
-  // 5 ms of release ramp, then 50 ms below -90 dBFS: 2640 samples, 165 ticks.
-  REQUIRE(ticks >= 165);
-  REQUIRE(ticks <= 166);
+  // The release ramp, then 50 ms below -90 dBFS from the first silent tick: 152, 165 and 330
+  // ticks at 44.1, 48 and 96 kHz.
+  const double rampSamples = rate * Voice::kAmpRampSeconds;
+  int firstSilent = 0;  // the first sample of the release below -90 dBFS
+  while (0.5 * std::max(0.0, 1.0 - double(firstSilent + 1) / rampSamples) >= 3.1623e-5) ++firstSilent;
+  const int expected = (firstSilent + 15) / 16 + (int(rate * 0.05) + 15) / 16;
+  REQUIRE(ticks >= expected);
+  REQUIRE(ticks <= expected + 1);
 }
 
 TEST_CASE("A voice's Amp starts closed on each note from silence") {
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  CAPTURE(rate);
   Voice voice(constant());
-  voice.prepare(48000.0, 256);
+  voice.prepare(rate, 256);
   voice.trigger(60, 1.0f);
   VoiceControl c;
   c.pan = -1.0f;
@@ -745,7 +805,7 @@ TEST_CASE("A voice's Amp starts closed on each note from silence") {
   c.pan = 1.0f;
   const Rendered out = renderTicks(voice, c, 1);
   REQUIRE(out.l[0] == 0.0f);  // pan snapped right, no glide from the left
-  REQUIRE(std::fabs(out.r[0] - 0.5f / 240.0f) < 1e-6f);  // the Amp opens from 0
+  REQUIRE(std::fabs(out.r[0] - float(0.5 / (rate * Voice::kAmpRampSeconds))) < 1e-6f);  // the Amp opens from 0
 }
 
 TEST_CASE("Rendering the M4 path does not allocate") {
@@ -771,4 +831,159 @@ TEST_CASE("Rendering the M4 path does not allocate") {
     allocations = counter.count();
   }
   REQUIRE(allocations == 0);
+}
+
+TEST_CASE("A retrigger during the release ramp carries the Amp on from where it is") {
+  Voice voice(constant());
+  voice.prepare(48000.0, 256);
+  voice.trigger(60, 1.0f);
+  const VoiceControl c;
+  renderTicks(voice, c, 30);
+  voice.release();
+  const Rendered closing = renderTicks(voice, c, 8);  // 128 of the 240 release samples
+  voice.trigger(62, 1.0f);  // still sounding: not from silence
+  const Rendered reopening = renderTicks(voice, c, 1);
+  const float step = 0.5f / 240.0f;
+  REQUIRE(closing.l[127] > 0.2f);
+  REQUIRE(std::fabs(reopening.l[0] - (closing.l[127] + step)) < 1e-5f);
+}
+
+TEST_CASE("Switching the Amp between routed and the gate does not jump") {
+  Voice voice(constant());
+  voice.prepare(48000.0, 256);
+  voice.trigger(60, 1.0f);
+  VoiceControl c;
+  Rendered out = renderTicks(voice, c, 30);  // gate-following, open
+  const float open = out.l[479];
+  c.ampRouted = true;
+  c.amp = 0.5f;
+  out = renderTicks(voice, c, 2);  // across one tick from 1 to 0.5
+  REQUIRE(std::fabs(out.l[0] - open) <= 0.5f * 0.5f / 16.0f + 1e-6f);
+  REQUIRE(std::fabs(out.l[31] - 0.25f) < 1e-6f);
+  c.ampRouted = false;  // back to the gate: up from 0.5 at the 5 ms slope
+  out = renderTicks(voice, c, 1);
+  REQUIRE(std::fabs(out.l[0] - (0.25f + 0.5f / 240.0f)) < 1e-6f);
+}
+
+TEST_CASE("A routed Amp held open keeps a released voice sounding") {
+  Voice voice(constant());
+  voice.prepare(48000.0, 256);
+  voice.trigger(60, 1.0f);
+  VoiceControl c;
+  c.ampRouted = true;
+  c.amp = 1.0f;
+  renderTicks(voice, c, 10);
+  voice.release();
+  const Rendered out = renderTicks(voice, c, 400);  // 133 ms
+  REQUIRE(voice.active());
+  REQUIRE(out.l[6399] == 0.5f);
+}
+
+TEST_CASE("On the M4 path a silent Shaper input still frees the voice with the Amp open") {
+  // The Shaper is a constant (its output never dies, like the Ring Mod's oscillator); the Source
+  // (a sine) stops at the release.
+  std::vector<SourceSpec> shapers = makeOffOnly();
+  shapers.push_back(constant());
+  std::vector<SourceSpec> sources;
+  sources.push_back(sine());
+  Voice voice(std::move(sources), makeOffOnly(), std::move(shapers));
+  voice.prepare(48000.0, 256);
+  voice.setShaperEngine(1);
+  voice.trigger(60, 1.0f);
+  VoiceControl c;
+  c.ampRouted = true;
+  c.amp = 1.0f;
+  renderTicks(voice, c, 10);
+  voice.release();
+  int ticks = 0;
+  while (voice.active() && ticks < 1000) {
+    renderTicks(voice, c, 1);
+    ++ticks;
+  }
+  REQUIRE(ticks >= 150);  // 50 ms (plus the Shaper latency), not held forever
+  REQUIRE(ticks <= 152 + voice.latencySamples() / 16);
+}
+
+TEST_CASE("The gate-following Amp lines up with the voice's delayed sound") {
+  // Fix round 1 ruling: the Amp acts latencySamples() after the gate, when the note's sound
+  // arrives. Real engines (their latency); counts derived from the rate.
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  CAPTURE(rate);
+  const double rampSamples = rate * Voice::kAmpRampSeconds;
+  const int release = ticksFor(rate, 0.1);
+  const int ticks = release + ticksFor(rate, 0.1);
+  auto none = [](int) { return VoiceControl{}; };
+  InputVoice reference(rate);  // the M1-M3 path: the sound without the Amp
+  reference.voice.trigger(60, 1.0f);
+  const Rendered dry = reference.render(ticks, none, false, release);
+  InputVoice probe(rate);
+  probe.voice.trigger(60, 1.0f);
+  const Rendered wet = probe.render(ticks, none, true, release);
+
+  const int latency = probe.voice.latencySamples();
+  REQUIRE(latency > 400);  // the real voice latency (the Ring Mod / Vocoder's and the Modal's)
+  size_t onset = 0;
+  while (onset < dry.l.size() && dry.l[onset] == 0.0f) ++onset;
+  REQUIRE(std::abs(int(onset) - latency) <= 16);  // the note's audible onset
+  const size_t end = size_t(release) * 16 + size_t(latency);  // the audible note end
+  // Opening: within one tick of the onset the Amp is at most a tick into its ramp.
+  REQUIRE(wet.l[onset + 16] <= dry.l[onset + 16] * float(33.0 / rampSamples));
+  REQUIRE(wet.l[onset + 16] > 0.0f);
+  for (size_t s = onset; s < dry.l.size(); ++s) {
+    if (dry.l[s] < 1e-3f) continue;
+    const double u = double(s) - double(latency) + 1.0;  // samples of gate ramp applied
+    const double amp = s < end ? std::min(1.0, u / rampSamples)
+                               : std::max(0.0, 1.0 - (double(s) - double(end) + 1.0) / rampSamples);
+    INFO("sample " << s);
+    REQUIRE(std::fabs(double(wet.l[s]) / double(dry.l[s]) - amp) < 1e-3);
+  }
+  // Closing about 5 ms after the audible end, while the dry note is still sounding.
+  const size_t closed = end + size_t(std::ceil(rampSamples));
+  REQUIRE(dry.l[closed] > 0.05f);
+  REQUIRE(wet.l[closed] == 0.0f);
+  REQUIRE(wet.l[end - 1] == dry.l[end - 1]);
+}
+
+TEST_CASE("A 3 ms gate is audible") {
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  CAPTURE(rate);
+  InputVoice probe(rate);
+  probe.voice.trigger(60, 1.0f);
+  const Rendered out = probe.render(ticksFor(rate, 0.04), [](int) { return VoiceControl{}; }, true,
+                                    ticksFor(rate, 0.003));
+  // The Amp opens 3/5 of the way while the input's 1 ms attack nearly completes: about 0.28.
+  REQUIRE(*std::max_element(out.l.begin(), out.l.end()) > 0.2f);
+}
+
+TEST_CASE("Filter parameters change in line with the Source's delayed sound") {
+  // An envelope-like control: the Filter's gain is unity for the note's first 2 ms of control
+  // ticks, then 0. The Filter must apply it to the Source's sound of those 2 ms, which arrives a
+  // Source latency later.
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  CAPTURE(rate);
+  const int open = ticksFor(rate, 0.002);
+  const int ticks = ticksFor(rate, 0.04);
+  auto steady = [](int) {
+    VoiceControl c;
+    c.params.filter.p[0] = 0.25f;
+    return c;
+  };
+  auto burst = [open](int t) {
+    VoiceControl c;
+    c.params.filter.p[0] = t < open ? 0.25f : 0.0f;
+    return c;
+  };
+  InputVoice reference(rate);
+  reference.voice.setFilterEngine(1);
+  reference.voice.trigger(60, 1.0f);
+  const Rendered full = reference.render(ticks, steady, true);
+  InputVoice probe(rate);
+  probe.voice.setFilterEngine(1);
+  probe.voice.trigger(60, 1.0f);
+  const Rendered cut = probe.render(ticks, burst, true);
+  const size_t edge = size_t(probe.voice.latencySamples() + open * 16);
+  for (size_t s = 0; s < edge; ++s) REQUIRE(cut.l[s] == full.l[s]);  // the onset passes
+  REQUIRE(full.l[edge - 1] > 0.01f);
+  for (size_t s = edge; s < cut.l.size(); ++s) REQUIRE(cut.l[s] == 0.0f);  // then the gain is 0
+  REQUIRE(full.l[edge] > 0.01f);
 }

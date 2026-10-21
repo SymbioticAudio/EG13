@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <climits>
 #include <cmath>
 #include <utility>
 
@@ -31,6 +32,16 @@ const float* monoOf(const float* const* stereo, int offset, int count, float* mo
   if (stereo == nullptr) return nullptr;
   for (int i = 0; i < count; ++i) mono[i] = 0.5f * (stereo[0][offset + i] + stereo[1][offset + i]);
   return mono;
+}
+
+// One step of a delay line: returns what went in line.size() steps ago (x itself when empty).
+template <typename T>
+T delayed(std::vector<T>& line, int& pos, const T& x) {
+  if (line.empty()) return x;
+  const T y = line[size_t(pos)];
+  line[size_t(pos)] = x;
+  if (++pos == int(line.size())) pos = 0;
+  return y;
 }
 }  // namespace
 
@@ -68,6 +79,13 @@ void Voice::prepare(double hostRate, int maxBlock, Alignment alignment) {
   // while no Filter adds latency.
   assert(filter_.latencySamples() == 0 && "delay Source AUX by the Filter latency");
   latency_ = sourceLatency_ + filter_.latencySamples() + shaper_.latencySamples();
+  // Modulation waits for the audio it acts on: the Filter's input is the Source's output, late
+  // by the Source path's latency; the Amp acts on the Shaper's output, late by the whole voice's.
+  filterDelay_ = sourceLatency_;
+  shaperDelay_ = sourceLatency_ + filter_.latencySamples();
+  ampLine_.assign(size_t(latency_), AmpState{});
+  sourceGainLine_.assign(size_t(sourceLatency_), 1.0f);
+  ticks_.assign(size_t(shaperDelay_ / kControlBlock + 4), TickParams{});
   reset();
 }
 
@@ -88,6 +106,21 @@ void Voice::reset() {
   pan_ = panFrom_ = 0.0f;
   gain_ = gainFrom_ = 1.0f;
   sourceGain_ = sourceGainFrom_ = 1.0f;
+  time_ = 0;
+  snapDelays(0.0f, 1.0f, 0.0f, 1.0f, SlotParams{});
+}
+
+void Voice::snapDelays(float amp, float gain, float pan, float sourceGain, const SlotParams& params) {
+  std::fill(ampLine_.begin(), ampLine_.end(), AmpState{amp, gain, pan});
+  ampLinePos_ = 0;
+  std::fill(sourceGainLine_.begin(), sourceGainLine_.end(), sourceGain);
+  sourceGainLinePos_ = 0;
+  appliedAmp_ = amp;
+  if (ticks_.empty()) return;
+  tickNewest_ = 0;
+  tickCount_ = 1;
+  ticks_[0].start = time_;
+  ticks_[0].params = params;
 }
 
 void Voice::restart(unsigned stages) {
@@ -130,7 +163,7 @@ void Voice::trigger(int key, float velocity) {
   if (!active_) {
     restart(kAllStages);  // drop stale converter samples and filter state from the previous note
     currentNote_ = double(targetNote_);
-    amp_ = 0.0f;   // the Amp opens from silence
+    amp_ = ampFrom_ = 0.0f;  // the Amp opens from silence
     fresh_ = true;  // the first tick snaps pan and gains
   } else if (glideSeconds_ <= 0.0f) {
     currentNote_ = double(targetNote_);
@@ -194,6 +227,17 @@ void Voice::beginTick(const VoiceControl& control, int length) {
     gain_ = control.gain;
     sourceGain_ = control.sourceGain;
     fresh_ = false;
+    // What is still in flight is silence from before the note: give it this note's values.
+    snapDelays(amp_, gain_, pan_, sourceGain_, control.params);
+  } else if (!ticks_.empty()) {
+    if (tickCount_ > 0 && ticks_[size_t(tickNewest_)].start == time_) {
+      ticks_[size_t(tickNewest_)].params = control.params;  // a second beginTick at the same time
+    } else {
+      tickNewest_ = (tickNewest_ + 1) % int(ticks_.size());
+      tickCount_ = std::min(tickCount_ + 1, int(ticks_.size()));
+      ticks_[size_t(tickNewest_)].start = time_;
+      ticks_[size_t(tickNewest_)].params = control.params;
+    }
   }
   ampFrom_ = amp_;
   panFrom_ = pan_;
@@ -207,6 +251,35 @@ float Voice::tickPosition(int sample) const {
   return std::min(1.0f, float(tickPos_ + sample) / float(tickLength_));
 }
 
+int Voice::delayedParams(int delay, const SlotParams** params) const {
+  if (delay == 0 || ticks_.empty()) {
+    *params = &control_.params;
+    return INT_MAX;
+  }
+  const int64_t t = time_ - delay;
+  const int size = int(ticks_.size());
+  // The newest stored tick that had begun by t; the oldest stored one if none had.
+  int age = 0;
+  while (age + 1 < tickCount_ && ticks_[size_t((tickNewest_ - age + size) % size)].start > t) ++age;
+  *params = &ticks_[size_t((tickNewest_ - age + size) % size)].params;
+  if (age == 0) return INT_MAX;
+  const int64_t next = ticks_[size_t((tickNewest_ - age + 1 + size) % size)].start;
+  return int(std::max<int64_t>(1, std::min<int64_t>(INT_MAX, next - t)));
+}
+
+void Voice::stepAmp(const VoiceControl& c, float t) {
+  // The Amp (spec §5.2): the routes' level, or the gate with 5 ms ramps; then the pan (the part's
+  // balance law) and the Voice Gain, the Amp's gain.
+  if (c.ampRouted) {
+    amp_ = ampFrom_ + (clamp01(c.amp) - ampFrom_) * t;
+  } else {
+    const float target = gate_ ? 1.0f : 0.0f;
+    amp_ = target > amp_ ? std::min(target, amp_ + ampStep_) : std::max(target, amp_ - ampStep_);
+  }
+  pan_ = panFrom_ + (c.pan - panFrom_) * t;
+  gain_ = gainFrom_ + (c.gain - gainFrom_) * t;
+}
+
 void Voice::run(const VoiceInputs& in, float* const* out, const SlotParams& p, const VoiceControl* c, int n) {
   if (!active_) return;
   if (retrigger_ != 0 && gate_) {  // the held note, to the stages a NaN reset (restart)
@@ -214,7 +287,15 @@ void Voice::run(const VoiceInputs& in, float* const* out, const SlotParams& p, c
     retrigger_ = 0;
   }
   for (int done = 0; done < n;) {
-    const int count = std::min(kControlBlock, n - done);
+    int count = std::min(kControlBlock, n - done);
+    // The Filter and Shaper take the parameters of the tick their input was made in; a block ends
+    // where that changes, so the change lands on its sample.
+    const SlotParams* filterParams = &p;
+    const SlotParams* shaperParams = &p;
+    if (c != nullptr) {
+      count = std::min(count, delayedParams(filterDelay_, &filterParams));
+      count = std::min(count, delayedParams(shaperDelay_, &shaperParams));
+    }
     const double coeff =
         glideSeconds_ > 0.0f
             ? std::exp(-double(count) / (double(glideSeconds_) * hostRate_))
@@ -235,7 +316,8 @@ void Voice::run(const VoiceInputs& in, float* const* out, const SlotParams& p, c
     }
     if (c != nullptr) {  // the Source's trim and chord scaling, before the Filter (M4 gain staging)
       for (int i = 0; i < count; ++i) {
-        const float g = sourceGainFrom_ + (c->sourceGain - sourceGainFrom_) * tickPosition(i + 1);
+        const float now = sourceGainFrom_ + (c->sourceGain - sourceGainFrom_) * tickPosition(i + 1);
+        const float g = delayed(sourceGainLine_, sourceGainLinePos_, now);
         source_[0][i] *= g;
         source_[1][i] *= g;
         source_[2][i] *= g;
@@ -243,11 +325,12 @@ void Voice::run(const VoiceInputs& in, float* const* out, const SlotParams& p, c
     }
     const float* filterIn[2] = {source_[0], source_[1]};
     float* filterOut[2] = {filtered_[0], filtered_[1]};
-    filter_.process(filterIn, nullptr, filterOut, p.filter, count);
+    filter_.process(filterIn, nullptr, filterOut, filterParams->filter, count);
     const float* shaperIn[2] = {filtered_[0], filtered_[1]};
     float* shaperOut[2] = {buffer_[0], buffer_[1]};
     const SideSignals sides = sideSignals(in, done, count);
-    shaper_.process(shaperIn, &sides, shaperOut, p.shaper, count);
+    shaper_.process(shaperIn, &sides, shaperOut, shaperParams->shaper, count);
+    if (c != nullptr) sourceGain_ = sourceGainFrom_ + (c->sourceGain - sourceGainFrom_) * tickPosition(count);
 
     if (const unsigned failed = failedStages(count)) {
       // Spec §9: a NaN/Inf from an engine resets that engine (every stage whose output is not
@@ -255,7 +338,14 @@ void Voice::run(const VoiceInputs& in, float* const* out, const SlotParams& p, c
       restart(failed);
       retrigger_ = gate_ ? failed : 0;
       active_ = gate_;
-      if (c != nullptr) tickPos_ += count;
+      if (c != nullptr) {  // the Amp's timeline moves on through the muted block
+        for (int i = 0; i < count; ++i) {
+          stepAmp(*c, tickPosition(i + 1));
+          appliedAmp_ = delayed(ampLine_, ampLinePos_, AmpState{amp_, gain_, pan_}).amp;
+        }
+        tickPos_ += count;
+        time_ += count;
+      }
       return;
     }
     float peak = 0.0f;
@@ -264,20 +354,13 @@ void Voice::run(const VoiceInputs& in, float* const* out, const SlotParams& p, c
       float l = buffer_[0][i];
       float r = buffer_[1][i];
       if (c != nullptr) {
-        // The Amp (spec §5.2): the routes' level, or the gate with 5 ms ramps; then the pan
-        // (the part's balance law) and the Voice Gain, the Amp's gain.
-        const float t = tickPosition(i + 1);
-        if (c->ampRouted) {
-          amp_ = ampFrom_ + (clamp01(c->amp) - ampFrom_) * t;
-        } else {
-          const float target = gate_ ? 1.0f : 0.0f;
-          amp_ = target > amp_ ? std::min(target, amp_ + ampStep_) : std::max(target, amp_ - ampStep_);
-        }
-        pan_ = panFrom_ + (c->pan - panFrom_) * t;
-        gain_ = gainFrom_ + (c->gain - gainFrom_) * t;
-        const float g = amp_ * gain_;
-        l *= g * std::min(1.0f, 1.0f - pan_);
-        r *= g * std::min(1.0f, 1.0f + pan_);
+        stepAmp(*c, tickPosition(i + 1));
+        // Applied latencySamples() later, when the audio made with these controls arrives.
+        const AmpState a = delayed(ampLine_, ampLinePos_, AmpState{amp_, gain_, pan_});
+        appliedAmp_ = a.amp;
+        const float g = a.amp * a.gain;
+        l *= g * std::min(1.0f, 1.0f - a.pan);
+        r *= g * std::min(1.0f, 1.0f + a.pan);
         outPeak = std::max(outPeak, std::max(std::fabs(l), std::fabs(r)));
       }
       out[0][done + i] += l;
@@ -285,8 +368,8 @@ void Voice::run(const VoiceInputs& in, float* const* out, const SlotParams& p, c
       peak = std::max(peak, std::max(std::fabs(filtered_[0][i]), std::fabs(filtered_[1][i])));
     }
     if (c != nullptr) {
-      sourceGain_ = sourceGainFrom_ + (c->sourceGain - sourceGainFrom_) * tickPosition(count);
       tickPos_ += count;
+      time_ += count;
     }
     done += count;
 

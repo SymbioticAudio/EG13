@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
@@ -10,6 +11,7 @@
 #include <sys/resource.h>
 
 #include "alloc_counter.h"
+#include "engine/audio_input_engine.h"
 #include "engine/engine_registry.h"
 #include "engine/tides_engine.h"
 #include "part/part.h"
@@ -76,6 +78,27 @@ PartSettings withMod(int slot, int engine, bool perPart = false) {
 }
 
 ParamValues engineDefaults(ModEngineKind kind) { return test::defaultParams(modEngineInfo(int(kind)).engine); }
+
+// A part of real engines playing the Audio Input (1 ms attack, 5 ms release), fed a steady 0.5,
+// rendered tick by tick through the modulated path. after(tick) runs before each tick.
+template <typename Before>
+std::vector<float> renderInputPart(Part& part, PartParams params, int ticks, Before before) {
+  params.slots.source = test::defaultParams(AudioInputEngine::staticInfo());
+  params.slots.source.p[1] = 0.0f;
+  params.slots.source.p[2] = 0.0f;
+  std::vector<float> dc(16, 0.5f), out(size_t(ticks) * 16), right(16);
+  const float* in[2] = {dc.data(), dc.data()};
+  VoiceInputs inputs;
+  inputs.input = in;
+  for (int t = 0; t < ticks; ++t) {
+    before(t);
+    float* o[2] = {out.data() + t * 16, right.data()};
+    part.process(inputs, o, params, 16);
+  }
+  return out;
+}
+
+int ticksFor(double rate, double seconds) { return int(std::ceil(rate * seconds / 16.0)); }
 
 }  // namespace
 
@@ -736,4 +759,91 @@ TEST_CASE("A modulated part does not allocate") {
     allocations = counter.count();
   }
   REQUIRE(allocations == 0);
+}
+
+TEST_CASE("An envelope routed to the Amp keeps its attack at the output") {
+  // Fix round 1 ruling: the routed Amp acts latencySamples() after its tick, on the sound made then.
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  CAPTURE(rate);
+  const int ticks = ticksFor(rate, 0.06);
+  auto render = [&](bool envelope, std::vector<float>* amps, int* latency) {
+    Part part;
+    part.setSeedBase(5);
+    part.prepare(rate, 256);
+    PartSettings s = withMod(0, int(ModEngineKind::Envelope));
+    s.engine = int(SourceEngine::AudioInput);
+    part.applySettings(s);
+    *latency = part.latencySamples();
+    PartParams params;
+    params.timing.beatsPerSample = 2.0 / rate;
+    params.mod.slot[0] = engineDefaults(ModEngineKind::Envelope);
+    params.mod.slot[0].p[3] = 0.2f;  // a short decay
+    params.mod.slot[0].p[5] = 0.0f;  // to no sustain: a percussive shape
+    if (envelope) {
+      setRoute(params, 0, modOutputSource(0, 0), kDestAmp, 1.0f, kSrcVelocity);
+    } else {
+      setRoute(params, 0, kSrcVelocity, kDestAmp, 1.0f);  // the Amp held open: the sound itself
+    }
+    part.noteOn(60, 1.0f);
+    std::vector<float> out = renderInputPart(part, params, ticks, [&](int t) {
+      if (t > 0) amps->push_back(clamp01(part.lastControl(0).amp));
+    });
+    amps->push_back(clamp01(part.lastControl(0).amp));
+    return out;
+  };
+  std::vector<float> envelope, open;
+  int latency = 0;
+  const std::vector<float> wet = render(true, &envelope, &latency);
+  const std::vector<float> dry = render(false, &open, &latency);
+  REQUIRE(latency > 400);
+  // The envelope peaks within the voice latency: without the alignment its attack would be lost.
+  const size_t peak = size_t(std::max_element(envelope.begin(), envelope.end()) - envelope.begin());
+  REQUIRE(envelope[peak] > 0.5f);
+  REQUIRE(int(peak) * 16 < latency);
+  // The Amp each tick sets, moving across the tick, applied latencySamples() later.
+  auto ampAt = [](const std::vector<float>& a, size_t u) {
+    const size_t k = u / 16;
+    const float from = k == 0 ? 0.0f : a[k - 1];
+    return from + (a[k] - from) * float(u % 16 + 1) / 16.0f;
+  };
+  float loudest = 0.0f;
+  for (size_t s = size_t(latency); s < wet.size(); ++s) {
+    if (dry[s] < 1e-3f) continue;
+    const size_t u = s - size_t(latency);
+    const float sound = dry[s] / ampAt(open, u);
+    INFO("sample " << s);
+    REQUIRE(std::fabs(wet[s] - sound * ampAt(envelope, u)) < 1e-4f);
+    loudest = std::max(loudest, wet[s] / sound);
+  }
+  REQUIRE(loudest > 0.95f * envelope[peak]);  // the attack's peak reaches the output
+}
+
+TEST_CASE("A modulated Part Level lines up with the voices' sound") {
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  CAPTURE(rate);
+  const int change = ticksFor(rate, 0.1);
+  const int ticks = change + ticksFor(rate, 0.05);
+  int latency = 0;
+  auto render = [&](bool move) {
+    Part part;
+    part.prepare(rate, 256);
+    PartSettings s;
+    s.engine = int(SourceEngine::AudioInput);
+    part.applySettings(s);
+    latency = part.latencySamples();
+    PartParams params;
+    params.timing.beatsPerSample = 2.0 / rate;
+    setRoute(params, 0, kSrcCcA, kDestPartLevel, -0.5f);
+    part.noteOn(60, 1.0f);
+    return renderInputPart(part, params, ticks, [&](int t) {
+      if (move && t == change) part.setController(PartController::CcA, 1.0f);
+    });
+  };
+  const std::vector<float> still = render(false);
+  const std::vector<float> moved = render(true);
+  const size_t edge = size_t(change) * 16 + size_t(latency);  // when the sound of that tick arrives
+  REQUIRE(latency > 400);
+  for (size_t s = 0; s < edge; ++s) REQUIRE(moved[s] == still[s]);
+  REQUIRE(still[edge + 15] > 0.1f);
+  REQUIRE(moved[edge + 15] < still[edge + 15] - 1e-4f);
 }

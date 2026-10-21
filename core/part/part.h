@@ -124,7 +124,9 @@ class Part {
   void delayInputSide(const float* const* input, int n);  // fills inputSide_[0..n)
   void updatePitchOffset();
   void updateGains(float level);
-  void writeOutput(float* const* out, int from, int n);  // mix_ x the part's gains (and Mono) into out
+  // mix_ x the part's gains (and Mono) into out. modulated: the Part Level comes from the
+  // matrix, delayed by the voices' latency so it lines up with their sound.
+  void writeOutput(float* const* out, int from, int n, bool modulated);
   ModVoiceInputs voiceInputs(int v) const;
   ModPartInputs partInputs(const PartParams& params, int offset) const;
   void startTick(const PartParams& params, int offset);  // the grid: part slots, then every voice
@@ -153,6 +155,9 @@ class Part {
   bool pendingJump_ = false;
   bool modulated_ = false;   // the last process() call was the modulated path
   float partLevel_ = 1.0f;   // its Part Level (base + routes) at the last tick
+  float outputLevel_ = 1.0f;  // the Part Level applied now: partLevel_, latencySamples() later
+  std::vector<float> levelLine_;  // partLevel_ per sample, latencySamples() long
+  int levelLinePos_ = 0;
   // Per-voice sources.
   int voiceKey_[kVoices] = {};
   int voiceChannel_[kVoices] = {};

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -59,9 +60,13 @@ class Voice {
   // Source gain before the Filter, then the Amp (routed, or following the gate with 5 ms ramps),
   // the pan and the Voice Gain. Amp, pan and gains move in straight lines across the tick; on a
   // note's first tick from silence the pan and gains start at their values (no glide).
+  // Each control is delayed to line up with the audio it acts on (fix round 1 ruling): the
+  // Source's parameters and the pitch act at once, the Source gain and the Filter's and Shaper's
+  // parameters after the Source path's latency, and the Amp, pan and Voice Gain (and the gate the
+  // Amp follows) after latencySamples().
   void beginTick(const VoiceControl& control, int length);
   void render(const VoiceInputs& in, float* const* out, int n);
-  float ampLevel() const { return amp_; }  // tests: the Amp after the last sample rendered
+  float ampLevel() const { return appliedAmp_; }  // tests: the Amp on the last sample rendered
 
   // M1-M3 path (tests, and parts without modulation): no Amp, pan or gains. Adds n samples into
   // out[0], out[1].
@@ -93,6 +98,15 @@ class Voice {
   // The chain for n samples; c == nullptr is the M1-M3 path.
   void run(const VoiceInputs& in, float* const* out, const SlotParams& p, const VoiceControl* c, int n);
   float tickPosition(int sample) const;  // 0..1 across the tick, after `sample` more samples
+  // The Amp, pan and Voice Gain one sample further into the tick (t: tickPosition), as the
+  // controls give them now; the caller delays them by latencySamples().
+  void stepAmp(const VoiceControl& c, float t);
+  // The slot parameters of the tick that was current `delay` samples ago; returns how many
+  // samples from now until that changes (a large number when no later tick is stored).
+  int delayedParams(int delay, const SlotParams** params) const;
+  // Fills the delay lines and the tick ring with these values: nothing stale plays after a reset
+  // or into a note from silence.
+  void snapDelays(float amp, float gain, float pan, float sourceGain, const SlotParams& params);
   void noteOn(unsigned stages);   // the held note, at the current pitch and velocity
   NativeRateWrapper& source() { return *sources_[size_t(current_)]; }
 
@@ -128,6 +142,27 @@ class Voice {
   float gainFrom_ = 1.0f;
   float sourceGain_ = 1.0f;
   float sourceGainFrom_ = 1.0f;
+  // Delay lines and the tick ring that line the controls up with the audio (allocated in prepare).
+  struct AmpState {
+    float amp = 0.0f;
+    float gain = 1.0f;
+    float pan = 0.0f;
+  };
+  struct TickParams {
+    int64_t start = 0;  // time_ when the tick began
+    SlotParams params;
+  };
+  std::vector<AmpState> ampLine_;      // latencySamples() long
+  int ampLinePos_ = 0;
+  std::vector<float> sourceGainLine_;  // sourceLatencySamples() long
+  int sourceGainLinePos_ = 0;
+  std::vector<TickParams> ticks_;      // a ring of the last ticks' parameters
+  int tickNewest_ = 0;
+  int tickCount_ = 0;
+  int filterDelay_ = 0;  // samples from the Source's input to the Filter's
+  int shaperDelay_ = 0;  // ... and to the Shaper's
+  int64_t time_ = 0;     // samples rendered on the M4 path
+  float appliedAmp_ = 0.0f;
   float source_[3][kControlBlock] = {};  // Source L, R, AUX
   float filtered_[2][kControlBlock] = {};
   float side_[kControlBlock] = {};       // mono other part

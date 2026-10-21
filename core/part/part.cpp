@@ -37,6 +37,7 @@ void Part::prepare(double hostRate, int maxBlock, Voice::Alignment alignment) {
   for (auto& voice : voices_) sourceLatency = std::max(sourceLatency, voice->sourceLatencySamples());
   inputDelay_.assign(size_t(sourceLatency), 0.0f);
   inputSide_.assign(size_t(maxBlock), 0.0f);
+  levelLine_.assign(size_t(latencySamples()), 1.0f);
   gainL_.prepare(hostRate, kGainSmoothingSeconds);
   gainR_.prepare(hostRate, kGainSmoothingSeconds);
   modulation_.prepare(hostRate);
@@ -121,7 +122,7 @@ void Part::applySettings(const PartSettings& s) {
   updatePitchOffset();
   // The modulated path keeps its last Part Level (preflight ruling G5): resetting it here, once per
   // host block, would make the level depend on the host's block sizes.
-  updateGains(modulated_ ? partLevel_ : s.level);
+  updateGains(modulated_ ? outputLevel_ : s.level);
 }
 
 bool Part::isMemberChannel(int channel) const {
@@ -274,7 +275,7 @@ void Part::process(const VoiceInputs& in, float* const* out, const SlotParams& p
     voices_[size_t(v)]->process(voiceIn, mix, params, n);
     if (allocator_.sounding(v) && !voices_[size_t(v)]->active()) allocator_.voiceIdle(v);
   }
-  writeOutput(out, 0, n);
+  writeOutput(out, 0, n, false);
 }
 
 ModVoiceInputs Part::voiceInputs(int v) const {
@@ -341,7 +342,6 @@ void Part::startTick(const PartParams& params, int offset) {
   partRetrigger_ = false;
   pendingJump_ = false;
   partLevel_ = modulation_.partLevel(params.mod, settings_.level);
-  updateGains(partLevel_);
   for (int v = 0; v < kVoices; ++v) {
     controlValid_[v] = false;
     if (voices_[size_t(v)]->active()) controlVoice(v, params, part, Voice::kControlBlock);
@@ -352,6 +352,11 @@ void Part::process(const VoiceInputs& in, float* const* out, const PartParams& p
   std::fill(mix_[0].begin(), mix_[0].begin() + n, 0.0f);
   std::fill(mix_[1].begin(), mix_[1].begin() + n, 0.0f);
   delayInputSide(in.input, n);
+  if (!modulated_) {  // from the unmodulated path (or a reset): its level until the first tick's arrives
+    outputLevel_ = settings_.level;
+    std::fill(levelLine_.begin(), levelLine_.end(), outputLevel_);
+    levelLinePos_ = 0;
+  }
   modulated_ = true;
   pendingJump_ = pendingJump_ || params.timing.jump;
   for (int done = 0; done < n;) {
@@ -376,14 +381,25 @@ void Part::process(const VoiceInputs& in, float* const* out, const PartParams& p
       if (allocator_.sounding(v) && !voices_[size_t(v)]->active()) allocator_.voiceIdle(v);
     }
     // The part's gains per slice, so a Part Level change lands at its tick whatever the block.
-    writeOutput(out, done, count);
+    writeOutput(out, done, count, true);
     tickPos_ = (tickPos_ + count) % Voice::kControlBlock;
     done += count;
   }
 }
 
-void Part::writeOutput(float* const* out, int from, int n) {
+void Part::writeOutput(float* const* out, int from, int n, bool modulated) {
   for (int i = from; i < from + n; ++i) {
+    if (modulated) {
+      const float level = levelLine_.empty() ? partLevel_ : levelLine_[size_t(levelLinePos_)];
+      if (!levelLine_.empty()) {
+        levelLine_[size_t(levelLinePos_)] = partLevel_;
+        if (++levelLinePos_ == int(levelLine_.size())) levelLinePos_ = 0;
+      }
+      if (level != outputLevel_) {
+        outputLevel_ = level;
+        updateGains(level);
+      }
+    }
     const float gl = gainL_.next();
     const float gr = gainR_.next();
     if (settings_.mono) {
