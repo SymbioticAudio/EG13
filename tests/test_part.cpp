@@ -505,16 +505,22 @@ TEST_CASE("The Input side signal reaches the Shaper aligned with the voice") {
 }
 
 TEST_CASE("Without Amp routes a modulated part follows the gate, closing 5 ms after release") {
-  Part part(steady, test::testModEngines);
-  part.prepare(kRate, kBlock);
-  const PartParams params;
-  part.noteOn(60, 1.0f);
-  Stereo held = runModulated(part, 4800, params);
-  REQUIRE(held.l[4799] == 0.5f);
-  part.noteOff(60);
-  Stereo released = runModulated(part, 480, params);
-  REQUIRE(released.l[100] > 0.0f);
-  REQUIRE(released.l[300] == 0.0f);
+  for (const double rate : {44100.0, 48000.0, 96000.0}) {
+    INFO("rate " << rate);
+    Part part(steady, test::testModEngines);
+    part.prepare(rate, kBlock);
+    const PartParams params;
+    part.noteOn(60, 1.0f);
+    const int heldLength = int(rate / 10.0);
+    Stereo held = runModulated(part, heldLength, params);
+    REQUIRE(held.l[size_t(heldLength - 1)] == 0.5f);
+    part.noteOff(60);
+    Stereo released = runModulated(part, int(rate / 50.0), params);
+    const int latency = part.latencySamples();
+    REQUIRE(released.l[size_t(latency + int(rate * 0.002))] > 0.0f);  // still closing after 2 ms
+    // Closed 5 ms after release (plus up to two control ticks for the gate to reach the Amp).
+    REQUIRE(released.l[size_t(latency + int(rate * 0.005) + 2 * Voice::kControlBlock)] == 0.0f);
+  }
 }
 
 TEST_CASE("An Envelope routed to the Amp shapes the part's notes, scaled by velocity") {
@@ -846,4 +852,121 @@ TEST_CASE("A modulated Part Level lines up with the voices' sound") {
   for (size_t s = 0; s < edge; ++s) REQUIRE(moved[s] == still[s]);
   REQUIRE(still[edge + 15] > 0.1f);
   REQUIRE(moved[edge + 15] < still[edge + 15] - 1e-4f);
+}
+
+TEST_CASE("Mono retriggers per-voice mod engines on every note; Poly retriggers a sounding voice") {
+  for (const VoiceMode mode : {VoiceMode::Mono, VoiceMode::Poly}) {
+    INFO("mode " << int(mode));
+    Part part(sine, test::testModEngines);
+    part.prepare(kRate, kBlock);
+    PartSettings s = withMod(0, test::kTestStep);
+    s.voiceMode = mode;
+    part.applySettings(s);
+    const PartParams params;
+    part.noteOn(60, 1.0f);
+    runModulated(part, 64, params);
+    REQUIRE(part.modulation().outputs(0, 0)[2] == 0.1f);  // from silence: fresh, one trigger
+    // Mono: an overlapping note; Poly: the same key again on its sounding voice.
+    part.noteOn(mode == VoiceMode::Mono ? 64 : 60, 1.0f);
+    runModulated(part, 64, params);
+    REQUIRE(std::fabs(part.modulation().outputs(0, 0)[2] - 0.2f) < 1e-6f);  // retriggered...
+    REQUIRE(std::fabs(part.modulation().outputs(0, 0)[0] - 0.08f) < 1e-6f);  // ...not reset (8 ticks)
+    if (mode == VoiceMode::Mono) {
+      part.noteOff(64);  // back to the held 60: a new note too
+      runModulated(part, 64, params);
+      REQUIRE(std::fabs(part.modulation().outputs(0, 0)[2] - 0.3f) < 1e-6f);
+    }
+  }
+}
+
+TEST_CASE("Legato glides without retriggering, and retriggers after every key was up") {
+  Part part(sine, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  PartSettings s = withMod(0, test::kTestStep);
+  s.voiceMode = VoiceMode::Legato;
+  part.applySettings(s);
+  const PartParams params;
+  part.noteOn(60, 1.0f);
+  runModulated(part, 64, params);
+  part.noteOn(64, 1.0f);  // overlapping
+  runModulated(part, 64, params);
+  REQUIRE(part.modulation().outputs(0, 0)[2] == 0.1f);
+  part.noteOff(64);  // back to the held 60
+  runModulated(part, 64, params);
+  REQUIRE(part.modulation().outputs(0, 0)[2] == 0.1f);
+  part.noteOff(60);
+  runModulated(part, 64, params);  // releasing: the voice still sounds
+  REQUIRE(part.activeVoiceCount() == 1);
+  part.noteOn(67, 1.0f);
+  runModulated(part, 64, params);
+  REQUIRE(std::fabs(part.modulation().outputs(0, 0)[2] - 0.2f) < 1e-6f);
+}
+
+TEST_CASE("Mono and Legato notes take their own MPE channel's expression") {
+  for (const VoiceMode mode : {VoiceMode::Legato, VoiceMode::Mono}) {
+    INFO("mode " << int(mode));
+    Part part(sine, test::testModEngines);
+    part.prepare(kRate, kBlock);
+    PartSettings s;
+    s.voiceMode = mode;
+    s.mpe = 1;  // lower zone: members 1..15
+    part.applySettings(s);
+    const PartParams params;
+    part.memberExpression(1, Expression::Bend, 12.0f);
+    part.noteOn(60, 1.0f, 1);
+    runModulated(part, 32, params);
+    REQUIRE(part.lastControl(0).pitch == 12.0f);
+    part.memberExpression(2, Expression::Bend, 3.0f);  // sent before its note-on, as MPE does
+    part.noteOn(64, 1.0f, 2);                           // overlapping, on another member channel
+    runModulated(part, 32, params);
+    REQUIRE(part.lastControl(0).pitch == 3.0f);
+    part.noteOff(64);  // back to the held 60, which was played on channel 1
+    runModulated(part, 32, params);
+    REQUIRE(part.lastControl(0).pitch == 12.0f);
+    part.memberExpression(1, Expression::Bend, 5.0f);
+    part.memberExpression(2, Expression::Bend, 7.0f);
+    runModulated(part, 32, params);
+    REQUIRE(part.lastControl(0).pitch == 5.0f);
+  }
+}
+
+TEST_CASE("After a reset the Random source repeats its sequence") {
+  Part part(sine, test::testModEngines);
+  part.setSeedBase(5);
+  part.prepare(kRate, kBlock);
+  PartParams params;
+  setRoute(params, 0, kSrcRandom, uint16_t(kDestSourceP + 0), 1.0f);
+  auto firstNotes = [&] {
+    std::vector<float> values;
+    for (int key : {60, 62, 64}) {
+      part.noteOn(key, 1.0f);
+      runModulated(part, 32, params);
+    }
+    for (int v = 0; v < 3; ++v) values.push_back(part.lastControl(v).params.source.p[0]);
+    return values;
+  };
+  const std::vector<float> a = firstNotes();
+  part.reset();
+  const std::vector<float> b = firstNotes();
+  REQUIRE(a[0] != a[1]);
+  REQUIRE(a == b);
+}
+
+TEST_CASE("An Always-on part's first key sets its sources as a new note does") {
+  Part part(steady, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  PartSettings s;
+  s.alwaysOn = true;
+  part.applySettings(s);
+  PartParams params;
+  setRoute(params, 0, kSrcReleaseVelocity, uint16_t(kDestSourceP + 0), 1.0f);
+  setRoute(params, 1, kSrcVelocity, uint16_t(kDestSourceP + 1), 1.0f);
+  part.noteOn(60, 1.0f);
+  part.noteOff(60, 0.4f);
+  runModulated(part, 32, params);
+  REQUIRE(part.lastControl(0).params.source.p[0] == 0.4f);
+  part.noteOn(62, 2.0f);  // out of range: clamped
+  runModulated(part, 32, params);
+  REQUIRE(part.lastControl(0).params.source.p[0] == 0.0f);  // 0 until released again
+  REQUIRE(part.lastControl(0).params.source.p[1] == 1.0f);
 }

@@ -81,7 +81,10 @@ Each of a part's twelve routes has a **source**, a **destination**, an **amount*
 
 Each mod slot has an **Engine** (Off, Envelope, LFO, Random / S&H, Function Generator) and a **Scope**:
 
-- *Per voice*: every voice has its own copy of the engine. A voice starting from silence starts its copies afresh, and each new note on a voice retriggers them (an envelope restarts its attack from where it is; an LFO restarts its cycle).
+- *Per voice*: every voice has its own copy of the engine. A voice starting from silence starts its copies afresh, and each new note on a voice retriggers them (an envelope restarts its attack from where it is; an LFO restarts its cycle) What counts as a new note follows the part's *Voice mode*:
+  - *Poly*: every note. A key played again while its voice still sounds retriggers that voice.
+  - *Mono*: every note, whether or not it overlaps the one before, including the return to a key still held when you let go of the top one.
+  - *Legato*: only a note played after every key was up. An overlapping note, or the return to a held key, glides on without retriggering, so the envelope carries on through the phrase. Its *Note Bend*, *Pressure* and *Slide* still switch to the new note's (on an MPE controller, its own channel's).
 - *Per part*: one copy for the whole part, which every voice hears. Its gate is held while any key of the part is down and it triggers when the first key goes down after all were up, so a per-part envelope works like a paraphonic synth's single-trigger envelope and a per-part LFO keeps running while you play.
 
 Choosing an engine gives it its own settings, including its scope (Random / S&H starts per part, the others per voice). Each engine remembers its settings in each slot, as the Source, Filter and Shaper engines do. Changing the engine takes effect at once: the new engine starts from the beginning. Changing the scope does too: the copies the slot switches to start from the beginning.

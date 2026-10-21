@@ -26,8 +26,9 @@ Part::Part(SourceFactory factory, ModEngineFactory mods) : modulation_(mods) {
 
 void Part::setSeedBase(uint32_t base) {
   modulation_.setSeedBase(base);
-  random_ = 0x13579BDFu ^ (base * 2654435761u);
-  if (random_ == 0) random_ = 1;
+  seed_ = 0x13579BDFu ^ (base * 2654435761u);
+  if (seed_ == 0) seed_ = 1;
+  random_ = seed_;
 }
 
 void Part::prepare(double hostRate, int maxBlock, Voice::Alignment alignment) {
@@ -69,6 +70,8 @@ void Part::reset() {
   partGate_ = false;
   partRetrigger_ = false;
   modulated_ = false;
+  random_ = seed_;  // the Random source repeats its sequence after a reset, as the mod slots do
+  std::fill(std::begin(keyChannel_), std::end(keyChannel_), 0);
   const PartSettings current = settings_;
   settings_ = PartSettings{};
   allocator_.configure(settings_.voiceMode, settings_.voiceCount);
@@ -143,19 +146,17 @@ bool Part::acceptsKey(int key) const {
 }
 
 void Part::noteOn(int key, float velocity, int channel) {
-  noteChannel_ = std::clamp(channel, 0, kChannels - 1);
+  if (key >= 0 && key < 128) keyChannel_[key] = std::clamp(channel, 0, kChannels - 1);
   if (alwaysOn_) {
     // Always on (spec §5.3): notes move the pitch but do not retrigger the voice. The per-voice
     // mod engines' gate follows the keys: the first key down triggers them (provisional ruling 8).
     if (alwaysOnNotes_.empty()) {
-      voiceRetrigger_[0] = true;
-      voiceVelocity_[0] = velocity;
-      lastVoice_ = 0;
+      startNote(0, key, velocity);
+    } else {
+      moveNote(0, key);
     }
     alwaysOnNotes_.noteOn(key, velocity);
     voices_[0]->glideTo(key);
-    voiceKey_[0] = key;
-    voiceChannel_[0] = noteChannel_;
     return;
   }
   perform(allocator_.noteOn(key, velocity));
@@ -171,6 +172,7 @@ void Part::noteOff(int key, float releaseVelocity) {
       voiceRelease_[0] = clamp01(releaseVelocity);
     } else if (wasTop) {
       voices_[0]->glideTo(alwaysOnNotes_.topKey());
+      moveNote(0, alwaysOnNotes_.topKey());
     }
     return;
   }
@@ -420,21 +422,27 @@ int Part::activeVoiceCount() const {
 }
 
 void Part::startNote(int v, int key, float velocity) {
-  voiceKey_[v] = key;
-  voiceChannel_[v] = noteChannel_;
+  moveNote(v, key);
   voiceVelocity_[v] = clamp01(velocity);
   voiceRelease_[v] = 0.0f;
   random_ ^= random_ << 13;  // xorshift32: a new Random source value per note
   random_ ^= random_ >> 17;
   random_ ^= random_ << 5;
   voiceRandom_[v] = float(random_ >> 8) / 16777216.0f;
-  // An MPE member channel's expression sent before the note belongs to it (provisional ruling 11).
-  const bool member = isMemberChannel(noteChannel_);
-  voiceBend_[v] = member ? channelBend_[noteChannel_] : 0.0f;
-  voicePressure_[v] = member ? channelPressure_[noteChannel_] : 0.0f;
-  voiceSlide_[v] = member ? channelSlide_[noteChannel_] : 0.0f;
   voiceRetrigger_[v] = true;
   lastVoice_ = v;
+}
+
+void Part::moveNote(int v, int key) {
+  const int channel = key >= 0 && key < 128 ? keyChannel_[key] : 0;
+  voiceKey_[v] = key;
+  voiceChannel_[v] = channel;
+  // An MPE member channel's expression sent before the note belongs to it (provisional ruling 11);
+  // a note on any other channel starts with none, so a legato note never keeps the previous one's.
+  const bool member = isMemberChannel(channel);
+  voiceBend_[v] = member ? channelBend_[channel] : 0.0f;
+  voicePressure_[v] = member ? channelPressure_[channel] : 0.0f;
+  voiceSlide_[v] = member ? channelSlide_[channel] : 0.0f;
 }
 
 void Part::perform(const VoiceActions& actions) {
@@ -451,9 +459,10 @@ void Part::perform(const VoiceActions& actions) {
         startNote(a.voice, a.key, a.velocity);
         break;
       case VoiceAction::Type::Glide:
+        // Legato: the voice glides on without retriggering its mod engines; the new key's channel
+        // and expression replace the previous note's.
         voice.glideTo(a.key);
-        voiceKey_[a.voice] = a.key;
-        voiceChannel_[a.voice] = noteChannel_;
+        moveNote(a.voice, a.key);
         break;
       case VoiceAction::Type::Release:
         voice.release();

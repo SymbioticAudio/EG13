@@ -69,6 +69,8 @@ struct PartParams {
 // One part: 8 voices, their allocator, the part's modulation and the part's settings.
 class Part {
  public:
+  static_assert(VoiceAllocator::kMaxVoices == PartModulation::kVoices,
+                "the Part indexes its modulation by allocator voice");
   static constexpr int kVoices = VoiceAllocator::kMaxVoices;
   static constexpr int kChannels = 16;
 
@@ -121,6 +123,7 @@ class Part {
  private:
   void perform(const VoiceActions& actions);
   void startNote(int v, int key, float velocity);  // a voice's new note: its mod sources
+  void moveNote(int v, int key);  // the voice now plays `key` (its channel and expression), no retrigger
   void delayInputSide(const float* const* input, int n);  // fills inputSide_[0..n)
   void updatePitchOffset();
   void updateGains(float level);
@@ -169,7 +172,7 @@ class Part {
   float voiceBend_[kVoices] = {};
   bool voiceRetrigger_[kVoices] = {};
   float keyRelease_[128] = {};
-  int noteChannel_ = 0;
+  int keyChannel_[128] = {};  // the channel each key was last played on (returns to held keys)
   int lastVoice_ = -1;
   // MPE member channels' state, for notes that start after it was sent.
   float channelBend_[kChannels] = {};
@@ -182,6 +185,7 @@ class Part {
   float cc_[4] = {};
   bool partGate_ = false;
   bool partRetrigger_ = false;
+  uint32_t seed_ = 0x13579BDFu;  // the Random source's seed (setSeedBase)
   uint32_t random_ = 0x13579BDFu;
 };
 
