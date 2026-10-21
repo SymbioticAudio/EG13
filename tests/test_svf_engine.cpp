@@ -213,3 +213,32 @@ TEST_CASE("State Variable Filter survives NaN and processing does not allocate")
   }
   REQUIRE(engineAllocations == 0);
 }
+
+TEST_CASE("State Variable Filter stays finite and bounded at extreme cutoff and Q") {
+  const double rates[3] = {44100.0, 48000.0, 96000.0};
+  for (double rate : rates) {
+    for (int mode = 0; mode < 3; ++mode) {
+      for (float cutoff : {0.0f, 0.5f, 1.0f}) {
+        SvfEngine engine;
+        engine.prepare(rate, 256);
+        ParamValues p = defaults();
+        p.p[0] = cutoff;
+        p.p[1] = 1.0f;  // Q 40
+        p.p[2] = (float(mode) + 0.5f) / 3.0f;
+        const auto x = saw(9600, 110.0, rate);
+        const auto s = sine(9600, double(knobHz(cutoff)), rate);
+        for (const auto* in : {&x, &s}) {
+          engine.reset();
+          const Stereo out = render(engine, *in, *in, p);
+          float peak = 0.0f;
+          for (float v : out.l) {
+            REQUIRE(std::isfinite(v));
+            peak = std::max(peak, std::fabs(v));
+          }
+          INFO("rate " << rate << " mode " << mode << " cutoff " << cutoff);
+          REQUIRE(peak < 100.0f);
+        }
+      }
+    }
+  }
+}

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <type_traits>
 #include <cstddef>
 #include <vector>
 
@@ -43,9 +44,11 @@ float run(stmlib::Svf& f, int mode, float x) {
   return f.Process<stmlib::FILTER_MODE_HIGH_PASS>(x);
 }
 
-// stmlib's Svf forbids assignment and keeps its two state variables private, so the exact
-// state copy a starting right instance needs (spec §5.1) copies the object's bytes: five floats,
-// no pointers.
+// stmlib's Svf deletes assignment and keeps its two state variables private, so the exact state
+// copy a starting right instance needs (spec §5.1) copies the object's bytes. The assert stops
+// the build if a stmlib bump changes the layout (five floats, nothing else) this relies on.
+static_assert(std::is_standard_layout_v<stmlib::Svf> && sizeof(stmlib::Svf) == 5 * sizeof(float),
+              "stmlib::Svf layout changed: copyFilter() must be revisited");
 void copyFilter(stmlib::Svf& to, const stmlib::Svf& from) {
   std::memcpy(static_cast<void*>(&to), static_cast<const void*>(&from), sizeof(stmlib::Svf));
 }

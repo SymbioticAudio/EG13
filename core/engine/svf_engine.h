@@ -13,7 +13,10 @@ namespace eg13 {
 // Plaits engine that uses it (plaits/dsp/engine/noise_engine.cc:76-91).
 class SvfEngine final : public VoiceEngine {
  public:
-  static constexpr float kMaxF = 0.497f;  // f / rate clip, as stmlib's exact tangent (filter.h:110)
+  // Cap on cutoff / host rate. The accurate tangent stmlib's Svf uses here is a polynomial that
+  // never blows up, so the cap only bites at host rates below about 40 kHz, where 20 kHz would
+  // pass half the rate; it is the exact tangent's clip (filter.h:110), kept for those rates.
+  static constexpr float kMaxF = 0.497f;
 
   SvfEngine();
   ~SvfEngine() override;

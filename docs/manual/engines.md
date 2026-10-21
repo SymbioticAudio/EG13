@@ -77,4 +77,6 @@ Controls: **Cutoff** (20 Hz to 20 kHz, default fully open), **Resonance**, **Typ
 
 The clean, digital state-variable filter that the Eurorack modules use inside (no module offers it on its own). Controls: **Cutoff** (20 Hz to 20 kHz, default fully open), **Resonance** (Q 0.5 to 40; the default, Q 0.707, gives a flat passband) and **Mode**: *LP*, *BP* or *HP*. In *BP* mode the peak stays at unity gain whatever the resonance.
 
+As in the original, the cutoff runs a little low near the top of the range (about 15% at 20 kHz when running at 48 kHz), so the Hz readout is approximate up there.
+
 Stereo: while the voice is stereo, a second filter runs for the right channel, starting from the left filter's exact state.
