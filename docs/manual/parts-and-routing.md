@@ -46,7 +46,7 @@ Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second outpu
 
 ## Default patches
 
-- **EG13:** both parts with the Macro Oscillator, Filter *Off* and Shaper *Off*. (The full init patch, with envelopes and a filter, comes with modulation in a later version.)
+- **EG13:** both parts with the Macro Oscillator, the **State Variable Filter** (low-pass, cutoff 70 %, about 2.5 kHz) and Shaper *Off*. Mod 1 and Mod 2 hold envelopes and Mod 3 an LFO (see [Modulation](modulation.md)).
 - **EG13 FX:**
   - Part A plays the Input through **Audio Input** → **Analog Filter** (fully open) → Shaper *Off*, with Trigger set to *Always on*, so it processes audio with no MIDI.
   - Part B starts with Filter *Off* and Shaper *Off*.

@@ -18,12 +18,16 @@ namespace eg13 {
 using ParamSnapshot = std::array<float, kParamCount>;
 
 // Every engine's remembered parameters, per part and slot: Source engines' P1..P16 first (M2's
-// layout, so stashIndex() is unchanged), then Filter engines' P1..P4, then Shaper engines'
-// P1..P12.
+// layout, so stashIndex() is unchanged), then Filter engines' P1..P4, Shaper engines' P1..P12,
+// mod engines' P1..P16 per mod slot (M4), then each mod engine's Scope per mod slot (M4).
 constexpr size_t kSourceStashSize = size_t(kNumParts) * size_t(kNumSourceEngines) * kSourceParamCount;
 constexpr size_t kFilterStashSize = size_t(kNumParts) * size_t(kNumFilterEngines) * kFilterParamCount;
 constexpr size_t kShaperStashSize = size_t(kNumParts) * size_t(kNumShaperEngines) * kShaperParamCount;
-constexpr size_t kStashSize = kSourceStashSize + kFilterStashSize + kShaperStashSize;
+constexpr size_t kModStashSize =
+    size_t(kNumParts) * size_t(kNumModSlots) * size_t(kNumModEngines) * kModSlotParamCount;
+constexpr size_t kSlotStashSize = kSourceStashSize + kFilterStashSize + kShaperStashSize + kModStashSize;
+constexpr size_t kScopeStashSize = size_t(kNumParts) * size_t(kNumModSlots) * size_t(kNumModEngines);
+constexpr size_t kStashSize = kSlotStashSize + kScopeStashSize;
 constexpr size_t stashIndex(int part, int engine, int p) {
   return (size_t(part) * size_t(kNumSourceEngines) + size_t(engine)) * kSourceParamCount + size_t(p);
 }
@@ -32,28 +36,46 @@ constexpr size_t slotStashIndex(SlotKind kind, int part, int engine, int p) {
          : kind == SlotKind::Filter
              ? kSourceStashSize +
                    (size_t(part) * size_t(kNumFilterEngines) + size_t(engine)) * kFilterParamCount + size_t(p)
-             : kSourceStashSize + kFilterStashSize +
-                   (size_t(part) * size_t(kNumShaperEngines) + size_t(engine)) * kShaperParamCount + size_t(p);
+         : kind == SlotKind::Shaper
+             ? kSourceStashSize + kFilterStashSize +
+                   (size_t(part) * size_t(kNumShaperEngines) + size_t(engine)) * kShaperParamCount + size_t(p)
+             : kSourceStashSize + kFilterStashSize + kShaperStashSize +
+                   ((size_t(part) * size_t(kNumModSlots) + size_t(modSlotIndex(kind))) * size_t(kNumModEngines) +
+                    size_t(engine)) * kModSlotParamCount +
+                   size_t(p);
+}
+// A mod engine's remembered Scope (0 per voice, 1 per part) in one mod slot of one part.
+constexpr size_t scopeStashIndex(int part, int slot, int engine) {
+  return kSlotStashSize + (size_t(part) * size_t(kNumModSlots) + size_t(slot)) * size_t(kNumModEngines) + size_t(engine);
 }
 // The layout covers the stash exactly: each slot's block starts where the previous ends, and the
 // last entry is the last index.
 static_assert(slotStashIndex(SlotKind::Filter, 0, 0, 0) == kSourceStashSize, "Filter block starts after Source");
 static_assert(slotStashIndex(SlotKind::Shaper, 0, 0, 0) == kSourceStashSize + kFilterStashSize,
               "Shaper block starts after Filter");
+static_assert(slotStashIndex(SlotKind::Mod1, 0, 0, 0) == kSourceStashSize + kFilterStashSize + kShaperStashSize,
+              "Mod block starts after Shaper");
 static_assert(slotStashIndex(SlotKind::Source, kNumParts - 1, kNumSourceEngines - 1, int(kSourceParamCount) - 1) ==
                   kSourceStashSize - 1, "Source block size");
 static_assert(slotStashIndex(SlotKind::Filter, kNumParts - 1, kNumFilterEngines - 1, int(kFilterParamCount) - 1) ==
                   kSourceStashSize + kFilterStashSize - 1, "Filter block size");
 static_assert(slotStashIndex(SlotKind::Shaper, kNumParts - 1, kNumShaperEngines - 1, int(kShaperParamCount) - 1) ==
-                  kStashSize - 1, "Shaper block size");
+                  kSourceStashSize + kFilterStashSize + kShaperStashSize - 1, "Shaper block size");
+static_assert(slotStashIndex(SlotKind::Mod4, kNumParts - 1, kNumModEngines - 1, int(kModSlotParamCount) - 1) ==
+                  kSlotStashSize - 1, "Mod block size");
+static_assert(scopeStashIndex(kNumParts - 1, kNumModSlots - 1, kNumModEngines - 1) == kStashSize - 1,
+              "Scope block size");
 using EngineStash = std::array<float, kStashSize>;
 
 struct HostUpdate {
   uint32_t id;
   float value;
 };
-// Host-update queue capacity: one entry per slot P per part (coalesced per id).
-constexpr size_t kMaxHostUpdates = size_t(kNumParts) * (kSourceParamCount + kFilterParamCount + kShaperParamCount);
+// Host-update queue capacity, coalesced per id: per part every slot P, each mod slot's Scope, and
+// the four learnable CC numbers (M4).
+constexpr size_t kMaxHostUpdates =
+    size_t(kNumParts) * (kSourceParamCount + kFilterParamCount + kShaperParamCount +
+                         size_t(kNumModSlots) * (kModSlotParamCount + 1) + 4);
 
 // Two parts, MIDI routing by mode, main and Bus 2 outputs, Dry input and
 // atomic parameter snapshots.

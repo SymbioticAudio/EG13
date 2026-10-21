@@ -44,7 +44,14 @@ const Section kSections[kNumSlotKinds] = {
     {SlotKind::Source, "engineSettings"},  // M2's key
     {SlotKind::Filter, "filterSettings"},
     {SlotKind::Shaper, "shaperSettings"},
+    {SlotKind::Mod1, "mod1Settings"},  // M4: P1..P16, then the Scope
+    {SlotKind::Mod2, "mod2Settings"},
+    {SlotKind::Mod3, "mod3Settings"},
+    {SlotKind::Mod4, "mod4Settings"},
 };
+
+// Numbers per engine in a section: the P's, and for a mod slot its Scope last.
+size_t sectionWidth(SlotKind kind) { return slotParamCount(kind) + (isModSlot(kind) ? 1 : 0); }
 
 bool isKnownTopLevel(const std::string& key) {
   if (key == "schemaVersion" || key == "params") return true;
@@ -60,7 +67,7 @@ bool readSection(const nlohmann::json& root, const Section& section, EngineStash
   if (found == root.end()) return true;
   if (!found->is_object()) return false;
   bool clean = true;
-  const size_t count = slotParamCount(section.kind);
+  const size_t count = sectionWidth(section.kind);
   for (auto partIt = found->begin(); partIt != found->end(); ++partIt) {
     uint32_t part = 0;
     if (!parseId(partIt.key(), &part) || part >= uint32_t(kNumParts) || !partIt.value().is_object()) {
@@ -81,8 +88,12 @@ bool readSection(const nlohmann::json& root, const Section& section, EngineStash
       }
       for (size_t p = 0; p < list.size(); ++p) {
         const double v = list[p].get<double>();
-        stash[slotStashIndex(section.kind, int(part), int(engine), int(p))] =
-            float(std::clamp(std::isnan(v) ? 0.0 : v, 0.0, 1.0));
+        const float clamped = float(std::clamp(std::isnan(v) ? 0.0 : v, 0.0, 1.0));
+        if (p < slotParamCount(section.kind)) {
+          stash[slotStashIndex(section.kind, int(part), int(engine), int(p))] = clamped;
+        } else {  // a mod slot's Scope: 0 per voice, 1 per part
+          stash[scopeStashIndex(int(part), modSlotIndex(section.kind), int(engine))] = std::round(clamped);
+        }
       }
     }
   }
@@ -111,6 +122,7 @@ std::string StateStore::save(const Synth& synth) const {
         for (int p = 0; p < int(slotParamCount(section.kind)); ++p) {
           values.push_back(stash[slotStashIndex(section.kind, part, e, p)]);
         }
+        if (isModSlot(section.kind)) values.push_back(stash[scopeStashIndex(part, modSlotIndex(section.kind), e)]);
         perPart[std::to_string(e)] = std::move(values);
       }
       engines[std::to_string(part)] = std::move(perPart);

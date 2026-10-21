@@ -189,6 +189,14 @@ EngineStash Synth::defaultStash() {
       }
     }
   }
+  // Each mod engine's own scope (spec §4: Random / S&H per part, the others per voice).
+  for (int part = 0; part < kNumParts; ++part) {
+    for (int slot = 0; slot < kNumModSlots; ++slot) {
+      for (int e = 0; e < kNumModEngines; ++e) {
+        stash[scopeStashIndex(part, slot, e)] = modEngineInfo(e).perPartByDefault ? 1.0f : 0.0f;
+      }
+    }
+  }
   return stash;
 }
 
@@ -251,6 +259,12 @@ EngineStash Synth::engineStash() const {  // main thread
       }
     }
   }
+  for (int part = 0; part < kNumParts; ++part) {
+    for (int slot = 0; slot < kNumModSlots; ++slot) {
+      const int e = engine(modSlotKind(slot), part);
+      s[scopeStashIndex(part, slot, e)] = float(param(paramSpec(modScopeParamIndex(part, slot)).id));
+    }
+  }
   return s;
 }
 
@@ -263,6 +277,7 @@ PartEngines Synth::partEngines(int part) const {
   e.source = engine(SlotKind::Source, part);
   e.filter = engine(SlotKind::Filter, part);
   e.shaper = engine(SlotKind::Shaper, part);
+  for (int slot = 0; slot < kNumModSlots; ++slot) e.mod[slot] = engine(modSlotKind(slot), part);
   return e;
 }
 
@@ -294,6 +309,14 @@ void Synth::switchEngine(SlotKind kind, int part, int next) {
     const size_t index = slotParamIndex(kind, part, p);
     stash_[slotStashIndex(kind, part, previous, p)].store(load(index), std::memory_order_relaxed);
     const float value = stash_[slotStashIndex(kind, part, next, p)].load(std::memory_order_relaxed);
+    values_[index].store(value, std::memory_order_relaxed);
+    queueHostUpdate({paramSpec(index).id, value});
+  }
+  if (isModSlot(kind)) {  // a mod engine remembers its scope too
+    const int slot = modSlotIndex(kind);
+    const size_t index = modScopeParamIndex(part, slot);
+    stash_[scopeStashIndex(part, slot, previous)].store(load(index), std::memory_order_relaxed);
+    const float value = stash_[scopeStashIndex(part, slot, next)].load(std::memory_order_relaxed);
     values_[index].store(value, std::memory_order_relaxed);
     queueHostUpdate({paramSpec(index).id, value});
   }
@@ -365,6 +388,10 @@ PartSettings Synth::readPartSettings(int part) const {
   s.filterEngine = slotEngineFromSelector(SlotKind::Filter, load(filterEngineParamIndex(part)));
   s.shaperEngine = slotEngineFromSelector(SlotKind::Shaper, load(shaperEngineParamIndex(part)));
   s.inputSource = int(v(PartParam::InputSource));
+  for (int slot = 0; slot < kNumModSlots; ++slot) {
+    s.modEngine[slot] = slotEngineFromSelector(modSlotKind(slot), load(modEngineParamIndex(part, slot)));
+    s.modPerPart[slot] = load(modScopeParamIndex(part, slot)) >= 0.5f;
+  }
   return s;
 }
 

@@ -109,10 +109,15 @@ TEST_CASE("Host defaults of the Filter and Shaper P's suit every engine of the s
   for (SlotKind kind : {SlotKind::Filter, SlotKind::Shaper}) {
     ParamValues hostDefaults;
     for (int p = 0; p < int(slotParamCount(kind)); ++p) {
-      hostDefaults.p[p] = paramDefault(slotParamIndex(kind, 0, p), PluginKind::Instrument);
-      // One default per P position: the same for both parts and both plugins.
+      hostDefaults.p[p] = paramDefault(slotParamIndex(kind, 0, p), PluginKind::Effect);
+      // One default per P position: the same for both parts and both plugins, except the
+      // instrument's Filter P1, the init patch's cutoff (M4, provisional ruling 28).
       for (int part = 0; part < kNumParts; ++part) {
         for (PluginKind plugin : {PluginKind::Instrument, PluginKind::Effect}) {
+          if (kind == SlotKind::Filter && p == 0 && plugin == PluginKind::Instrument) {
+            REQUIRE(paramDefault(slotParamIndex(kind, part, p), plugin) == 0.7f);
+            continue;
+          }
           REQUIRE(paramDefault(slotParamIndex(kind, part, p), plugin) == hostDefaults.p[p]);
         }
       }
@@ -137,5 +142,23 @@ TEST_CASE("Host defaults of the Filter and Shaper P's suit every engine of the s
         REQUIRE(level.gainDb < 6.0);
       }
     }
+  }
+}
+
+TEST_CASE("The instrument's init cutoff suits every filter", "[levels]") {
+  for (int e = 0; e < kNumFilterEngines; ++e) {
+    ProcessorSlot slot(makeAllFilters());
+    slot.prepare(kRate, 16);
+    slot.setEngine(e);
+    slot.reset();
+    ParamValues p;
+    for (int i = 0; i < int(kFilterParamCount); ++i) {
+      p.p[i] = paramDefault(filterParamIndex(0, i), PluginKind::Instrument);
+    }
+    const Level level = measure(slot, p);
+    std::printf("Init cutoff: %-22s %+6.2f dB  peak %.3f\n", filterEngineInfo(e).displayName, level.gainDb,
+                double(level.peak));
+    REQUIRE(level.gainDb > -6.0);
+    REQUIRE(level.gainDb < 3.0);
   }
 }

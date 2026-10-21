@@ -189,7 +189,11 @@ TEST_CASE("Schema 3 without engineSettings uses each engine's defaults") {
   REQUIRE(store.load(s, R"({"schemaVersion":3,"params":{}})") == state::LoadResult::Ok);
   const EngineStash stash = s.engineStash();
   const EngineStash defaults = Synth::defaultStash();
-  for (size_t i = 0; i < kStashSize; ++i) REQUIRE(stash[i] == defaults[i]);
+  // The engines in use report their live values (a host default may differ from the engine's own,
+  // e.g. the init patch's cutoff); every other engine holds its own defaults.
+  for (size_t i = 0; i < kSlotStashSize; ++i) {
+    if (!currentEntry(s, i)) REQUIRE(stash[i] == defaults[i]);
+  }
 }
 
 TEST_CASE("Malformed engineSettings entries are dropped with a warning") {
@@ -402,13 +406,13 @@ TEST_CASE("Filter and Shaper settings: wrong types, out-of-range values and Off"
   }
   SECTION("values outside 0..1 clamp") {
     Synth s(PluginKind::Instrument);
-    REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"filterSettings":{"1":{"3":[-0.5,1.5,0.25,7]}}})") ==
+    REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"filterSettings":{"1":{"2":[-0.5,1.5,0.25,7]}}})") ==
             state::LoadResult::Ok);
     const EngineStash stash = s.engineStash();
-    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 3, 0)] == 0.0f);
-    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 3, 1)] == 1.0f);
-    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 3, 2)] == 0.25f);
-    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 3, 3)] == 1.0f);
+    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 2, 0)] == 0.0f);
+    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 2, 1)] == 1.0f);
+    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 2, 2)] == 0.25f);
+    REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 2, 3)] == 1.0f);
   }
   SECTION("a part that is not an object, or a section that is not an object, is dropped") {
     Synth s(PluginKind::Instrument);
@@ -493,4 +497,39 @@ TEST_CASE("Every slot, part and engine's settings round-trip to their own place"
       }
     }
   }
+}
+
+TEST_CASE("Mod slot settings and scopes round-trip per engine") {
+  Synth a(PluginKind::Instrument);
+  const uint32_t engineId = paramSpec(modEngineParamIndex(1, 2)).id;
+  a.setParam(engineId, double(ModEngineKind::FunctionGenerator));
+  a.setParam(paramSpec(modParamIndex(1, 2, 4)).id, 0.33);
+  a.setParam(paramSpec(modScopeParamIndex(1, 2)).id, 1.0);
+  a.setParam(engineId, double(ModEngineKind::Random));  // stashes the Function Generator's settings
+  a.setParam(paramSpec(modScopeParamIndex(1, 2)).id, 0.0);
+  const std::string json = state::StateStore{}.save(a);
+  Synth b(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.load(b, json) == state::LoadResult::Ok);
+  REQUIRE(b.engine(SlotKind::Mod3, 1) == int(ModEngineKind::Random));
+  REQUIRE(b.param(paramSpec(modScopeParamIndex(1, 2)).id) == 0.0);
+  const EngineStash stash = b.engineStash();
+  REQUIRE(stash[slotStashIndex(SlotKind::Mod3, 1, int(ModEngineKind::FunctionGenerator), 4)] == 0.33f);
+  REQUIRE(stash[scopeStashIndex(1, 2, int(ModEngineKind::FunctionGenerator))] == 1.0f);
+  REQUIRE(stash[scopeStashIndex(1, 2, int(ModEngineKind::Random))] == 0.0f);
+  b.setParam(engineId, double(ModEngineKind::FunctionGenerator));
+  REQUIRE(b.param(paramSpec(modParamIndex(1, 2, 4)).id) == double(0.33f));
+  REQUIRE(b.param(paramSpec(modScopeParamIndex(1, 2)).id) == 1.0);
+}
+
+TEST_CASE("mod settings arrays have 17 numbers; a scope is 0 or 1") {
+  Synth s(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"mod2Settings":{"0":{"4":[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.7]}}})") ==
+          state::LoadResult::Ok);
+  const EngineStash stash = s.engineStash();
+  REQUIRE(stash[slotStashIndex(SlotKind::Mod2, 0, 4, 15)] == 0.1f);
+  REQUIRE(stash[scopeStashIndex(0, 1, 4)] == 1.0f);  // 0.7 rounds to per part
+  REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"mod2Settings":{"0":{"4":[0.1,0.1]}}})") ==
+          state::LoadResult::OkWithWarnings);
 }

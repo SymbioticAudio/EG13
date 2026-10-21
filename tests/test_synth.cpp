@@ -922,7 +922,9 @@ TEST_CASE("Switching Filter and Shaper types swaps their P values and reports th
 
 TEST_CASE("Filter and Shaper names and text follow their engines") {
   Synth synth(PluginKind::Instrument);
-  REQUIRE(std::string(synth.paramName(filterParamIndex(0, 0))) == "(unused)");
+  REQUIRE(std::string(synth.paramName(filterParamIndex(0, 0))) == "Cutoff");  // the init patch's SVF
+  synth.setParam(filterTypeId(0), double(FilterEngine::Analog));
+  REQUIRE(std::string(synth.paramName(filterParamIndex(0, 0))) == "Frequency");
   synth.setParam(filterTypeId(0), double(FilterEngine::StateVariable));
   synth.setParam(shaperTypeId(0), double(ShaperEngine::Eq));
   REQUIRE(std::string(synth.paramName(filterParamIndex(0, 0))) == "Cutoff");
@@ -1136,5 +1138,40 @@ TEST_CASE("Filter and Shaper switching while playing does not allocate") {
     allocations = counter.count();
   }
   REQUIRE(allocations == 0);
+  synth.setActive(false);
+}
+
+TEST_CASE("Switching a mod engine while notes sound swaps its P values and scope") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.noteOn(0, 60, 1.0f);
+  runBlocks(synth, 2);
+  HostUpdate updates[kMaxHostUpdates];
+  synth.takeHostUpdates(updates, int(kMaxHostUpdates));
+  const uint32_t engineId = paramSpec(modEngineParamIndex(0, 0)).id;
+  const uint32_t scopeId = paramSpec(modScopeParamIndex(0, 0)).id;
+  const uint32_t p4 = paramSpec(modParamIndex(0, 0, 3)).id;
+  synth.setParam(p4, 0.8);  // the Envelope's Decay
+  synth.setParam(engineId, double(ModEngineKind::Random));
+  runBlocks(synth, 1);
+  REQUIRE(synth.takeHostUpdates(updates, int(kMaxHostUpdates)) == int(kModSlotParamCount) + 1);
+  REQUIRE(updates[int(kModSlotParamCount)].id == scopeId);
+  REQUIRE(updates[int(kModSlotParamCount)].value == 1.0f);  // Random / S&H starts per part
+  REQUIRE(synth.param(scopeId) == 1.0);
+  REQUIRE(synth.param(p4) == double(modEngineInfo(int(ModEngineKind::Random)).engine.params[3].defaultValue));
+  REQUIRE(std::string(synth.paramName(modParamIndex(0, 0, 0))) == "T Model");
+  REQUIRE(synth.takeEngineChanged());
+  synth.setParam(scopeId, 0.0);  // per voice
+  synth.setParam(engineId, double(ModEngineKind::Envelope));
+  runBlocks(synth, 1);
+  REQUIRE(synth.param(p4) == double(0.8f));
+  REQUIRE(synth.param(scopeId) == 0.0);
+  synth.setParam(engineId, double(ModEngineKind::Random));
+  REQUIRE(synth.param(scopeId) == 0.0);  // Random remembers the scope it was given
+  REQUIRE(std::string(synth.paramName(modParamIndex(0, 0, 0))) == "T Model");
+  char buf[64];
+  synth.formatParam(modParamIndex(0, 0, 13), modOptionValue(1), buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Minor");
   synth.setActive(false);
 }

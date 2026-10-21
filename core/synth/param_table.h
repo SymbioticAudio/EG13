@@ -4,21 +4,28 @@
 #include <cstdint>
 
 #include "engine/voice_engine.h"
+#include "mod/mod_routes.h"
 #include "synth/plugin_kind.h"
 
 namespace eg13 {
 
 constexpr int kNumParts = 2;
-// Source P1..P16, Filter P1..P4, Shaper P1..P12 per part (spec §7.1; Shaper amended in M3).
-// Engines use the first EngineInfo::paramCount; the rest are named "(unused)" and show "-".
+// Source P1..P16, Filter P1..P4, Shaper P1..P12 per part (spec §7.1; Shaper amended in M3), and
+// per mod slot P1..P16 (M4). Engines use the first EngineInfo::paramCount; the rest are named
+// "(unused)" and show "-".
 constexpr size_t kSourceParamCount = 16;
 constexpr size_t kFilterParamCount = 4;
 constexpr size_t kShaperParamCount = 12;
+constexpr size_t kModSlotParamCount = size_t(kModParamCount);
 
-enum class SlotKind : int { Source = 0, Filter = 1, Shaper = 2 };
-constexpr int kNumSlotKinds = 3;
+// The engine slots of a part: Source, Filter, Shaper, then the four mod slots (M4).
+enum class SlotKind : int { Source = 0, Filter = 1, Shaper = 2, Mod1 = 3, Mod2 = 4, Mod3 = 5, Mod4 = 6 };
+constexpr int kNumSlotKinds = 7;
+constexpr bool isModSlot(SlotKind kind) { return int(kind) >= int(SlotKind::Mod1); }
+constexpr SlotKind modSlotKind(int slot) { return SlotKind(int(SlotKind::Mod1) + slot); }
+constexpr int modSlotIndex(SlotKind kind) { return int(kind) - int(SlotKind::Mod1); }
 
-// Value = parameter-ID index within Slot::Part. Never renumber.
+// Value = parameter-ID index within Slot::Part. Never renumber; append only.
 enum class PartParam : uint32_t {
   Level = 1,
   Pan,
@@ -35,32 +42,41 @@ enum class PartParam : uint32_t {
   Mono,
   Output,
   InputSource,
+  MpeMode,       // M4: 0 Off, 1 Lower zone, 2 Upper zone
+  MpeBendRange,  // M4: semitones of a member channel's full pitch bend
+  CcA,           // M4: the controller numbers of the CC A..D sources
+  CcB,
+  CcC,
+  CcD,
 };
-constexpr size_t kPartParamCount = 15;
+constexpr size_t kPartParamCount = 21;
 
-// Value = parameter-ID index for part 0xFF, Slot::Part. Never renumber.
-enum class MasterParam : uint32_t { Level = 0, Dry, Mode, SplitNote };
-constexpr size_t kMasterParamCount = 4;
+// Value = parameter-ID index for part 0xFF, Slot::Part. Never renumber; append only.
+enum class MasterParam : uint32_t { Level = 0, Dry, Mode, SplitNote, VoiceGain, SoftClip };
+constexpr size_t kMasterParamCount = 6;
 
 enum class PartMode { Single = 0, Layer = 1, Split = 2, Multi = 3 };
-
-// Per part: Source selector + P1..P16, Filter selector + P1..P4, Shaper selector + P1..P12,
-// then the part settings. Table order only: saved state uses parameter IDs.
-constexpr size_t kParamsPerPart =
-    3 + kSourceParamCount + kFilterParamCount + kShaperParamCount + kPartParamCount;
-constexpr size_t kParamCount = size_t(kNumParts) * kParamsPerPart + kMasterParamCount;
 
 constexpr size_t slotParamCount(SlotKind kind) {
   return kind == SlotKind::Source   ? kSourceParamCount
          : kind == SlotKind::Filter ? kFilterParamCount
-                                    : kShaperParamCount;
+         : kind == SlotKind::Shaper ? kShaperParamCount
+                                    : kModSlotParamCount;
 }
+// A slot's block in a part's table: its selector, its P's, and for a mod slot its Scope.
+constexpr size_t slotBlockSize(SlotKind kind) { return 1 + slotParamCount(kind) + (isModSlot(kind) ? 1 : 0); }
 // Where a slot's selector sits within a part's block.
 constexpr size_t slotOffset(SlotKind kind) {
-  return kind == SlotKind::Source   ? 0
-         : kind == SlotKind::Filter ? 1 + kSourceParamCount
-                                    : 2 + kSourceParamCount + kFilterParamCount;
+  size_t offset = 0;
+  for (int k = 0; k < int(kind); ++k) offset += slotBlockSize(SlotKind(k));
+  return offset;
 }
+// Per part: the seven slot blocks, the 12 route amounts, then the part settings. Table order
+// only: saved state uses parameter IDs.
+constexpr size_t kSlotsBlockSize = slotOffset(SlotKind::Mod4) + slotBlockSize(SlotKind::Mod4);
+constexpr size_t kParamsPerPart = kSlotsBlockSize + size_t(kNumRoutes) + kPartParamCount;
+constexpr size_t kParamCount = size_t(kNumParts) * kParamsPerPart + kMasterParamCount;
+
 constexpr size_t slotEngineParamIndex(SlotKind kind, int part) {
   return size_t(part) * kParamsPerPart + slotOffset(kind);
 }
@@ -73,16 +89,23 @@ constexpr size_t filterEngineParamIndex(int part) { return slotEngineParamIndex(
 constexpr size_t filterParamIndex(int part, int p) { return slotParamIndex(SlotKind::Filter, part, p); }
 constexpr size_t shaperEngineParamIndex(int part) { return slotEngineParamIndex(SlotKind::Shaper, part); }
 constexpr size_t shaperParamIndex(int part, int p) { return slotParamIndex(SlotKind::Shaper, part, p); }
+constexpr size_t modEngineParamIndex(int part, int slot) { return slotEngineParamIndex(modSlotKind(slot), part); }
+constexpr size_t modParamIndex(int part, int slot, int p) { return slotParamIndex(modSlotKind(slot), part, p); }
+constexpr size_t modScopeParamIndex(int part, int slot) {
+  return modEngineParamIndex(part, slot) + 1 + kModSlotParamCount;
+}
+constexpr size_t routeAmountParamIndex(int part, int route) {
+  return size_t(part) * kParamsPerPart + kSlotsBlockSize + size_t(route);
+}
 constexpr size_t partParamIndex(int part, PartParam param) {
-  return size_t(part) * kParamsPerPart + 3 + kSourceParamCount + kFilterParamCount + kShaperParamCount +
-         size_t(uint32_t(param) - 1);
+  return size_t(part) * kParamsPerPart + kSlotsBlockSize + size_t(kNumRoutes) + size_t(uint32_t(param) - 1);
 }
 constexpr size_t masterParamIndex(MasterParam param) {
   return size_t(kNumParts) * kParamsPerPart + size_t(uint32_t(param));
 }
 
 enum class ParamFormat {
-  Engine,  // a Source/Filter/Shaper P, formatted by the slot's selected engine
+  Engine,  // a slot's P, formatted by the slot's selected engine
   Percent,
   Pan,
   GlideTime,
@@ -100,6 +123,12 @@ enum class ParamFormat {
   InputSource,
   FilterEngine,
   ShaperEngine,
+  ModEngine,    // M4
+  ModScope,     // M4
+  RouteAmount,  // M4: by the route's destination
+  MpeMode,      // M4
+  CcNumber,     // M4
+  VoiceGain,    // M4
 };
 
 struct ParamSpec {
@@ -114,26 +143,38 @@ struct ParamSpec {
   ParamFormat format;
 };
 
-// The engine selected in each slot of a part, for engine-aware names and text.
+// The engine selected in each slot of a part, and each route's destination, for engine-aware
+// names and text.
 struct PartEngines {
   int source = 0;
   int filter = 0;
   int shaper = 0;
+  int mod[kNumModSlots] = {};
+  uint16_t routeDestination[kNumRoutes] = {};
 };
 
 int slotEngineCount(SlotKind kind);
-int slotEngineFromSelector(SlotKind kind, double value);  // unknown -> 0 (Macro / Off / Off)
+int slotEngineFromSelector(SlotKind kind, double value);  // unknown -> 0 (Macro / Off)
 const EngineInfo& slotEngineInfo(SlotKind kind, int engine);
-// If index is a Source/Filter/Shaper P: its slot, part and P (0-based).
+// If index is a slot's P: its slot, part and P (0-based).
 bool slotParamOf(size_t index, SlotKind* kind, int* part, int* p);
 // If index is a slot's engine selector: its slot and part.
 bool slotSelectorOf(size_t index, SlotKind* kind, int* part);
+// If index is a mod slot's Scope: its part and slot (0..3).
+bool modScopeOf(size_t index, int* part, int* slot);
+// If index is a route amount: its part and route (0..11).
+bool routeAmountOf(size_t index, int* part, int* route);
+
+// The init patches' routes (spec §6), patch data the Synth starts from, and their amounts (the
+// route amounts' host defaults).
+Route initPatchRoute(PluginKind plugin, int part, int route);
+float initPatchAmount(PluginKind plugin, int part, int route);
 
 const ParamSpec& paramSpec(size_t index);  // index < kParamCount
 int paramIndex(uint32_t id);               // -1 if unknown
 float paramDefault(size_t index, PluginKind kind);
 float clampParam(size_t index, double value);  // clamp, round stepped, NaN -> min
-// engines: the part's selected engines, used for Source/Filter/Shaper P names and text.
+// engines: the part's selected engines and route destinations, for slot P and route text.
 void formatParam(size_t index, double value, char* buf, size_t size, const PartEngines& engines = {});
 void formatParam(size_t index, double value, char* buf, size_t size, int sourceEngine);
 const char* paramName(size_t index, const PartEngines& engines = {});

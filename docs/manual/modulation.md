@@ -115,3 +115,12 @@ EG13 keeps room for chords and evens out its Sources (gain staging):
 - **Source trims**: each Source is turned up or down at its output, before the Filter, so one held note at the engine's default settings comes out about as loud on every Source: the Digital Oscillator 3 dB down, the Modal Synth and the Resonator 12 dB up, the Macro Oscillator and Audio Input unchanged. This also means the Filter and the Shaper see similar levels from every Source.
 - **Audio Input chords**: every Audio Input voice carries the same Input, so EG13 divides each one by the number of keys held. A chord plays the Input at one voice's level instead of several times louder.
 - **Soft Clip** (a master setting, on by default): the main and Bus 2 outputs pass unchanged below −3 dBFS; above that they bend smoothly towards full scale and never go over it. A NaN is silenced. Switch it off to hear EG13's output exactly (the host may then clip it).
+
+## In the host
+
+- *Part A/Mod 1* … *Part B/Mod 4*: **Engine** (a stepped list from 0 to 31; values without an engine select Off), **Scope** (*Per voice* / *Per part*) and P1–P16, named after the engine in the slot (unused ones show "(unused)" and "-").
+- *Part A/Matrix*, *Part B/Matrix*: **Route 1** … **Route 12**, the routes' amounts from −100 % to +100 %. The text follows the route's destination: semitones for Pitch, percent otherwise, "-" for a route that is not set up.
+- Per part: **MPE** (*Off*, *Lower zone*, *Upper zone*), **MPE Bend Range** (default ±48 semitones), **CC A** to **CC D** (the controller numbers of the four CC sources; defaults 2 Breath, 4 Foot, 11 Expression, 16).
+- Master: **Voice Gain** (*−12 dB* / *0 dB*) and **Soft Clip** (*Off* / *On*), see Levels.
+
+**Reset to default** in the host sets a mod slot's P to the same value whatever engine is in the slot (a plugin can give each parameter only one default). The values suit every engine: P1 and P2 go to 0 (each engine's first option, or its shortest attack), P3 to P9 to 50 % except P6 to 100 %, and P10 to P16 to 0. That gives the Envelope's and Function Generator's ADSR (1 ms attack, about half-second decay and release, full sustain), the LFO cycling at 2 Hz, and Random / S&H at the module's centre settings with a bipolar range. Exceptions: in the instrument, Mod 3's P3 resets to about 5 Hz (the init patch's vibrato), and in EG13 FX, Part A Mod 1's P3 to about 0.25 Hz. Scope resets to per voice (EG13 FX's Part A Mod 1: per part). A route amount resets to its init patch value (0 for routes the init patch does not use).
