@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <string>
@@ -11,6 +12,9 @@
 #include "alloc_counter.h"
 #include "engine/native_rate_wrapper.h"
 #include "engine/rings_engine.h"
+#include "rings/dsp/part.h"
+#include "rings/dsp/patch.h"
+#include "rings/dsp/performance_state.h"
 #include "test_helpers.h"
 
 using namespace eg13;
@@ -134,6 +138,78 @@ TEST_CASE("Exciter is stepped Internal / Input / Both") {
     REQUIRE(RingsEngine::exciterIndex(centres[i]) == i);
     param.format(centres[i], buf, sizeof(buf));
     REQUIRE(std::string(buf) == names[i]);
+  }
+}
+
+namespace {
+
+// Upstream Rings as the engine drives it at defaults (FM Voice, Exciter
+// Internal, no input, native rate), one 24-sample block per call, strummed once.
+struct UpstreamRings {
+  rings::Part part;
+  uint16_t reverb[32768];
+};
+
+void renderUpstream(int blocks, std::vector<float>& out, std::vector<float>& aux) {
+  auto u = std::make_unique<UpstreamRings>();
+  std::memset(static_cast<void*>(&u->part), 0, sizeof(u->part));
+  u->part.Init(u->reverb);
+  u->part.set_polyphony(1);
+  u->part.set_model(rings::RESONATOR_MODEL_FM_VOICE);
+  constexpr int kN = RingsEngine::kNativeBlock;
+  float in[kN] = {};
+  out.assign(size_t(blocks * kN), 0.0f);
+  aux.assign(size_t(blocks * kN), 0.0f);
+  for (int b = 0; b < blocks; ++b) {
+    rings::Patch patch;
+    patch.structure = 0.5f;
+    patch.brightness = 0.5f;
+    patch.damping = 0.5f;
+    patch.position = 0.5f;
+    rings::PerformanceState state;
+    state.strum = b == 0;
+    state.internal_exciter = true;
+    state.internal_strum = false;
+    state.internal_note = true;
+    state.tonic = 60.0f;
+    state.note = 0.0f;
+    state.fm = 0.0f;
+    state.chord = 5;
+    u->part.Process(state, patch, in, out.data() + b * kN, aux.data() + b * kN, size_t(kN));
+  }
+}
+
+}  // namespace
+
+TEST_CASE("Spread folds odd and even the way the firmware does (out - aux)") {
+  constexpr int kBlocks = 200;
+  constexpr int kN = RingsEngine::kNativeBlock;
+  std::vector<float> odd, even;
+  renderUpstream(kBlocks, odd, even);
+  for (float spread : {0.0f, 1.0f}) {
+    ParamValues p = defaults();
+    p.p[0] = 3.5f / 6.0f;  // FM Voice: out = carrier + mod/2, aux = mod/2
+    p.p[7] = spread;
+    RingsEngine engine;
+    engine.prepare(RingsEngine::kNativeRate, 256);
+    engine.noteOn(60.0f, 1.0f);
+    std::vector<float> l(size_t(kBlocks * kN)), r(size_t(kBlocks * kN));
+    for (int b = 0; b < kBlocks; ++b) {
+      float* out[2] = {l.data() + b * kN, r.data() + b * kN};
+      engine.process(nullptr, out, p, kN);
+    }
+    INFO("spread " << spread);
+    REQUIRE(test::rms(odd, 0, odd.size()) > 0.01);
+    REQUIRE(test::rms(even, 0, even.size()) > 0.001);
+    for (size_t i = 0; i < l.size(); ++i) {
+      if (spread == 0.0f) {  // mono: L = R = odd - even, the firmware's mono fold
+        REQUIRE(l[i] == r[i]);
+        REQUIRE(std::fabs(l[i] - (odd[i] - even[i])) <= 1e-6f);
+      } else {  // L = odd, R = -even (same pickup convention; the polarity flip is inaudible)
+        REQUIRE(l[i] == odd[i]);
+        REQUIRE(r[i] == -even[i]);
+      }
+    }
   }
 }
 

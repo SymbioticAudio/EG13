@@ -146,8 +146,10 @@ void RingsEngine::renderBlock(const float* const* in, const ParamValues& p, floa
 
   const float spread = clamp01(p.p[7]);
   for (int i = 0; i < count; ++i) {
-    out[0][offset + i] = (s.odd[i] + (1.0f - spread) * s.even[i]) * velocity_;
-    out[1][offset + i] = (s.even[i] + (1.0f - spread) * s.odd[i]) * velocity_;
+    const float odd = s.odd[i];
+    const float even = -s.even[i];  // firmware fold is out - aux (rings/dsp/part.cc:541)
+    out[0][offset + i] = (odd + (1.0f - spread) * even) * velocity_;
+    out[1][offset + i] = (even + (1.0f - spread) * odd) * velocity_;
   }
 }
 
