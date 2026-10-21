@@ -21,8 +21,10 @@ std::string text(size_t index, double value) {
 
 }  // namespace
 
-TEST_CASE("The table has 52 parameters with unique IDs") {
-  REQUIRE(kParamCount == 52);
+TEST_CASE("The table has 68 parameters with unique IDs") {
+  REQUIRE(kSourceParamCount == 16);
+  REQUIRE(kParamsPerPart == 32);
+  REQUIRE(kParamCount == 68);
   std::set<uint32_t> ids;
   for (size_t i = 0; i < kParamCount; ++i) ids.insert(paramSpec(i).id);
   REQUIRE(ids.size() == kParamCount);
@@ -124,6 +126,22 @@ TEST_CASE("Engine selectors and Input source have permanent IDs") {
   REQUIRE(paramSpec(partParamIndex(0, PartParam::Level)).id == params::id(0, params::Slot::Part, 1));
 }
 
+TEST_CASE("Source P9..P16 have their own IDs after P1..P8") {
+  for (int part = 0; part < kNumParts; ++part) {
+    for (int p = 8; p < 16; ++p) {
+      const uint32_t id = params::id(uint32_t(part), params::Slot::Source, uint32_t(p + 1));
+      REQUIRE(paramSpec(sourceParamIndex(part, p)).id == id);
+      REQUIRE(paramIndex(id) == int(sourceParamIndex(part, p)));
+      REQUIRE(paramSpec(sourceParamIndex(part, p)).minValue == 0.0f);
+      REQUIRE(paramSpec(sourceParamIndex(part, p)).maxValue == 1.0f);
+    }
+  }
+  // Layout per part: selector, P1..P16, then the part settings.
+  REQUIRE(partParamIndex(0, PartParam::Level) == 17);
+  REQUIRE(sourceEngineParamIndex(1) == 32);
+  REQUIRE(masterParamIndex(MasterParam::Level) == 64);
+}
+
 TEST_CASE("Engine selector and Input source format readable values") {
   REQUIRE(text(sourceEngineParamIndex(0), 0) == "Macro Oscillator");
   REQUIRE(text(sourceEngineParamIndex(0), 2) == "Modal Synth");
@@ -144,4 +162,12 @@ TEST_CASE("Source parameters format and name through the selected engine") {
   formatParam(sourceParamIndex(0, 7), 0.5, buf, sizeof(buf), 1);
   REQUIRE(std::string(buf) == "-");
   REQUIRE(std::string(paramName(masterParamIndex(MasterParam::Dry), 3)) == "Dry");
+  // Slot 16 on the Macro Oscillator (8 params) is unused.
+  REQUIRE(std::string(paramName(sourceParamIndex(0, 15), 0)) == "(unused)");
+  formatParam(sourceParamIndex(0, 15), 0.5, buf, sizeof(buf), 0);
+  REQUIRE(std::string(buf) == "-");
+  REQUIRE(std::string(paramName(sourceParamIndex(1, 15), 0)) == "(unused)");
+  REQUIRE(std::string(paramSpec(sourceParamIndex(1, 15)).name) == "(unused)");
+  REQUIRE(paramDefault(sourceParamIndex(1, 15), PluginKind::Instrument) == 0.0f);
+  REQUIRE(paramDefault(sourceParamIndex(0, 15), PluginKind::Effect) == 0.0f);
 }

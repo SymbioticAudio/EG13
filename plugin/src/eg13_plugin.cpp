@@ -163,8 +163,8 @@ bool paramsValueToText(const clap_plugin_t* p, clap_id id, double value, char* d
 bool paramsTextToValue(const clap_plugin_t*, clap_id, const char*, double*) { return false; }
 
 void sendHostUpdates(Plugin* plugin, const clap_output_events_t* out, uint32_t time) {
-  HostUpdate updates[2 * kSourceParamCount];
-  const int count = plugin->synth.takeHostUpdates(updates, int(2 * kSourceParamCount));
+  HostUpdate updates[kMaxHostUpdates];
+  const int count = plugin->synth.takeHostUpdates(updates, int(kMaxHostUpdates));
   for (int i = 0; i < count; ++i) {
     clap_event_param_value_t ev{};
     ev.header.size = sizeof(ev);

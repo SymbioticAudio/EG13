@@ -30,6 +30,11 @@ bool parseId(const std::string& key, uint32_t* id) {
 // Schema 1 (M0) -> 2: the nine M0 parameters kept their IDs and ranges, so no
 // transformation is needed. Later schema changes add their migrations here.
 
+// engineSettings arrays hold kSourceParamCount numbers. Early unreleased
+// schema 3 builds wrote 8 (P1..P8); those load as a prefix, the rest keep the
+// engine's defaults.
+constexpr size_t kLegacyEngineSettingsSize = 8;
+
 }  // namespace
 
 std::string StateStore::save(const Synth& synth) const {
@@ -109,13 +114,14 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
           uint32_t engine = 0;
           const auto& list = engineIt.value();
           bool valid = parseId(engineIt.key(), &engine) && engine < uint32_t(kNumSourceEngines) &&
-                       list.is_array() && list.size() == kSourceParamCount;
-          for (size_t p = 0; valid && p < kSourceParamCount; ++p) valid = list[p].is_number();
+                       list.is_array() &&
+                       (list.size() == kSourceParamCount || list.size() == kLegacyEngineSettingsSize);
+          for (size_t p = 0; valid && p < list.size(); ++p) valid = list[p].is_number();
           if (!valid) {
             warnings = true;
             continue;
           }
-          for (size_t p = 0; p < kSourceParamCount; ++p) {
+          for (size_t p = 0; p < list.size(); ++p) {
             const double v = list[p].get<double>();
             stash[stashIndex(int(part), int(engine), int(p))] =
                 float(std::clamp(std::isnan(v) ? 0.0 : v, 0.0, 1.0));

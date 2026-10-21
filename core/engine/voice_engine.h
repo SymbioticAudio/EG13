@@ -4,7 +4,7 @@
 
 namespace eg13 {
 
-constexpr int kMaxSlotParams = 8;
+constexpr int kMaxSlotParams = 16;  // engines with fewer ignore the extra slots
 
 // Post-modulation slot parameter values, normalized 0..1.
 struct ParamValues {

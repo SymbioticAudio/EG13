@@ -131,13 +131,13 @@ bool Synth::setParam(uint32_t id, double value) {
   const int index = paramIndex(id);
   if (index < 0 || std::isnan(value)) return false;
   const float clamped = clampParam(size_t(index), value);
-  // Switch at the selector event, not at the next process: P1..P8 events after
+  // Switch at the selector event, not at the next process: P1..P16 events after
   // it in the same block (or flush) then land on the new engine. The P values
   // are swapped before the selector is stored, so a main-thread snapshot() or
   // engineStash() never sees the new selector with the old engine's values.
-  // While the 8 P stores are in flight it can still see the old selector with
-  // some new P values; that read is benign (display, or a state save the host
-  // repeats) and the next one is consistent.
+  // While the kSourceParamCount P stores are in flight it can still see the old
+  // selector with some new P values; that read is benign (display, or a state
+  // save the host repeats) and the next one is consistent.
   for (int part = 0; part < kNumParts; ++part) {
     if (size_t(index) == sourceEngineParamIndex(part)) switchEngine(part, sourceEngineFromSelector(clamped));
   }
@@ -258,7 +258,7 @@ int Synth::takeHostUpdates(HostUpdate* out, int max) {  // audio thread
   return count;
 }
 
-// Same threading as setParam. Saves the old engine's P1..P8, loads the new
+// Same threading as setParam. Saves the old engine's P1..P16, loads the new
 // engine's and queues them for the host.
 void Synth::switchEngine(int part, int next) {
   const int previous = currentEngine_[size_t(part)];
@@ -281,7 +281,7 @@ void Synth::queueHostUpdate(const HostUpdate& update) {
       return;
     }
   }
-  if (hostUpdateCount_ < int(2 * kSourceParamCount)) hostUpdates_[hostUpdateCount_++] = update;
+  if (hostUpdateCount_ < int(kMaxHostUpdates)) hostUpdates_[hostUpdateCount_++] = update;
 }
 
 float Synth::softLimit(float x) {
@@ -335,6 +335,13 @@ PartSettings Synth::readPartSettings(int part) const {
 }
 
 void Synth::process(const float* const* in, float* const* mainOut, float* const* bus2Out, int n) {
+  if (feedRing_[0].empty() || partOut_[0][0].empty()) {  // not prepared: no buffers yet
+    for (int ch = 0; ch < 2; ++ch) {
+      std::fill(mainOut[ch], mainOut[ch] + n, 0.0f);
+      if (bus2Out != nullptr) std::fill(bus2Out[ch], bus2Out[ch] + n, 0.0f);
+    }
+    return;
+  }
   applyPending();
   for (int p = 0; p < kNumParts; ++p) parts_[size_t(p)]->applySettings(readPartSettings(p));
   masterGain_.setTarget(load(masterParamIndex(MasterParam::Level)));

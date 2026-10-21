@@ -5,6 +5,7 @@
 #include <string>
 
 #include "engine/engine_registry.h"
+#include "synth/param_table.h"
 #include "voice/source_factory.h"
 
 using namespace eg13;
@@ -58,4 +59,12 @@ TEST_CASE("makeAllSources builds every engine at its native rate") {
   REQUIRE(sources[2].nativeBlock == 16);
   REQUIRE(sources[3].nativeBlock == 24);
   REQUIRE(sources[4].nativeBlock == 16);
+}
+
+TEST_CASE("Every engine fits in the Source slot's parameters") {
+  for (int e = 0; e < kNumSourceEngines; ++e) {
+    INFO(e);
+    REQUIRE(sourceEngineInfo(e).paramCount <= int(kSourceParamCount));
+    REQUIRE(sourceEngineInfo(e).paramCount <= kMaxSlotParams);
+  }
 }

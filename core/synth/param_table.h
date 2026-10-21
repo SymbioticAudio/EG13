@@ -8,7 +8,9 @@
 namespace eg13 {
 
 constexpr int kNumParts = 2;
-constexpr size_t kSourceParamCount = 8;
+// Source P1..P16 per part. Engines use the first EngineInfo::paramCount; the
+// rest are named "(unused)" and show "-".
+constexpr size_t kSourceParamCount = 16;
 
 // Value = parameter-ID index within Slot::Part. Never renumber.
 enum class PartParam : uint32_t {
@@ -36,7 +38,7 @@ constexpr size_t kMasterParamCount = 4;
 
 enum class PartMode { Single = 0, Layer = 1, Split = 2, Multi = 3 };
 
-// Per part: Source engine selector, P1..P8, then the part settings.
+// Per part: Source engine selector, P1..P16, then the part settings.
 constexpr size_t kParamsPerPart = 1 + kSourceParamCount + kPartParamCount;
 constexpr size_t kParamCount = size_t(kNumParts) * kParamsPerPart + kMasterParamCount;
 
@@ -86,7 +88,7 @@ const ParamSpec& paramSpec(size_t index);  // index < kParamCount
 int paramIndex(uint32_t id);               // -1 if unknown
 float paramDefault(size_t index, PluginKind kind);
 float clampParam(size_t index, double value);  // clamp, round stepped, NaN -> min
-// sourceEngine: the part's selected engine, used for Source P1..P8.
+// sourceEngine: the part's selected engine, used for Source P1..P16.
 void formatParam(size_t index, double value, char* buf, size_t size, int sourceEngine = 0);
 const char* paramName(size_t index, int sourceEngine = 0);
 float glideSeconds(float normalized);  // 2 * v^2 seconds

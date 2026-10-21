@@ -12,6 +12,8 @@
 
 namespace eg13 {
 
+static_assert(kSourceParamCount <= size_t(kMaxSlotParams), "ParamValues must hold every Source P");
+
 namespace {
 
 const char* const kSourceModules[kNumParts] = {"Part A/Source", "Part B/Source"};
@@ -56,13 +58,15 @@ const std::array<ParamSpec, kParamCount>& table() {
                                          0.0f, part == 0 ? 4.0f : 0.0f, true,
                                          ParamFormat::SourceEngine};
       for (int p = 0; p < int(kSourceParamCount); ++p) {
-        const float def = info.params[p].defaultValue;
+        const bool used = p < info.paramCount;
+        const float def = used ? info.params[p].defaultValue : 0.0f;
         float effectDef = def;
         if (part == 0) {  // EG13 FX: Part A plays the Audio Input engine
           effectDef = p < fxInfo.paramCount ? fxInfo.params[p].defaultValue : 0.0f;
         }
         t[sourceParamIndex(part, p)] = {params::id(uint32_t(part), params::Slot::Source, uint32_t(p + 1)),
-                                        info.params[p].name, kSourceModules[part], 0.0f, 1.0f, def,
+                                        used ? info.params[p].name : "(unused)", kSourceModules[part],
+                                        0.0f, 1.0f, def,
                                         effectDef, false, ParamFormat::Engine};
       }
       for (const PartParamDef& d : kPartDefs) {
@@ -93,7 +97,7 @@ const char* pick(const char* const* names, int count, float value) {
   return names[i];
 }
 
-// Index of a Source P (0..7) for a table index, or -1.
+// Index of a Source P (0..kSourceParamCount-1) for a table index, or -1.
 int sourceParamOf(size_t index) {
   if (index >= size_t(kNumParts) * kParamsPerPart) return -1;
   const int local = int(index % kParamsPerPart) - 1;

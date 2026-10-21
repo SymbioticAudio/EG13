@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <string>
 
 #include "engine/engine_registry.h"
@@ -189,4 +190,86 @@ TEST_CASE("Malformed engineSettings entries are dropped with a warning") {
   REQUIRE(stash[stashIndex(0, 1, 0)] == Synth::defaultStash()[stashIndex(0, 1, 0)]);
   // Master parameters 7..9 also serialise as "7": value, so look for the part object.
   REQUIRE(store.save(s).find("\"7\":{") == std::string::npos);
+}
+
+namespace {
+std::string engineArray(size_t count, double value) {
+  std::string s = "[";
+  for (size_t i = 0; i < count; ++i) s += (i ? "," : "") + std::to_string(value);
+  return s + "]";
+}
+}  // namespace
+
+TEST_CASE("State round-trips all 16 Source slots and every engine's stash") {
+  Synth a(PluginKind::Instrument);
+  for (int p = 0; p < int(kSourceParamCount); ++p) {
+    a.setParam(paramSpec(sourceParamIndex(0, p)).id, 0.02 * (p + 1));
+  }
+  a.setParam(paramSpec(sourceEngineParamIndex(0)).id, 3);  // stash Macro's 16 values
+  a.setParam(paramSpec(sourceParamIndex(0, 15)).id, 0.75);  // Resonator slot 16
+  const std::string json = state::StateStore{}.save(a);
+
+  Synth b(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.load(b, json) == state::LoadResult::Ok);
+  REQUIRE(b.param(paramSpec(sourceParamIndex(0, 15)).id) == 0.75);
+  const EngineStash stash = b.engineStash();
+  for (int p = 0; p < int(kSourceParamCount); ++p) {
+    INFO(p);
+    REQUIRE(stash[stashIndex(0, 0, p)] == float(0.02 * (p + 1)));
+  }
+  const EngineStash original = a.engineStash();
+  for (size_t i = 0; i < kStashSize; ++i) REQUIRE(stash[i] == original[i]);
+}
+
+TEST_CASE("engineSettings arrays have 16 numbers") {
+  Synth a(PluginKind::Instrument);
+  const std::string json = state::StateStore{}.save(a);
+  REQUIRE(json.find("\"engineSettings\":{\"0\":{\"0\":[") != std::string::npos);
+  const size_t start = json.find('[', json.find("\"engineSettings\""));
+  const size_t end = json.find(']', start);
+  const std::string list = json.substr(start, end - start);
+  REQUIRE(size_t(std::count(list.begin(), list.end(), ',')) == kSourceParamCount - 1);
+}
+
+TEST_CASE("An 8-number engineSettings array loads as P1..P8") {
+  Synth s(PluginKind::Instrument);
+  state::StateStore store;
+  const std::string json = R"({"schemaVersion":3,"params":{},"engineSettings":{"1":{"2":)" +
+                           engineArray(8, 0.25) + "}}}";
+  REQUIRE(store.load(s, json) == state::LoadResult::Ok);
+  const EngineStash stash = s.engineStash();
+  const EngineStash defaults = Synth::defaultStash();
+  for (int p = 0; p < int(kSourceParamCount); ++p) {
+    INFO(p);
+    REQUIRE(stash[stashIndex(1, 2, p)] == (p < 8 ? 0.25f : defaults[stashIndex(1, 2, p)]));
+  }
+}
+
+TEST_CASE("engineSettings arrays of other lengths are dropped with a warning") {
+  for (size_t count : {size_t(9), size_t(15), size_t(17)}) {
+    INFO(count);
+    Synth s(PluginKind::Instrument);
+    state::StateStore store;
+    const std::string json = R"({"schemaVersion":3,"params":{},"engineSettings":{"1":{"2":)" +
+                             engineArray(count, 0.25) + R"(,"3":)" + engineArray(16, 0.5) + "}}}";
+    REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
+    const EngineStash stash = s.engineStash();
+    const EngineStash defaults = Synth::defaultStash();
+    for (int p = 0; p < int(kSourceParamCount); ++p) {
+      REQUIRE(stash[stashIndex(1, 2, p)] == defaults[stashIndex(1, 2, p)]);
+      REQUIRE(stash[stashIndex(1, 3, p)] == 0.5f);
+    }
+  }
+}
+
+TEST_CASE("Schema 2 documents load P9..P16 at their defaults") {
+  Synth s(PluginKind::Instrument);
+  s.setParam(paramSpec(sourceParamIndex(0, 12)).id, 0.6);
+  state::StateStore store;
+  REQUIRE(store.load(s, R"({"schemaVersion":2,"params":{"257":0.9}})") == state::LoadResult::Ok);
+  for (int p = 8; p < int(kSourceParamCount); ++p) {
+    REQUIRE(s.param(paramSpec(sourceParamIndex(0, p)).id) ==
+            double(paramDefault(sourceParamIndex(0, p), PluginKind::Instrument)));
+  }
 }

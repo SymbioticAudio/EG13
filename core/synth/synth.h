@@ -17,7 +17,7 @@ namespace eg13 {
 
 using ParamSnapshot = std::array<float, kParamCount>;
 
-// Every engine's remembered P1..P8, per part.
+// Every engine's remembered P1..P16, per part.
 constexpr size_t kStashSize = size_t(kNumParts) * size_t(kNumSourceEngines) * kSourceParamCount;
 constexpr size_t stashIndex(int part, int engine, int p) {
   return (size_t(part) * size_t(kNumSourceEngines) + size_t(engine)) * kSourceParamCount + size_t(p);
@@ -28,6 +28,8 @@ struct HostUpdate {
   uint32_t id;
   float value;
 };
+// Host-update queue capacity: one entry per Source P per part (coalesced per id).
+constexpr size_t kMaxHostUpdates = size_t(kNumParts) * kSourceParamCount;
 
 // Two parts, MIDI routing by mode, main and Bus 2 outputs, Dry input and
 // atomic parameter snapshots.
@@ -72,19 +74,21 @@ class Synth {
   EngineStash engineStash() const;  // main thread; current engines' entries = live P values
   static EngineStash defaultStash();  // each engine's own defaults
   int engine(int part) const;       // main thread
-  // Main thread. Engine-aware: Source P1..P8 follow the part's selected engine.
+  // Main thread. Engine-aware: Source P1..P16 follow the part's selected engine.
   const char* paramName(size_t index) const;
   void formatParam(size_t index, double value, char* buf, size_t size) const;
 
   // Audio thread: P values that engine switches changed, for the host. Copies
-  // up to max; the rest stay queued for the next call. A selector change
-  // through setParam switches at once: the part's P1..P8 go to the old engine's
-  // stash entry and the new engine's entry is loaded.
+  // up to max; the rest stay queued for the next call. With max >=
+  // kMaxHostUpdates one call always takes everything. A selector change
+  // through setParam switches at once: the part's P1..P16 go to the old
+  // engine's stash entry and the new engine's entry is loaded.
   int takeHostUpdates(HostUpdate* out, int max);
   // Main thread: true once after any engine switch (names and text changed).
   bool takeEngineChanged() { return engineChanged_.exchange(false, std::memory_order_acq_rel); }
 
   // in: nullable, may alias mainOut. bus2Out: nullable. n <= maxBlock.
+  // Before prepare it only zeroes the outputs.
   void process(const float* const* in, float* const* mainOut, float* const* bus2Out, int n);
 
   int latencySamples() const { return latency_; }
@@ -126,7 +130,7 @@ class Synth {
   std::array<std::atomic<float>, kStashSize> stash_;
   EngineStash pendingStash_{};
   std::array<int, kNumParts> currentEngine_{};  // setParam's thread
-  HostUpdate hostUpdates_[2 * kSourceParamCount] = {};
+  HostUpdate hostUpdates_[kMaxHostUpdates] = {};
   int hostUpdateCount_ = 0;
   std::atomic<bool> engineChanged_{false};
   std::vector<float> partIn_[kNumParts][2];

@@ -482,9 +482,10 @@ TEST_CASE("Switching engines swaps P values and reports them") {
   runBlocks(synth, 1);
   REQUIRE(synth.engine(0) == 1);
   REQUIRE(synth.param(sourceId(0, 0)) == double(sourceEngineInfo(1).params[0].defaultValue));
-  HostUpdate updates[16];
-  REQUIRE(synth.takeHostUpdates(updates, 16) == 8);
+  HostUpdate updates[2 * kSourceParamCount];
+  REQUIRE(synth.takeHostUpdates(updates, int(2 * kSourceParamCount)) == int(kSourceParamCount));
   REQUIRE(updates[0].id == sourceId(0, 0));
+  REQUIRE(updates[15].id == sourceId(0, 15));
   REQUIRE(synth.takeEngineChanged());
   REQUIRE_FALSE(synth.takeEngineChanged());
 
@@ -656,8 +657,9 @@ TEST_CASE("P values sent after an engine change in the same block stay") {
   REQUIRE(synth.param(sourceId(0, 2)) == double(0.66f));
   synth.setParam(engineId(0), 1);
   synth.setParam(engineId(0), 3);  // two switches before the host takes updates
-  HostUpdate updates[16];
-  REQUIRE(synth.takeHostUpdates(updates, 16) == 8);  // one entry per P, latest value
+  HostUpdate updates[2 * kSourceParamCount];
+  // One entry per P, latest value.
+  REQUIRE(synth.takeHostUpdates(updates, int(2 * kSourceParamCount)) == int(kSourceParamCount));
   REQUIRE(updates[2].value == 0.66f);
   synth.setActive(false);
 }
@@ -763,13 +765,14 @@ TEST_CASE("takeHostUpdates keeps what does not fit") {
   synth.prepare(kRate, kBlock);
   synth.setActive(true);
   synth.setParam(engineId(0), 1);
-  HostUpdate updates[8];
+  HostUpdate updates[kSourceParamCount];
+  constexpr int kAll = int(kSourceParamCount);
   REQUIRE(synth.takeHostUpdates(updates, 3) == 3);
   REQUIRE(updates[0].id == sourceId(0, 0));
-  REQUIRE(synth.takeHostUpdates(updates, 8) == 5);
+  REQUIRE(synth.takeHostUpdates(updates, kAll) == kAll - 3);
   REQUIRE(updates[0].id == sourceId(0, 3));
-  REQUIRE(updates[4].id == sourceId(0, 7));
-  REQUIRE(synth.takeHostUpdates(updates, 8) == 0);
+  REQUIRE(updates[kAll - 4].id == sourceId(0, kAll - 1));
+  REQUIRE(synth.takeHostUpdates(updates, kAll) == 0);
   synth.setActive(false);
 }
 
@@ -796,4 +799,43 @@ TEST_CASE("An engine switch never shows the new selector with the old engine's v
   REQUIRE(s[sourceEngineParamIndex(0)] == 1.0f);
   REQUIRE(s[sourceParamIndex(0, 1)] == sourceEngineInfo(1).params[1].defaultValue);
   REQUIRE(synth.engineStash()[stashIndex(0, 0, 1)] == 0.9f);
+}
+
+TEST_CASE("The engine stash round-trips all 16 Source slots") {
+  Synth synth(PluginKind::Instrument);
+  for (int p = 0; p < int(kSourceParamCount); ++p) synth.setParam(sourceId(1, p), 0.01 * (p + 1));
+  synth.setParam(engineId(1), 2);  // Modal Synth
+  const EngineInfo& modal = sourceEngineInfo(2);
+  for (int p = 0; p < int(kSourceParamCount); ++p) {
+    INFO(p);
+    const float expected = p < modal.paramCount ? modal.params[p].defaultValue : 0.0f;
+    REQUIRE(synth.param(sourceId(1, p)) == double(expected));
+    REQUIRE(synth.engineStash()[stashIndex(1, 0, p)] == float(0.01 * (p + 1)));
+  }
+  synth.setParam(sourceId(1, 15), 0.5);  // Modal Synth's slot 16
+  synth.setParam(engineId(1), 0);
+  for (int p = 0; p < int(kSourceParamCount); ++p) {
+    INFO(p);
+    REQUIRE(synth.param(sourceId(1, p)) == double(float(0.01 * (p + 1))));
+  }
+  synth.setParam(engineId(1), 2);
+  REQUIRE(synth.param(sourceId(1, 15)) == 0.5);
+}
+
+TEST_CASE("Two parts switching fill the host-update queue without dropping any") {
+  Synth synth(PluginKind::Instrument);
+  synth.setParam(engineId(0), 1);
+  synth.setParam(engineId(1), 3);
+  synth.setParam(engineId(0), 2);  // coalesces with part A's earlier entries
+  HostUpdate updates[2 * kSourceParamCount + 1];
+  REQUIRE(synth.takeHostUpdates(updates, int(2 * kSourceParamCount + 1)) == int(2 * kSourceParamCount));
+  REQUIRE(updates[0].value == sourceEngineInfo(2).params[0].defaultValue);
+}
+
+TEST_CASE("process before prepare outputs silence") {
+  Synth synth(PluginKind::Instrument);
+  std::vector<float> l(64, 1.0f), r(64, 1.0f);
+  float* out[2] = {l.data(), r.data()};
+  synth.process(nullptr, out, nullptr, 64);
+  REQUIRE(std::all_of(l.begin(), l.end(), [](float s) { return s == 0.0f; }));
 }
