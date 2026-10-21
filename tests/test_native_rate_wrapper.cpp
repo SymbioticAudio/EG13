@@ -277,3 +277,132 @@ TEST_CASE("Host-rate engines are prepared for host-sized blocks") {
   REQUIRE(raw->largest == 512);
   REQUIRE(raw->largest <= raw->preparedMax);
 }
+
+namespace {
+
+struct Channels {
+  std::vector<float> c[4];
+  explicit Channels(size_t n) {
+    for (auto& v : c) v.assign(n, 0.0f);
+  }
+};
+
+// Runs a wrapper over four-channel input (L, R, side 1, side 2; the sides nullable) and
+// three-channel output (L, R, AUX).
+Channels runAll(NativeRateWrapper& w, const Channels& in, bool sides, int chunk) {
+  const size_t n = in.c[0].size();
+  Channels out(n);
+  const ParamValues p;
+  for (size_t done = 0; done < n;) {
+    const int count = int(std::min<size_t>(size_t(chunk), n - done));
+    const float* i4[4] = {in.c[0].data() + done, in.c[1].data() + done, sides ? in.c[2].data() + done : nullptr,
+                          sides ? in.c[3].data() + done : nullptr};
+    float* o3[3] = {out.c[0].data() + done, out.c[1].data() + done, out.c[2].data() + done};
+    w.process(i4, o3, p, count);
+    done += size_t(count);
+  }
+  return out;
+}
+
+}  // namespace
+
+TEST_CASE("sideSourceOf steps in quarters") {
+  REQUIRE(sideSourceOf(0.0f) == SideSource::Voice);
+  REQUIRE(sideSourceOf(0.26f) == SideSource::SourceAux);
+  REQUIRE(sideSourceOf(0.5f) == SideSource::Input);
+  REQUIRE(sideSourceOf(1.0f) == SideSource::OtherPart);
+  REQUIRE(sideSourceOf(std::nanf("")) == SideSource::Voice);
+}
+
+TEST_CASE("Side inputs are converted with the input path's latency") {
+  for (double rate : {44100.0, 48000.0}) {
+    NativeRateWrapper w(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
+    w.prepare(rate, 256);
+    Channels in(8000);
+    in.c[2][3000] = 1.0f;  // side 1 -> out L
+    in.c[3][3000] = 1.0f;  // side 2 -> out R
+    const auto out = runAll(w, in, true, 256);
+    INFO("rate " << rate << " input latency " << w.inputLatencySamples());
+    REQUIRE(peakIndex(out.c[0]) == peakIndex(out.c[1]));
+    REQUIRE(std::abs(peakIndex(out.c[0]) - 3000 - w.inputLatencySamples()) <= 4);
+    REQUIRE(w.inputUnderruns() == 0);
+  }
+}
+
+TEST_CASE("Missing side inputs read as silence") {
+  NativeRateWrapper w(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
+  w.prepare(48000.0, 256);
+  Channels in(4000);
+  for (auto& s : in.c[2]) s = 0.5f;
+  for (auto& s : in.c[3]) s = 0.5f;
+  const auto out = runAll(w, in, false, 256);
+  for (float s : out.c[0]) REQUIRE(s == 0.0f);
+  for (float s : out.c[1]) REQUIRE(s == 0.0f);
+}
+
+TEST_CASE("AUX is converted like the main outputs") {
+  for (double rate : {44100.0, 48000.0}) {
+    NativeRateWrapper aux(std::make_unique<test::AuxImpulseEngine>(), 47872.34, 12);
+    aux.setAuxEnabled(true);
+    aux.prepare(rate, 256);
+    NativeRateWrapper main(std::make_unique<test::ImpulseEngine>(), 47872.34, 12);
+    main.prepare(rate, 256);
+    REQUIRE(aux.latencySamples() == main.latencySamples());
+    aux.noteOn(60.0f, 1.0f);
+    main.noteOn(60.0f, 1.0f);
+    Channels silent(2000);
+    const auto a = runAll(aux, silent, false, 100);
+    const auto m = runAll(main, silent, false, 100);
+    REQUIRE(peakIndex(a.c[2]) == peakIndex(m.c[0]));
+    for (float s : a.c[0]) REQUIRE(s == 0.0f);
+  }
+}
+
+TEST_CASE("An engine's own latency is added to the wrapper's") {
+  NativeRateWrapper bypassed(std::make_unique<test::FixedLatencyEngine>(), 96000.0, 60);
+  bypassed.prepare(96000.0, 256);
+  REQUIRE(bypassed.inputLatencySamples() == 60);
+  REQUIRE(bypassed.latencySamples() == 60);
+  Channels in(2000);
+  in.c[0][500] = 1.0f;
+  REQUIRE(peakIndex(runAll(bypassed, in, false, 37).c[0]) == 560);
+
+  NativeRateWrapper fixed(std::make_unique<test::FixedLatencyEngine>(), 96000.0, 60);
+  NativeRateWrapper echo(std::make_unique<test::EchoEngine>(), 96000.0, 60);
+  fixed.prepare(48000.0, 256);
+  echo.prepare(48000.0, 256);
+  REQUIRE(fixed.inputLatencySamples() - echo.inputLatencySamples() == 30);
+}
+
+TEST_CASE("setStereo reaches the wrapped engine") {
+  auto probe = std::make_unique<test::StereoProbeEngine>();
+  test::StereoProbeEngine* raw = probe.get();
+  NativeRateWrapper w(std::move(probe), 0.0, 16);
+  w.prepare(48000.0, 256);
+  w.setStereo(true);
+  REQUIRE(raw->stereo());
+  w.setStereo(false);
+  REQUIRE_FALSE(raw->stereo());
+}
+
+TEST_CASE("Four-channel conversion does not allocate") {
+  NativeRateWrapper w(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
+  w.prepare(44100.0, 256);
+  w.setExtraDelay(11);
+  std::vector<float> a(256, 0.25f), l(256), r(256), x(256);
+  const float* in[4] = {a.data(), a.data(), a.data(), a.data()};
+  float* out[3] = {l.data(), r.data(), x.data()};
+  const ParamValues p;
+  w.process(in, out, p, 256);
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int block = 0; block < 100; ++block) {
+      in[2] = block % 3 ? a.data() : nullptr;
+      in[3] = block % 5 ? a.data() : nullptr;
+      w.process(in, out, p, 256);
+    }
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
+}

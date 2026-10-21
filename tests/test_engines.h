@@ -140,4 +140,115 @@ class MaxBlockProbeEngine final : public VoiceEngine {
   int largest = 0;
 };
 
+// Uses input and two side inputs: out L = side 1, out R = side 2 (zeros when absent). P1 and P2
+// pick each side input's source (SideSource quarters).
+class SideEchoEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int) override {}
+  void reset() override {}
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  void process(const float* const* in, float* const* out, const ParamValues&, int n) override {
+    for (int i = 0; i < n; ++i) {
+      out[0][i] = in && in[2] ? in[2][i] : 0.0f;
+      out[1][i] = in && in[3] ? in[3][i] : 0.0f;
+    }
+  }
+  static SideSource source(int input, const ParamValues& p) { return sideSourceOf(p.p[input]); }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"sideecho", "Side echo", 0, nullptr, true, false, 2, source};
+    return kInfo;
+  }
+};
+
+// A source with an AUX output: one 1.0 sample into AUX (when enabled) after each note-on; L/R silent.
+class AuxImpulseEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int) override {}
+  void reset() override { pending_ = false; }
+  void noteOn(float, float) override { pending_ = true; }
+  void noteOff() override {}
+  void setNote(float) override {}
+  void setAuxEnabled(bool on) override { aux_ = on; }
+  void process(const float* const*, float* const* out, const ParamValues&, int n) override {
+    for (int i = 0; i < n; ++i) {
+      out[0][i] = 0.0f;
+      out[1][i] = 0.0f;
+      if (aux_) out[2][i] = pending_ ? 1.0f : 0.0f;
+      pending_ = false;
+    }
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"auximpulse", "AUX impulse", 0, nullptr, false, true, 0, nullptr};
+    return kInfo;
+  }
+
+ private:
+  bool aux_ = false;
+  bool pending_ = false;
+};
+
+// Delays input L by 60 native samples on both outputs and says so through nativeLatency().
+class FixedLatencyEngine final : public VoiceEngine {
+ public:
+  static constexpr int kDelay = 60;
+  void prepare(double, int) override { reset(); }
+  void reset() override {
+    for (float& s : line_) s = 0.0f;
+    pos_ = 0;
+  }
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  int nativeLatency() const override { return kDelay; }
+  void process(const float* const* in, float* const* out, const ParamValues&, int n) override {
+    for (int i = 0; i < n; ++i) {
+      const float delayed = line_[pos_];
+      line_[pos_] = in ? in[0][i] : 0.0f;
+      pos_ = (pos_ + 1) % kDelay;
+      out[0][i] = delayed;
+      out[1][i] = delayed;
+    }
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"fixedlatency", "Fixed latency", 0, nullptr, true, false, 0, nullptr};
+    return kInfo;
+  }
+
+ private:
+  float line_[kDelay] = {};
+  int pos_ = 0;
+};
+
+// Passes input through and records the last setStereo() it was given.
+class StereoProbeEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int) override {}
+  void reset() override {}
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  void setStereo(bool stereo) override {
+    stereo_ = stereo;
+    ++calls_;
+  }
+  void process(const float* const* in, float* const* out, const ParamValues&, int n) override {
+    for (int i = 0; i < n; ++i) {
+      out[0][i] = in ? in[0][i] : 0.0f;
+      out[1][i] = in ? in[1][i] : 0.0f;
+    }
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"stereoprobe", "Stereo probe", 0, nullptr, true, false, 0, nullptr};
+    return kInfo;
+  }
+  bool stereo() const { return stereo_; }
+  int calls() const { return calls_; }
+
+ private:
+  bool stereo_ = false;
+  int calls_ = 0;
+};
+
 }  // namespace eg13::test

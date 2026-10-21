@@ -19,3 +19,21 @@ TEST_CASE("ScopedAllocationCounter sees nothing when nothing allocates") {
   REQUIRE(sum == 10);
   REQUIRE(counter.count() == 0);
 }
+
+#include <new>
+
+TEST_CASE("ScopedAllocationCounter counts bytes and aligned allocations") {
+  size_t count = 0;
+  size_t bytes = 0;
+  {
+    eg13::test::ScopedAllocationCounter counter;
+    void* a = ::operator new(100);
+    void* b = ::operator new(64, std::align_val_t(64));
+    ::operator delete(a);
+    ::operator delete(b, std::align_val_t(64));
+    count = counter.count();
+    bytes = counter.bytes();
+  }
+  REQUIRE(count == 2);
+  REQUIRE(bytes == 164);
+}

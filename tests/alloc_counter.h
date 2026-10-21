@@ -14,6 +14,7 @@ class ScopedAllocationCounter {
   ScopedAllocationCounter& operator=(const ScopedAllocationCounter&) = delete;
 
   size_t count() const;
+  size_t bytes() const;  // bytes requested by those allocations
 };
 
 }  // namespace eg13::test
