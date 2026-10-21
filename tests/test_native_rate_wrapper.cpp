@@ -8,10 +8,12 @@
 #include <vector>
 
 #include "alloc_counter.h"
+#include "engine/engine_registry.h"
 #include "engine/native_rate_wrapper.h"
 #include "engine/plaits_engine.h"
 #include "test_engines.h"
 #include "test_helpers.h"
+#include "voice/processor_factory.h"
 
 using namespace eg13;
 
@@ -435,4 +437,180 @@ TEST_CASE("Four-channel conversion does not allocate") {
     allocations = counter.count();
   }
   REQUIRE(allocations == 0);
+}
+
+// Ruling F19 (Task 15): channels equal to their reference (R to L, side inputs to silence) are
+// not converted. Each case runs one wrapper with skipping and one converting every channel
+// always, and requires the same output sample for sample, through every switch.
+namespace {
+
+struct SkipRun {
+  Channels out;
+  int fewestIn = 99;
+  int fewestOut = 99;
+  int mostIn = 0;
+  int mostOut = 0;
+};
+
+// present(start): whether side input k is passed (not null) for the chunk starting at `start`.
+template <typename Present>
+SkipRun runSkipping(NativeRateWrapper& w, const Channels& in, int chunk, Present present,
+                    bool stereoHint = false) {
+  const size_t n = in.c[0].size();
+  SkipRun run{Channels(n)};
+  const ParamValues p;
+  for (size_t done = 0; done < n;) {
+    const int count = int(std::min<size_t>(size_t(chunk), n - done));
+    const float* i4[4] = {in.c[0].data() + done, in.c[1].data() + done,
+                          present(0, done) ? in.c[2].data() + done : nullptr,
+                          present(1, done) ? in.c[3].data() + done : nullptr};
+    float* o3[3] = {run.out.c[0].data() + done, run.out.c[1].data() + done, run.out.c[2].data() + done};
+    if (stereoHint) {  // as a ProcessorSlot does: stereo while L != R anywhere in the chunk
+      bool stereo = false;
+      for (int i = 0; i < count; ++i) stereo = stereo || i4[0][i] != i4[1][i];
+      w.setStereo(stereo);
+    }
+    w.process(i4, o3, p, count);
+    run.fewestIn = std::min(run.fewestIn, w.convertedInputChannels());
+    run.fewestOut = std::min(run.fewestOut, w.convertedOutputChannels());
+    run.mostIn = std::max(run.mostIn, w.convertedInputChannels());
+    run.mostOut = std::max(run.mostOut, w.convertedOutputChannels());
+    done += size_t(count);
+  }
+  return run;
+}
+
+float testSignal(size_t i, double f) {
+  return float(0.5 * std::sin(f * double(i)) + 0.2 * std::sin(0.37 * double(i)));
+}
+
+double largestDifference(const Channels& a, const Channels& b, int channels) {
+  double worst = 0.0;
+  for (int ch = 0; ch < channels; ++ch) {
+    for (size_t i = 0; i < a.c[ch].size(); ++i) {
+      worst = std::max(worst, double(std::fabs(a.c[ch][i] - b.c[ch][i])));
+    }
+  }
+  return worst;
+}
+
+}  // namespace
+
+TEST_CASE("Side inputs that drop out and come back match always-on conversion") {
+  for (double rate : {44100.0, 48000.0, 88200.0}) {
+    for (int chunk : {16, 37}) {
+      NativeRateWrapper skipping(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
+      NativeRateWrapper always(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
+      always.setSkipUnused(false);
+      skipping.prepare(rate, 256);
+      always.prepare(rate, 256);
+      Channels in(30000);
+      for (size_t i = 0; i < 30000; ++i) {
+        in.c[0][i] = testSignal(i, 0.01);
+        in.c[1][i] = testSignal(i, 0.011);  // stereo throughout: only the side inputs skip
+        // Side 1: present but silent over [15000, 21000).
+        in.c[2][i] = i >= 15000 && i < 21000 ? 0.0f : testSignal(i, 0.02);
+        in.c[3][i] = testSignal(i, 0.03);
+      }
+      // Side 1 absent over [3000, 9000); side 2 absent over [6000, 24000), back for the rest.
+      auto present = [](int k, size_t at) {
+        return k == 0 ? !(at >= 3000 && at < 9000) : !(at >= 6000 && at < 24000);
+      };
+      const SkipRun a = runSkipping(skipping, in, chunk, present);
+      const SkipRun b = runSkipping(always, in, chunk, present);
+      INFO("rate " << rate << " chunk " << chunk);
+      REQUIRE(b.fewestIn == 4);
+      REQUIRE(a.fewestIn == 2);  // both side inputs skipped at once (over [6000, 9000))
+      REQUIRE(a.mostIn == 4);    // and both converted again
+      REQUIRE(largestDifference(a.out, b.out, 2) <= 1e-6);
+      REQUIRE(test::rms(a.out.c[0], 25000, 30000) > 0.1);  // the side signal came back
+    }
+  }
+}
+
+TEST_CASE("Mono, then stereo, then mono again matches always-on conversion") {
+  for (double rate : {44100.0, 48000.0}) {
+    for (int chunk : {16, 37}) {
+      NativeRateWrapper skipping(std::make_unique<test::StereoProbeEngine>(), 96000.0, 60);
+      NativeRateWrapper always(std::make_unique<test::StereoProbeEngine>(), 96000.0, 60);
+      always.setSkipUnused(false);
+      skipping.prepare(rate, 256);
+      always.prepare(rate, 256);
+      Channels in(30000);
+      for (size_t i = 0; i < 30000; ++i) {
+        in.c[0][i] = testSignal(i, 0.01);
+        in.c[1][i] = i >= 10000 && i < 18000 ? testSignal(i, 0.013) : in.c[0][i];
+      }
+      auto none = [](int, size_t) { return false; };
+      const SkipRun a = runSkipping(skipping, in, chunk, none);
+      const SkipRun b = runSkipping(always, in, chunk, none);
+      INFO("rate " << rate << " chunk " << chunk);
+      REQUIRE(b.fewestIn == 2);
+      REQUIRE(b.fewestOut == 2);
+      REQUIRE(a.fewestIn == 1);   // R input skipped while mono
+      REQUIRE(a.fewestOut == 1);  // R output skipped while mono
+      REQUIRE(a.mostIn == 2);
+      REQUIRE(a.mostOut == 2);
+      REQUIRE(largestDifference(a.out, b.out, 2) <= 1e-6);
+    }
+  }
+}
+
+TEST_CASE("Ring Mod / Vocoder going mono, stereo and mono matches always-on conversion") {
+  for (double rate : {44100.0, 48000.0}) {
+    SourceSpec s1 = makeShaper(int(ShaperEngine::RingMod));
+    SourceSpec s2 = makeShaper(int(ShaperEngine::RingMod));
+    NativeRateWrapper skipping(std::move(s1.engine), s1.nativeRate, s1.nativeBlock);
+    NativeRateWrapper always(std::move(s2.engine), s2.nativeRate, s2.nativeBlock);
+    always.setSkipUnused(false);
+    skipping.prepare(rate, 16);
+    always.prepare(rate, 16);
+    skipping.noteOn(45.0f, 1.0f);
+    always.noteOn(45.0f, 1.0f);
+    Channels in(rate == 48000.0 ? 48000 : 44100);
+    for (size_t i = 0; i < in.c[0].size(); ++i) {
+      in.c[0][i] = testSignal(i, 0.01);
+      in.c[1][i] = i >= 12000 && i < 24000 ? testSignal(i, 0.013) : in.c[0][i];
+    }
+    // The Warps defaults: Internal Osc carrier, the voice as modulator: no side input used.
+    auto none = [](int, size_t) { return false; };
+    const SkipRun a = runSkipping(skipping, in, 16, none, true);
+    const SkipRun b = runSkipping(always, in, 16, none, true);
+    INFO("rate " << rate);
+    REQUIRE(a.fewestIn == 1);
+    REQUIRE(a.fewestOut == 1);
+    REQUIRE(a.mostOut == 2);
+    REQUIRE(test::rms(a.out.c[1], 14000, 22000) > 0.01);
+    REQUIRE(largestDifference(a.out, b.out, 2) <= 1e-6);
+  }
+}
+
+TEST_CASE("Skipping and resuming conversions allocates nothing") {
+  NativeRateWrapper w(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
+  w.prepare(44100.0, 64);
+  Channels in(20000);
+  for (size_t i = 0; i < 20000; ++i) {
+    in.c[0][i] = testSignal(i, 0.01);
+    in.c[1][i] = i >= 8000 && i < 12000 ? 0.0f : in.c[0][i];  // stereo, then mono again
+    in.c[2][i] = in.c[3][i] = testSignal(i, 0.02);
+  }
+  Channels out(20000);
+  const ParamValues p;
+  int fewest = 99, most = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (size_t done = 0; done < 20000; done += 64) {
+      const bool sides = (done / 5000) % 2 == 1;  // absent, present, absent, present
+      const float* i4[4] = {in.c[0].data() + done, in.c[1].data() + done, sides ? in.c[2].data() + done : nullptr,
+                            sides ? in.c[3].data() + done : nullptr};
+      float* o3[3] = {out.c[0].data() + done, out.c[1].data() + done, out.c[2].data() + done};
+      w.process(i4, o3, p, int(std::min<size_t>(64, 20000 - done)));
+      fewest = std::min(fewest, w.convertedInputChannels());
+      most = std::max(most, w.convertedInputChannels());
+    }
+    const size_t allocations = counter.count();
+    REQUIRE(allocations == 0);
+  }
+  REQUIRE(fewest == 1);
+  REQUIRE(most == 4);
 }
