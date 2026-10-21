@@ -450,6 +450,7 @@ struct SkipRun {
   int fewestOut = 99;
   int mostIn = 0;
   int mostOut = 0;
+  std::vector<int> inAt;  // converted input channels after each chunk
 };
 
 // present(start): whether side input k is passed (not null) for the chunk starting at `start`.
@@ -475,6 +476,7 @@ SkipRun runSkipping(NativeRateWrapper& w, const Channels& in, int chunk, Present
     run.fewestOut = std::min(run.fewestOut, w.convertedOutputChannels());
     run.mostIn = std::max(run.mostIn, w.convertedInputChannels());
     run.mostOut = std::max(run.mostOut, w.convertedOutputChannels());
+    run.inAt.push_back(w.convertedInputChannels());
     done += size_t(count);
   }
   return run;
@@ -579,6 +581,7 @@ TEST_CASE("Ring Mod / Vocoder going mono, stereo and mono matches always-on conv
     INFO("rate " << rate);
     REQUIRE(a.fewestIn == 1);
     REQUIRE(a.fewestOut == 1);
+    REQUIRE(a.inAt[20000 / 16] == 2);  // stereo: input R converted again (the sides stay skipped)
     REQUIRE(a.mostOut == 2);
     REQUIRE(test::rms(a.out.c[1], 14000, 22000) > 0.01);
     REQUIRE(largestDifference(a.out, b.out, 2) <= 1e-6);
@@ -613,4 +616,121 @@ TEST_CASE("Skipping and resuming conversions allocates nothing") {
   }
   REQUIRE(fewest == 1);
   REQUIRE(most == 4);
+}
+
+// Fix round 1: every native rate in use (Modal Synth 32 kHz in 16-sample blocks, Resonator
+// 48 kHz in 24, Digital Oscillator 96 kHz in 24, Ring Mod / Vocoder 96 kHz in 60) against every
+// common host rate, including those where r8brain adds 2:1 stages (176.4, 192 kHz). R goes
+// stereo and back three times and the side inputs drop out and come back, at onsets that land
+// on odd and even multiples of the converter period.
+TEST_CASE("Skipping matches always-on conversion at every native and host rate") {
+  struct Native {
+    double rate;
+    int block;
+  };
+  const Native natives[] = {{32000.0, 16}, {48000.0, 24}, {96000.0, 24}, {96000.0, 60}};
+  for (const Native& native : natives) {
+    for (double host : {44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
+      if (host == native.rate) continue;  // bypassed
+      for (int chunk : {16, 37}) {
+        const size_t n = size_t(host * 0.6);
+        Channels in(n);
+        for (size_t i = 0; i < n; ++i) {
+          in.c[0][i] = testSignal(i, 0.01);
+          const bool stereo = (i >= n / 6 && i < n / 6 + 3001) || (i >= n / 2 + 17 && i < n / 2 + 2600) ||
+                              (i >= 4 * n / 5 + 331 && i < 4 * n / 5 + 1900);
+          in.c[1][i] = stereo ? testSignal(i, 0.013) : in.c[0][i];
+          in.c[2][i] = testSignal(i, 0.02);
+          in.c[3][i] = i >= n / 3 && i < n / 3 + 4000 ? 0.0f : testSignal(i, 0.03);
+        }
+        auto present = [n](int k, size_t at) {
+          return k == 0 ? !((at >= n / 8 && at < n / 4 + 101) || (at >= 2 * n / 3 + 13 && at < 3 * n / 4))
+                        : !(at >= n / 2 && at < 3 * n / 5 + 7);
+        };
+        for (int engine = 0; engine < 2; ++engine) {
+          auto make = [engine, &native]() -> std::unique_ptr<NativeRateWrapper> {
+            std::unique_ptr<VoiceEngine> inner;
+            if (engine == 0) {
+              inner = std::make_unique<test::StereoProbeEngine>();
+            } else {
+              inner = std::make_unique<test::SideEchoEngine>();
+            }
+            return std::make_unique<NativeRateWrapper>(std::move(inner), native.rate, native.block);
+          };
+          auto skipping = make();
+          auto always = make();
+          always->setSkipUnused(false);
+          skipping->prepare(host, 64);
+          always->prepare(host, 64);
+          const SkipRun a = runSkipping(*skipping, in, chunk, present);
+          const SkipRun b = runSkipping(*always, in, chunk, present);
+          INFO("native " << native.rate << "/" << native.block << " host " << host << " chunk " << chunk
+                         << (engine == 0 ? " stereo probe" : " side echo") << " input skip "
+                         << skipping->inputSkipEnabled() << " output skip " << skipping->outputSkipEnabled());
+          REQUIRE(skipping->skipFallbacks() == 0);
+          REQUIRE(largestDifference(a.out, b.out, 2) <= 1e-6);
+          const int inChannels = engine == 0 ? 2 : 4;
+          if (skipping->inputSkipEnabled()) {
+            REQUIRE(a.fewestIn < inChannels);
+            REQUIRE(a.mostIn == inChannels);
+          }
+          if (skipping->outputSkipEnabled() && engine == 0) {
+            REQUIRE(a.fewestOut == 1);
+            REQUIRE(a.mostOut == 2);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("A resumed converter out of step falls back to converting always") {
+  // 176.4 kHz to 32 kHz: r8brain adds a 2:1 stage, so the true period is 882. Forcing the ratio's
+  // own period, 441, puts a resumption at an odd multiple one sample out of step.
+  NativeRateWrapper w(std::make_unique<test::StereoProbeEngine>(), 32000.0, 16);
+  w.prepare(176400.0, 64);
+  REQUIRE(w.inputSkipEnabled());
+  w.forceSkipPeriodsForTest(441, 0);
+  const size_t n = 120000;
+  Channels in(n);
+  for (size_t i = 0; i < n; ++i) {
+    in.c[0][i] = testSignal(i, 0.01);
+    // Stereo bursts at many onsets, so some resume at an odd multiple of 441.
+    const size_t phase = i % 10000;
+    in.c[1][i] = phase >= 6000 + 441 * ((i / 10000) % 3) && phase < 8000 ? testSignal(i, 0.013) : in.c[0][i];
+  }
+  auto none = [](int, size_t) { return false; };
+  const SkipRun a = runSkipping(w, in, 16, none);
+  REQUIRE(w.skipFallbacks() == 1);
+  REQUIRE_FALSE(w.inputSkipEnabled());
+  REQUIRE(w.convertedInputChannels() == 2);
+  for (int ch = 0; ch < 2; ++ch) {
+    for (float x : a.out.c[ch]) REQUIRE(std::fabs(x) <= 1.0f);
+  }
+}
+
+TEST_CASE("Review case: the Modal Synth's input at 176.4 kHz resumes in step") {
+  // Fix round 1, Critical 1: stereo onsets at 20480 and 23111 resumed one sample out of step.
+  for (int maxBlock : {64, 256, 512}) {
+    for (size_t onset : {size_t(20000), size_t(20480), size_t(23111)}) {
+      NativeRateWrapper skipping(std::make_unique<test::StereoProbeEngine>(), 32000.0, 16);
+      NativeRateWrapper always(std::make_unique<test::StereoProbeEngine>(), 32000.0, 16);
+      always.setSkipUnused(false);
+      skipping.prepare(176400.0, maxBlock);
+      always.prepare(176400.0, maxBlock);
+      Channels in(60000);
+      for (size_t i = 0; i < 60000; ++i) {
+        in.c[0][i] = testSignal(i, 0.01);
+        in.c[1][i] = i >= onset ? testSignal(i, 0.013) : in.c[0][i];
+      }
+      auto none = [](int, size_t) { return false; };
+      const SkipRun a = runSkipping(skipping, in, 64, none);
+      const SkipRun b = runSkipping(always, in, 64, none);
+      INFO("maxBlock " << maxBlock << " onset " << onset);
+      REQUIRE(skipping.inputSkipEnabled());
+      REQUIRE(a.fewestIn == 1);
+      REQUIRE(skipping.skipFallbacks() == 0);
+      REQUIRE(largestDifference(a.out, b.out, 2) <= 1e-6);
+    }
+  }
 }

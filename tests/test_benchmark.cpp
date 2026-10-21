@@ -149,5 +149,18 @@ TEST_CASE("CPU: Source x Filter x Shaper chains, 2 x 8 voices, mono sources with
                 kShapers[c.shaper].name, confirmed[stereo],
                 stereo ? " (for information; not held to the budget)" : " (budget 50%)");
   }
+  // The matrix's Ring Mod rows use no side input, which is then not converted. The heaviest
+  // mono-source chain again with one and two side inputs carrying a signal (for information).
+  const Chain& c = worst[0];
+  if (kShapers[c.shaper].engine == int(ShaperEngine::RingMod)) {
+    for (int sides = 1; sides <= 2; ++sides) {
+      ShaperSetup setup = kShapers[c.shaper];
+      setup.modulator = 2;               // Input (the benchmark's mono input)
+      if (sides == 2) setup.carrier = 2;  // Source AUX
+      std::printf("Heaviest mono-source chain with %d side input%s in use (%s): %.2f%% of one core over 5 s\n", sides,
+                  sides == 1 ? "" : "s", sides == 1 ? "Modulator Input" : "Carrier Source AUX, Modulator Input",
+                  chainLoad(c.source, c.filter, setup, 5, false));
+    }
+  }
   REQUIRE(confirmed[0] < 50.0);
 }

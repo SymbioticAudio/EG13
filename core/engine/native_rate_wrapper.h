@@ -24,7 +24,10 @@ namespace eg13 {
 // A channel that equals its reference (in[1] and out[1]: channel 0; a side input: silence, or
 // null) for one converter span is not converted: it takes the reference's converted signal,
 // which is what its converter would produce. When it differs again its converter restarts, is
-// pre-rolled with the reference's recent history and joins in step (see resume()).
+// pre-rolled with the reference's recent history and joins in step (see resume()). prepare()
+// proves this on scratch converters for each path and disables skipping where it fails; a
+// resumption that still comes back out of step turns skipping off for that path until the
+// next prepare().
 class NativeRateWrapper final : public VoiceEngine {
  public:
   // ~2.3 ms for Plaits-rate engines; up to ~4.6 ms for 32 kHz engines (r8brain 7.6, measured).
@@ -62,6 +65,15 @@ class NativeRateWrapper final : public VoiceEngine {
   int convertedOutputChannels() const;
   // Tests: false converts every channel always (the reference behaviour). Main thread.
   void setSkipUnused(bool on) { skipUnused_ = on; }
+  // Whether each path may skip: off when the rates have no exact converter period, when the
+  // prepare-time check of a resumption failed, or after a fallback.
+  bool inputSkipEnabled() const { return inPath_.period > 0; }
+  bool outputSkipEnabled() const { return outPath_.period > 0; }
+  // Times a resumed converter came back out of step and its path fell back to always converting.
+  size_t skipFallbacks() const { return fallbacks_; }
+  // Tests only, after prepare: replaces the paths' periods without the prepare-time check
+  // (0 disables), to exercise the fallback.
+  void forceSkipPeriodsForTest(int64_t input, int64_t output);
 
  private:
   // A channel whose conversion can be skipped while it equals its reference.
@@ -76,16 +88,25 @@ class NativeRateWrapper final : public VoiceEngine {
     int64_t span = 0;
     int64_t fed = 0;     // samples fed to channel 0's converter since clear()
     std::vector<float> history;  // ring: channel 0's input; sample k at k % history.size()
+    size_t write = 0;            // fed % history.size()
     void record(const float* x, int n);
     void reset();
   };
-  static void setUpPath(Path& path, double from, double to, int latencyIn, int maxChunk);
+  // Sets up a path from `from` to `to` for converters fed at most maxChunk samples per call,
+  // with chunks of `chunk` samples (0: varying) at run time.
+  static void setUpPath(Path& path, double from, double to, int latencyIn, int maxChunk, int chunk);
+  static int64_t converterPeriod(double from, double to);
+  static bool checkResume(double from, double to, int maxChunk, int chunk, const Path& setUp);
   // Restarts converter r and pre-rolls it with the reference's last samples (channel 0's
   // history, or silence), so that from now on it runs in step with channel 0's converter.
   static void resume(r8b::CDSPResampler24& r, const Path& path, bool silence, int maxChunk,
                      std::vector<double>& scratch);
   void pushInput(const float* const* in, int n);
   void renderNativeBlock(const ParamValues& p);
+  // A resumed converter came back out of step: never skip on this path until the next
+  // prepare(), and restart every converter of the path together (a one-off gap).
+  void fallBackInput();
+  void fallBackOutput();
   void applyExtraDelay(float* const* out, int n);
 
   std::unique_ptr<VoiceEngine> inner_;
@@ -130,6 +151,7 @@ class NativeRateWrapper final : public VoiceEngine {
   std::vector<double> preroll_;     // pre-roll chunk
   int lastInConverted_ = 0;
   int lastOutConverted_ = 0;
+  size_t fallbacks_ = 0;
 
   // Alignment delay.
   int extra_ = 0;

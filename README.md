@@ -49,12 +49,14 @@ Reset & Rescan Selection.
 
 EG13 reports about 10.85 ms of latency at 48 kHz and EG13 FX about 16.48 ms: the Modal Synth's 32 kHz engine and the Ring Mod / Vocoder's 96 kHz engine set it, and every engine is padded to it so changing engines never shifts timing. Processed input lines up with Dry in EG13 FX; hosts compensate automatically. In the instrument, note onsets are aligned: sidechain input that excites the Resonator or Modal Synth arrives up to about 6 ms after Dry.
 
-CPU, Apple M1, 48 kHz, 128-sample blocks:
+CPU, Apple M1 (base), 48 kHz, 128-sample blocks, 2 × 8 voices (one run each; repeats of the first line varied by about 0.1 point):
 
-- Heaviest mono-source chain: Macro Oscillator -> Analog Filter -> Vocoder: 48.89% of one core over 5 s (budget 50%)
-- Heaviest stereo chain: Modal Synth -> Analog Filter -> Vocoder: 87.44% of one core over 5 s (for information; not held to the budget)
+- Heaviest mono-source chain: Macro Oscillator -> Analog Filter -> Vocoder: 48.95% of one core over 5 s (budget 50%)
+- Heaviest stereo chain: Modal Synth -> Analog Filter -> Vocoder: 88.18% of one core over 5 s (for information; not held to the budget)
+- Heaviest mono-source chain with 1 side input in use (Modulator Input): 50.30% of one core over 5 s
+- Heaviest mono-source chain with 2 side inputs in use (Carrier Source AUX, Modulator Input): 51.54% of one core over 5 s
 
-The 50 % budget applies to chains with a mono Source; stereo chains of the heaviest engines can exceed it. These figures are for 2 × 8 voices. Engines that run at their own sample rate convert a side input (the Ring Mod / Vocoder's Carrier and Modulator sources other than the voice) only while it carries a signal, and their right channel only while it differs from the left; the result is the same as converting everything.
+The 50 % budget is met by the heaviest chain with a mono Source while the Ring Mod / Vocoder's Carrier and Modulator are the internal oscillator or the voice. With one or two side inputs carrying a signal (Source AUX, Input or Other part), the same chain is just over it, and stereo chains of the heaviest engines can use much more. Engines that run at their own sample rate convert a side input only while it carries a signal, and their right channel only while it differs from the left; the result is the same as converting everything.
 
 Plugins are written to `build/mac/plugins`. The first configure downloads the VST3 and
 AudioUnit SDKs.
