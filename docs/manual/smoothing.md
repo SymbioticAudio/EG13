@@ -13,5 +13,6 @@ When a control jumps (an automation step, or a modulation change), each engine f
 - **Ring Mod / Vocoder:** Warps' own knob filter, once per 60-sample block. Algorithm, Timbre and both Levels have a time constant of about 25 ms; Osc Pitch about 6 ms. Within each block Warps glides its parameters itself. Carrier, Modulator, Osc Shape and Mode switch at once. As on the module, the very first 0.6 ms after a reset glides inside Warps from its start-up settings.
 - **EQ:** the VCV module reads its knobs every sample; EG13 moves all ten knobs in a straight line across each control block of up to 16 samples. Input Pad and Output switch at once.
 - **Envelope:** no smoothing, as on the module: its controls are read every 8 samples of its own 31.25 kHz (a quarter of a millisecond). Mode switches at once.
+- **LFO:** Tides glides Frequency, Shape, Slope, Smoothness and Shift itself across each of its 8-sample blocks (an eighth of a millisecond). Mode, Output, Range and Sync switch at once.
 
 After a reset, or when a voice starts from silence, every control starts at its current value with no glide (except inside the Ring Mod / Vocoder, as noted above).

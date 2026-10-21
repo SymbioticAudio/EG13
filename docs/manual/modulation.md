@@ -21,3 +21,16 @@ An envelope made of up to six segments, as one gated group of the module. One ou
 - A new note on the voice restarts the attack from wherever the envelope is, so fast repeated notes do not click.
 - Changing Mode while the envelope runs continues from wherever it is in the new layout, as on the module.
 - Defaults: ADSR, 1 ms attack, 0.5 s decay, full sustain, 0.5 s release, straight segments.
+
+### LFO (based on Tides 2)
+
+A slope generator with four outputs.
+
+- **Mode**: *Cycle* (an LFO), *AD* (each note plays one attack-decay slope) or *AR* (rises while the note is held, falls when it is released).
+- **Frequency**: ±4 octaves around the **Range**'s centre: *Medium* centres on 2 Hz, *Low* on 0.125 Hz (one cycle every 8 seconds). The module's audio range is not offered: EG13 reads modulation every 16 samples, too slowly for audio-rate modulation.
+- **Shape**, **Slope** and **Smoothness** shape the wave as on the module: Slope moves the peak (a ramp down, a triangle at 50 %, a ramp up); Shape morphs the curve; Smoothness below 50 % rounds it off, above 50 % folds it.
+- **Output** chooses what the four outputs carry, as the module's output mode button does: *Phase* (default: the same wave on all four, each later than the previous by an amount set by **Shift**; at the default 100 % they are a quarter cycle apart), *Gates* (out 1 the wave scaled by Shift, out 2 the raw wave, outs 3 and 4 end-of-attack and end-of-release gates), *Amplitude* (Shift pans the wave across the outputs) or *Frequency* (Shift picks frequency ratios between the outputs).
+- Each new note on the voice restarts the cycle (per-voice scope). A per-part LFO restarts when you start playing after all keys were up.
+- **Sync** *On* locks the LFO to the host's tempo: Frequency then picks a ratio from Tides' table (from one cycle every 16 beats to 16 cycles per beat; 50 % is one cycle per beat) and the cycle lines up with the song position. With the transport stopped it keeps running at the last tempo the host gave (120 BPM if none); when the transport starts it jumps into line with the song. With Sync on, notes do not restart the cycle.
+- In Cycle mode the outputs swing from −100 % to +100 %; in AD and AR they run from 0 to 100 %.
+- Defaults: Cycle at 2 Hz, Phase outputs a quarter cycle apart, Sync off.
