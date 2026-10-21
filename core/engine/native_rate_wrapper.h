@@ -27,7 +27,7 @@ namespace eg13 {
 // pre-rolled with the reference's recent history and joins in step (see resume()). prepare()
 // proves this on scratch converters for each path and disables skipping where it fails; a
 // resumption that still comes back out of step turns skipping off for that path until the
-// next prepare().
+// next prepare(), after restarting every conversion (see fallBackInput()).
 class NativeRateWrapper final : public VoiceEngine {
  public:
   // ~2.3 ms for Plaits-rate engines; up to ~4.6 ms for 32 kHz engines (r8brain 7.6, measured).
@@ -104,9 +104,13 @@ class NativeRateWrapper final : public VoiceEngine {
   void pushInput(const float* const* in, int n);
   void renderNativeBlock(const ParamValues& p);
   // A resumed converter came back out of step: never skip on this path until the next
-  // prepare(), and restart every converter of the path together (a one-off gap).
+  // prepare(), and restart every converter and FIFO of the wrapper together (a one-off gap),
+  // so the output keeps the reported latency.
   void fallBackInput();
   void fallBackOutput();
+  // reset() without resetting the engine or the extra delay: every converter, FIFO, the input
+  // prime and the output pad, so the onset lands at the reported latency again.
+  void restartConversion();
   void applyExtraDelay(float* const* out, int n);
 
   std::unique_ptr<VoiceEngine> inner_;
@@ -152,6 +156,7 @@ class NativeRateWrapper final : public VoiceEngine {
   int lastInConverted_ = 0;
   int lastOutConverted_ = 0;
   size_t fallbacks_ = 0;
+  bool restartPending_ = false;  // an output fallback: restart at the next block
 
   // Alignment delay.
   int extra_ = 0;

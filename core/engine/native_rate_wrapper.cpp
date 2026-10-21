@@ -93,6 +93,15 @@ void NativeRateWrapper::setExtraDelay(int samples) {
 
 void NativeRateWrapper::reset() {
   inner_->reset();
+  restartConversion();
+  underruns_ = 0;
+  overruns_ = 0;
+  for (auto& line : delay_) std::fill(line.begin(), line.end(), 0.0f);
+  delayPos_ = 0;
+}
+
+void NativeRateWrapper::restartConversion() {
+  restartPending_ = false;
   for (auto& resampler : resampler_) {
     if (resampler) resampler->clear();
   }
@@ -108,16 +117,12 @@ void NativeRateWrapper::reset() {
   inputRead_ = 0;
   inputSize_ = inputPrime_;
   for (auto& ring : inputFifo_) std::fill(ring.begin(), ring.end(), 0.0f);
-  underruns_ = 0;
-  overruns_ = 0;
   for (auto& skip : inSkip_) skip = Skip{};
   for (auto& skip : outSkip_) skip = Skip{};
   inPath_.reset();
   outPath_.reset();
   lastInConverted_ = bypass_ ? 0 : inChannels_;
   lastOutConverted_ = bypass_ ? 0 : outChannels_;
-  for (auto& line : delay_) std::fill(line.begin(), line.end(), 0.0f);
-  delayPos_ = 0;
 }
 
 void NativeRateWrapper::noteOn(float note, float velocity) { inner_->noteOn(note, velocity); }
@@ -133,11 +138,15 @@ void NativeRateWrapper::process(const float* const* in, float* const* out, const
   if (bypass_) {
     inner_->process(usesInput_ ? in : nullptr, out, p, n);
   } else {
+    if (restartPending_) restartConversion();  // after an output fallback (fallBackOutput)
     if (usesInput_) pushInput(in, n);
     for (int i = 0; i < n; ++i) {
-      // The converter withholds its first outputs, so a block can yield nothing. A fallback
-      // (fallBackOutput) restarts the path with silence owed, as reset() does.
-      while (fifoSize_ == 0 && zeroPad_ == 0) renderNativeBlock(p);
+      // The converter withholds its first outputs, so a block can yield nothing.
+      while (fifoSize_ == 0 && zeroPad_ == 0 && !restartPending_) renderNativeBlock(p);
+      if (restartPending_) {  // the rest of this block is the fallback's gap
+        for (int ch = 0; ch < outChannels_; ++ch) std::fill(out[ch] + i, out[ch] + n, 0.0f);
+        break;
+      }
       if (zeroPad_ > 0) {
         for (int ch = 0; ch < outChannels_; ++ch) out[ch][i] = 0.0f;
         --zeroPad_;
@@ -382,32 +391,21 @@ void NativeRateWrapper::resume(r8b::CDSPResampler24& r, const Path& path, bool s
   }
 }
 
-void NativeRateWrapper::fallBackInput() {
+// Both fallbacks restart every converter and FIFO of the wrapper together, at a host block
+// boundary, as reset() does, so the input-to-output delay is the reported latency again (a
+// one-off gap of about that latency). The engine keeps running, so a held note keeps sounding.
+void NativeRateWrapper::fallBackInput() {  // at the start of a block, before any output
   ++fallbacks_;
   inPath_.period = 0;
-  for (auto& skip : inSkip_) skip = Skip{};
-  for (auto& resampler : inputResampler_) {
-    if (resampler) resampler->clear();
-  }
-  inPath_.reset();
-  inputRead_ = 0;
-  inputSize_ = inputPrime_;
-  for (auto& ring : inputFifo_) std::fill(ring.begin(), ring.end(), 0.0f);
-  lastInConverted_ = inChannels_;
+  restartConversion();
 }
 
-void NativeRateWrapper::fallBackOutput() {
+void NativeRateWrapper::fallBackOutput() {  // mid-block: restart before the next block
   ++fallbacks_;
   outPath_.period = 0;
-  for (auto& skip : outSkip_) skip = Skip{};
-  for (auto& resampler : resampler_) {
-    if (resampler) resampler->clear();
-  }
-  outPath_.reset();
   fifoRead_ = 0;
   fifoSize_ = 0;
-  zeroPad_ = size_t(latency_ - engineLatency_);
-  lastOutConverted_ = outChannels_;
+  restartPending_ = true;
 }
 
 void NativeRateWrapper::forceSkipPeriodsForTest(int64_t input, int64_t output) {
@@ -448,6 +446,7 @@ void NativeRateWrapper::pushInput(const float* const* in, int n) {
       if (ch == 0) produced = made;
       if (made != produced) {  // a resumed converter out of step: never in tests or the check
         fallBackInput();
+        pushInput(in, n);  // again, converting every channel: no skipping, so no recursion
         return;
       }
       ++active;

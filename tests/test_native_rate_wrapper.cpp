@@ -734,3 +734,40 @@ TEST_CASE("Review case: the Modal Synth's input at 176.4 kHz resumes in step") {
     }
   }
 }
+
+// After a fallback the wrapper restarts as reset() would (a one-off gap), so the output is back
+// in time with an always-converting wrapper: the input-to-output delay stays the reported one.
+TEST_CASE("After a fallback the output is aligned again") {
+  struct Case {
+    int64_t inputPeriod;
+    int64_t outputPeriod;
+  };
+  // 176.4 kHz <-> 32 kHz, true periods 882 (in) and 80 (out); 441 and 40 are one stage short.
+  for (const Case c : {Case{441, 0}, Case{0, 40}}) {
+    NativeRateWrapper w(std::make_unique<test::StereoProbeEngine>(), 32000.0, 16);
+    NativeRateWrapper always(std::make_unique<test::StereoProbeEngine>(), 32000.0, 16);
+    always.setSkipUnused(false);
+    w.prepare(176400.0, 64);
+    always.prepare(176400.0, 64);
+    w.forceSkipPeriodsForTest(c.inputPeriod, c.outputPeriod);
+    const size_t n = 120000;
+    Channels in(n);
+    for (size_t i = 0; i < n; ++i) {
+      in.c[0][i] = float(0.5 * std::sin(0.01 * double(i)) + 0.2 * std::sin(0.023 * double(i)));
+      const size_t phase = i % 10000;
+      const bool burst = i < 80000 && phase >= 6000 + 441 * ((i / 10000) % 3) + 7 * (i / 10000) && phase < 8000;
+      in.c[1][i] = burst ? float(0.4 * std::sin(0.017 * double(i))) : in.c[0][i];
+    }
+    auto none = [](int, size_t) { return false; };
+    const SkipRun a = runSkipping(w, in, 16, none);
+    const SkipRun b = runSkipping(always, in, 16, none);
+    INFO("forced periods " << c.inputPeriod << " / " << c.outputPeriod);
+    REQUIRE(w.skipFallbacks() == 1);
+    double worst = 0.0;
+    for (int ch = 0; ch < 2; ++ch) {
+      for (size_t i = 100000; i < n; ++i) worst = std::max(worst, double(std::fabs(a.out.c[ch][i] - b.out.c[ch][i])));
+    }
+    INFO("largest difference after the fallback " << worst);
+    REQUIRE(worst <= 1e-3);
+  }
+}
