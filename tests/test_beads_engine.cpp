@@ -119,7 +119,7 @@ class Reference {
   }
 
   float stage(float x) const {
-    if (quality_ == 3) return (1.0f - 0.05f) * stmlib::SoftClip(x + 0.05f) - 0.05f;
+    if (quality_ == 3) return (1.0f - 0.05f) * (stmlib::SoftClip(x + 0.05f) - stmlib::SoftClip(0.05f));
     return std::clamp(x, -1.0f, 1.0f);
   }
 
@@ -462,7 +462,7 @@ TEST_CASE("Seed Free: Density alone makes grains, none in its dead zone") {
 }
 
 TEST_CASE("Dirty tape soft-clips its input like the manual-gain path") {
-  const float soft = (1.0f - 0.05f) * stmlib::SoftClip(1.5f + 0.05f) - 0.05f;
+  const float soft = (1.0f - 0.05f) * (stmlib::SoftClip(1.5f + 0.05f) - stmlib::SoftClip(0.05f));
   REQUIRE(BeadsEngine::inputStage(1.5f, BeadsEngine::DirtyTape) == soft);
   REQUIRE(soft < 1.0f);
   // The other Qualities clamp hard at +-1 (Clean tape too: preflight ruling G19).
@@ -472,9 +472,10 @@ TEST_CASE("Dirty tape soft-clips its input like the manual-gain path") {
     REQUIRE(BeadsEngine::inputStage(0.25f, q) == 0.25f);
     REQUIRE(BeadsEngine::inputStage(std::nanf(""), q) == 0.0f);
   }
-  REQUIRE(BeadsEngine::inputStage(-4.0f, BeadsEngine::DirtyTape) == (1.0f - 0.05f) * -1.0f - 0.05f);
-  REQUIRE(BeadsEngine::inputStage(std::nanf(""), BeadsEngine::DirtyTape) ==
-          (1.0f - 0.05f) * stmlib::SoftClip(0.05f) - 0.05f);
+  REQUIRE(BeadsEngine::inputStage(-4.0f, BeadsEngine::DirtyTape) == (1.0f - 0.05f) * (-1.0f - stmlib::SoftClip(0.05f)));
+  // Silence in is silence through (the guard of the M5 stress test: no offset left over).
+  REQUIRE(BeadsEngine::inputStage(0.0f, BeadsEngine::DirtyTape) == 0.0f);
+  REQUIRE(BeadsEngine::inputStage(std::nanf(""), BeadsEngine::DirtyTape) == 0.0f);
 
   // In the engine: a hot input at Dirty tape's own rate reaches the processor soft-clipped, as
   // the restated reference does.

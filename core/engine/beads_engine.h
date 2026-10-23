@@ -57,7 +57,8 @@ class BeadsEngine final : public VoiceEngine {
   // The ATTENUVERTER pot law (cv_reader.h:110-112): -1..+1 with a small dead zone at 50 %.
   static float attenuverter(float p);
   // The input stage (ruling 16): unity gain, clamped to +-1 as the manual-gain path does; Dirty
-  // tape takes that path's soft clipping at amount 1 (beads/gain_control.cc:149-166). NaN reads as 0.
+  // tape takes that path's soft clipping at amount 1 (beads/gain_control.cc:149-166) without its
+  // constant bias offset, so silence stays silence (M5 T6 guard). NaN reads as 0.
   static float inputStage(float x, Quality q);
 
  private:

@@ -315,9 +315,11 @@ float BeadsEngine::attenuverter(float p) {
 float BeadsEngine::inputStage(float x, Quality q) {
   if (!(x == x)) x = 0.0f;
   if (q == DirtyTape) {
-    // The manual-gain path's crossfade at amount 1 is the soft-clipped signal.
+    // The manual-gain path's crossfade at amount 1 is the soft-clipped signal, biased by 0.05 as
+    // the firmware does. EG13 guard (M5 T6 stress finding): the bias's constant offset (-0.0025)
+    // is removed, as silence in would otherwise play on as a quiet pulsing tail forever.
     const float bias = 0.05f;
-    return (1.0f - bias) * stmlib::SoftClip(x + bias) - bias;
+    return (1.0f - bias) * (stmlib::SoftClip(x + bias) - stmlib::SoftClip(bias));
   }
   return std::min(std::max(x, -1.0f), 1.0f);
 }
