@@ -205,39 +205,72 @@ TEST_CASE("Freeze for five minutes at every Time and Size extreme", "[stress]") 
 }
 
 TEST_CASE("Delay-mode transitions while Size crosses 0.98-0.99 repeatedly", "[stress]") {
-  // processor.cc:110-117 switches to delay mode at Size >= 0.98 (and back below 0.99 with
-  // hysteresis); sweep through that band at several rates, with and without Freeze.
+  // processor.cc:111-119: an integrator runs at +-1 s per second (clamped to +-1.5 s, starting at
+  // -1.5 s) and delay mode is on while it is above 0. It rises while Size is above 0.99 (0.98
+  // once in delay mode) and falls below, so a switch needs Size held on one side for over 1.5 s.
+  // Phase 1 holds Size on each side for 4 s, six times, and checks the output tells the modes
+  // apart: a steady tone in delay mode keeps its level frame to frame, while grains of it come
+  // and go. Phase 2 sweeps Size through the band 0.97..0.995 (accumulated phase, 50 ms to 550 ms
+  // periods) with the transition integrator going nowhere, as the stress; with and without Freeze.
   const auto mode = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   const bool freeze = GENERATE(false, true);
   INFO("mode " << int(mode) << " freeze " << freeze);
-  Windows stats(size_t(kRate * 10.0), 6);
   auto slot = makeSlot(mode);
   Lcg rng(31);
   Block b;
   ParamValues p = defaults();
   p.p[DryWet] = 1.0f;
+  p.p[Time] = 0.3f;
   p.p[Density] = 0.75f;
+  p.p[Feedback] = 0.0f;
+  p.p[Reverb] = 0.0f;
+  stmlib::Random::Seed(1);
+
+  // Phase 1: dwell. Beads fades the wet sound out and in around each switch (processor.cc:199-
+  // 205: smoothstep of |integrator| / 0.75 s), so a switch shows as a dip to silence 1.5 s into
+  // the dwell, with the wet sound back at full level by the end of it.
+  double dip[12], settled[12];  // RMS 1.45..1.55 s into a dwell, and over 0..0.7 s plus 2.5..4 s
+  {
+    size_t pos = 0;
+    for (int dwell = 0; dwell < 12; ++dwell) {
+      p.p[Size] = dwell % 2 == 0 ? 0.995f : 0.5f;  // delay mode first, then grains, and so on
+      double atSwitch = 0.0, atEnd = 0.0;
+      size_t nSwitch = 0, nEnd = 0;
+      for (size_t done = 0; done < size_t(kRate * 4.0); done += kBlock, pos += kBlock) {
+        for (int i = 0; i < kBlock; ++i) {
+          b.in[i] = 0.5f * float(std::sin(2.0 * 3.14159265358979 * 440.0 * double(pos + size_t(i)) / kRate));
+        }
+        b.run(*slot, p);
+        const double t = double(done) / kRate;
+        for (int i = 0; i < kBlock; ++i) {
+          const double sq = double(b.l[i]) * double(b.l[i]);
+          if (t >= 1.45 && t < 1.55) { atSwitch += sq; ++nSwitch; }
+          if (t >= 2.5 || t < 0.7) { atEnd += sq; ++nEnd; }
+        }
+      }
+      dip[dwell] = std::sqrt(atSwitch / double(nSwitch));
+      settled[dwell] = std::sqrt(atEnd / double(nEnd));
+      INFO("dwell " << dwell << " size " << p.p[Size] << " dip " << dip[dwell] << " settled " << settled[dwell]);
+      REQUIRE(settled[dwell] > 0.01);
+      REQUIRE(dip[dwell] < 0.15 * settled[dwell]);  // measured 0.017 .. 0.053
+    }
+  }
+  // Phase 2: the sweep.
   p.p[Feedback] = 0.5f;
   p.p[Reverb] = 0.3f;
-  stmlib::Random::Seed(1);
-  const size_t samples = size_t(kRate * 60.0);
-  size_t crossings = 0;
-  bool inside = false;
-  for (size_t done = 0; done < samples; done += kBlock) {
+  Windows stats(size_t(kRate * 10.0), 6);
+  double phase = 0.0;
+  for (size_t done = 0; done < size_t(kRate * 60.0); done += kBlock) {
     const double t = double(done) / kRate;
     const double period = 0.05 + 0.5 * std::fmod(t / 10.0, 1.0);  // 50 ms .. 550 ms sweeps
-    const double tri = std::fabs(2.0 * std::fmod(t / period, 1.0) - 1.0);
-    p.p[Size] = float(0.97 + 0.025 * tri);                          // 0.970 .. 0.995
-    const bool nowInside = p.p[Size] >= 0.985f;
-    if (nowInside != inside) ++crossings;
-    inside = nowInside;
+    phase += double(kBlock) / kRate / period;
+    p.p[Size] = float(0.97 + 0.025 * std::fabs(2.0 * std::fmod(phase, 1.0) - 1.0));  // 0.970 .. 0.995
     p.p[Time] = float(0.2 + 0.6 * std::fabs(std::sin(t * 0.37)));
     p.p[Freeze] = (freeze && std::fmod(t, 7.0) > 3.5) ? 1.0f : 0.0f;
     b.fill(rng, 0.5f);
     b.run(*slot, p);
     stats.add(b.l, b.r, kBlock);
   }
-  REQUIRE(crossings > 200);  // the sweep really crosses the band over and over
   REQUIRE(stats.nonFinite == 0);
   REQUIRE(stats.peak <= 1.0f);
   INFO("rail fraction " << stats.railFraction());
