@@ -30,7 +30,7 @@ With nothing on the Input (no sidechain, or Other part in Single mode) the effec
 Every note the part plays is also sent to the Part FX: a voice trigger, not a legato glide, and on an Always-on part every key press. Engines use it as follows:
 
 - **Granular:** each note is one trigger, as on the module's TRIG input (see [Granular](#granular)).
-- **Granular Delay:** with *Seed* set to *Notes*, each note is a seed.
+- **Granular Delay:** with *Seed* set to *Notes*, each note is a seed and starts one grain (see [Granular Delay](#granular-delay)).
 - **Resonator:** each note strums it at that note's pitch.
 - **Reverb:** ignores notes.
 
@@ -65,7 +65,31 @@ Clouds, the granular texture processor, as the VCV Rack port runs it. It records
 
 ## Granular Delay
 
-Based on Beads. To be written when the engine arrives (M5 Task 5).
+Beads, the granular delay, as its firmware runs it. It records its input into a long buffer and plays it back as grains, or, with Size fully up, as a delay. It runs at the rate of its *Quality* (below), as the module does, in the module's own 4 kHz control blocks.
+
+- **Dry/Wet** (P1): the module's own crossfade. 0 % is the dry sound only, about 2.5 dB quieter than it came in; 100 % is the processed sound only, made 1.5 times louder; in between, both stay up longer than in a straight crossfade, as on the module. Even at 0 % the dry sound passes through the Quality's sound (its rate, and its bit depth in *Vintage digital* and *Dirty tape*) and the output limiter.
+- **Time** (P2): how far back in the buffer the grains come from, from the most recent (0 %) to the oldest (100 %). At the default 50 % that is half the buffer back, so after you start playing there are no grains until the buffer has filled that far (2 seconds in *Digital*).
+- **Size** (P3): how long each grain lasts. Below a third grains play backwards. Held fully up (above 99 %) for about 1.5 seconds, the effect turns into a delay with repeats, fading over from the grains, as on the module; turning Size down again fades back to grains.
+- **Pitch** (P4): transposition from −24 to +24 semitones. 50 % (the default) is no change. The control sticks to the useful intervals on the way: 1, 3, 4, 7, 12 and 24 semitones, up and down, as the module's knob does. It does not follow the notes you play.
+- **Density** (P5): how often grains start. With *Seed* on *Free*: below about 48 % at a steady rate, faster towards 0 %; above about 52 % at random moments, more of them towards 100 %; between 48 % and 52 % no grains start. That dead zone is why Density defaults to 75 % rather than the module's 50 %. With *Seed* on *Notes*, see below.
+- **Shape** (P6): the grains' envelope, from short, clicky attacks to smooth, overlapping swells.
+- **Feedback** (P7): how much of the processed sound goes back into the buffer.
+- **Reverb** (P8): Beads' own reverb on the output, dry sound included. In every Quality except *Digital* it rings longer, and in the two tape Qualities it is darker, as on the module.
+- **Freeze** (P9): on (50 % or more), the buffer stops recording and the grains keep playing what it holds.
+- **Quality** (P10): the module's four recording qualities, in 16 fixed steps:
+  - *Digital* (the default): 48 kHz, 16-bit, clean; a buffer of about 4 seconds.
+  - *Vintage digital*: 32 kHz, 12-bit, so treble above about 16 kHz is lost and the dry sound is 12-bit too; about 8 seconds.
+  - *Clean tape*: 48 kHz, with the grains recorded at 24 kHz in 12 bits (treble above 12 kHz is lost in the grains, not in the dry sound); about 11 seconds.
+  - *Dirty tape*: 24 kHz, 8-bit with the module's companding, so everything, the dry sound included, loses the treble above 12 kHz and gains grit; the whole output wobbles with wow and flutter, and the input is soft-clipped. About 16 seconds.
+- **Seed** (P11): where grains get their cue.
+  - *Free* (the default): nothing is patched into the module's SEED input and its SEED button is latched, as the module starts up, so Density alone starts grains (see Density).
+  - *Notes*: every note the part plays is a 1 ms pulse into SEED, with the button released. Each note starts one grain, at any Density, the dead zone included; Density then plays almost no part. The grain starts with the sound that was playing when the note came, so a short Time catches the note's attack.
+- P12 is unused.
+- **Time Random**, **Size Random**, **Shape Random** and **Pitch Random** (P13 to P16): the module's four randomisation knobs, one per control, as they work with nothing patched into its CV inputs. 50 % (the default) is none. Above 50 % each grain takes a random value around the control's setting, spreading wider towards 100 %. Below 50 % only some grains are randomised, but by larger amounts, more often towards 0 %.
+
+**Changing Quality** fades the effect's output out over 10 ms, switches the module to the new Quality (which clears the buffer, as on the module), waits in silence while the new rate's sound comes through EG13's rate converters (the effect's delay, a few milliseconds), then fades back in over 10 ms. The effect's delay is the same in every Quality: the faster paths are delayed to match the slowest. The module itself mutes for a quarter of a second.
+
+The module's automatic input level, its wavetable synth mode, its assignable CV input, its gate output and its mono buffer setting are left out; see [Known limitations](limitations.md).
 
 ## Resonator
 

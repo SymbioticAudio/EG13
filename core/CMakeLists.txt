@@ -5,6 +5,7 @@ add_library(eg13_core STATIC
   engine/rings_engine.cpp
   engine/reverb_engine.cpp
   engine/clouds_engine.cpp
+  engine/beads_engine.cpp
   engine/audio_input_engine.cpp
   engine/engine_registry.cpp
   engine/bypass_engine.cpp
@@ -36,6 +37,11 @@ add_library(eg13_core STATIC
 target_include_directories(eg13_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eg13_core PRIVATE eg13_eurorack eg13_nlohmann eg13_r8brain eg13_vcv eg13_sst)
 target_compile_options(eg13_core PRIVATE -Wall -Wextra -Werror)
+# Granular Delay's own arithmetic (pot laws and filter, input stage) is plain IEEE, never fused
+# into FMAs: GCC fuses across statements by default where the target has FMA (aarch64), so the same
+# expression could round differently here and in its restated fidelity reference
+# (tests/test_beads_engine.cpp, built the same way).
+set_source_files_properties(engine/beads_engine.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 # The VCV models are built as Rack builds its plugins (VCVRack/Rack compile.mk:17:
 # "FLAGS += -O3 -funsafe-math-optimizations -fno-omit-frame-pointer"), -O3 included in every
 # configuration: about 30 % faster, measured during planning. Owner decision 2026-10-20. Only the
