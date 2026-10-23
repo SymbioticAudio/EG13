@@ -171,6 +171,7 @@ class Synth {
     const int state = pendingState_.load(std::memory_order_acquire);
     return state == kReady || state == kApplying;
   }
+  void seedParts();  // constructors: each part its own seed base
   void store(const ParamSnapshot& values);
   void applyPending();
   void publishPatch();  // main thread: mainPatch_ to the audio thread

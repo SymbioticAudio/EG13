@@ -15,16 +15,19 @@ constexpr float kVoiceHeadroom = 0.25118864f;  // -12 dB (Voice Gain option 0, p
 
 Synth::Synth(PluginKind kind) : kind_(kind) {
   for (auto& part : parts_) part = std::make_unique<Part>();
-  // Each part its own random seeds (Random / S&H, the Random source), before prepare().
-  for (int p = 0; p < kNumParts; ++p) parts_[size_t(p)]->setSeedBase(uint32_t(p + 1) * 1000u);
+  seedParts();
   loadParams(defaultSnapshot());
 }
 
 Synth::Synth(PluginKind kind, SourceFactory factory) : kind_(kind) {
   for (auto& part : parts_) part = std::make_unique<Part>(factory);
-  // Each part its own random seeds (Random / S&H, the Random source), before prepare().
-  for (int p = 0; p < kNumParts; ++p) parts_[size_t(p)]->setSeedBase(uint32_t(p + 1) * 1000u);
+  seedParts();
   loadParams(defaultSnapshot());
+}
+
+// Each part its own random seeds (Random / S&H, the Random source). Constructors, before prepare().
+void Synth::seedParts() {
+  for (int p = 0; p < kNumParts; ++p) parts_[size_t(p)]->setSeedBase(uint32_t(p + 1) * 1000u);
 }
 
 void Synth::prepare(double sampleRate, int maxBlock) {

@@ -6,7 +6,7 @@ In the host, each part has the groups *Part A/Mod 1* … *Part A/Mod 4* (each wi
 
 ## How modulation runs
 
-Each modulation engine runs at its module's own rate, as on the hardware (Envelope 31.25 kHz, LFO 62.5 kHz, Random / S&H 32 kHz, Function Generator 48 kHz), whatever your project's sample rate, so its times and rates are the module's. EG13 reads every engine's outputs once every 16 samples (a third of a millisecond at 48 kHz), works out the routes, and moves the results smoothly across the next 16 samples (see [Smoothing](smoothing.md)). A key press reaches a modulation engine within a quarter of a millisecond.
+Each modulation engine runs at its module's own rate, as on the hardware (Envelope 31.25 kHz, LFO 62.5 kHz, Random / S&H 32 kHz, Function Generator 48 kHz), whatever your project's sample rate, so its times and rates are the module's. EG13 reads every engine's outputs once every 16 samples (a third of a millisecond at 48 kHz), works out the routes, and moves the results smoothly across the next 16 samples (see [Smoothing](smoothing.md); with host buffers shorter than 16 samples, routes into the Filter and Shaper glide across the buffer instead, which can change a render by a tiny, inaudible amount). A key press reaches a modulation engine within a quarter of a millisecond.
 
 ## Mod engines
 
@@ -131,5 +131,5 @@ EG13 follows the host's tempo and song position. While the transport plays, temp
 
 - A synced LFO lines up with the song to within about one step of its own clock (62.5 kHz, a few hundredths of a millisecond), not always to the exact sample: at most sample rates the two clocks' steps don't fall on the same instants.
 - Small differences between EG13's count and the host's position (less than a 64th note) are followed smoothly, without a restart. A bigger difference counts as a jump.
-- EG13 counts the song position in samples, so tempo-synced modulation plays the same whatever buffer size the host uses.
-- A host tempo above 1000 BPM plays as 1000 BPM, and one below 1 BPM as 1 BPM. A tempo or position that is zero, negative (tempo) or not a number is ignored: the last good value stays.
+- EG13 counts the song position in samples, so the timing of tempo-synced modulation is the same whatever buffer size the host uses (as long as the host reports its position consistently). What a route does with it can still differ by a tiny amount at buffers shorter than 16 samples (see [Smoothing](smoothing.md)).
+- A host tempo above 1000 BPM plays as 1000 BPM, and one below 1 BPM as 1 BPM. A tempo of zero or below, or a tempo or song position that is not a number, is ignored: the last good value stays.

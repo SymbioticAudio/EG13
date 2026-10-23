@@ -339,12 +339,13 @@ TEST_CASE("An Always-on part sounds with no MIDI") {
 }
 
 TEST_CASE("Event timing is independent of block slicing") {
-  auto renderWith = [](int chunk) {
+  // The instrument's init patch: Mod 1's envelope on the Amp, Mod 2's on the State Variable
+  // Filter's cutoff, Mod 3's LFO. A host-rate Filter ramps a modulated control across each call,
+  // so with host blocks shorter than 16 samples the ramp is shorter (see the manual's Smoothing
+  // page): renders then differ by an inaudible amount. With the Filter Off they are identical.
+  auto renderWith = [](int chunk, bool filter) {
     Synth synth(PluginKind::Instrument);
-    // The init patch plays (Mod 1's envelope on the Amp, Mod 3's LFO) with the Filter Off: a
-    // host-rate Filter ramps a modulated cutoff across each call, so its output depends on the
-    // host's block sizes (Task 15 report, concern 1).
-    filtersOff(synth);
+    if (!filter) filtersOff(synth);
     synth.prepare(44100.0, 4096);
     Stereo out(9000);
     run(synth, out, 0, 1001, nullptr, nullptr, chunk);
@@ -352,9 +353,22 @@ TEST_CASE("Event timing is independent of block slicing") {
     run(synth, out, 1001, 9000, nullptr, nullptr, chunk);
     return out.l;
   };
-  const auto a = renderWith(1);
-  REQUIRE(a == renderWith(7));
-  REQUIRE(a == renderWith(4096));
+  const auto a = renderWith(1, false);
+  REQUIRE(a == renderWith(7, false));
+  REQUIRE(a == renderWith(4096, false));
+  const auto f = renderWith(4096, true);
+  REQUIRE(test::rms(f, 1001, 9000) > 0.01);
+  // Measured (44.1 kHz, peak 0.112): at most 1.41e-3 at block 1 and 3.98e-4 at block 7, both on
+  // the note's attack, where Mod 2 opens the cutoff fastest (a 1 ms attack); about 1 % of the peak.
+  // The bound leaves a margin of about 1.4 over block 1, and a regression that dropped the per-tick
+  // delivery would differ by far more.
+  for (int chunk : {1, 7}) {
+    const auto g = renderWith(chunk, true);
+    float worst = 0.0f;
+    for (size_t i = 0; i < f.size(); ++i) worst = std::max(worst, std::fabs(f[i] - g[i]));
+    CAPTURE(chunk, worst);
+    REQUIRE(worst < 2e-3f);
+  }
 }
 
 TEST_CASE("Synth processing does not allocate") {
@@ -1483,7 +1497,7 @@ TEST_CASE("A synced LFO started from a stopped transport lines up with the song"
     lfoOnPartLevel(synth, true);
     synth.prepare(rate, 512);
     return renderHost(synth, stoppedFor + length, 64, [&](size_t done) {
-      Transport t = playingAt(8.0 + (double(done) - double(stoppedFor)) * tempo / 60.0 / rate, 90.0);
+      Transport t = playingAt(8.5 + (double(done) - double(stoppedFor)) * tempo / 60.0 / rate, 90.0);
       if (done < stoppedFor) {
         t.playing = false;  // stopped: 90 BPM, a different tempo and phase from the song's
       } else {
@@ -1496,12 +1510,16 @@ TEST_CASE("A synced LFO started from a stopped transport lines up with the song"
   const Stereo fromStart = render(0);
   // The two differ before the start, and match after it once the level has settled.
   double before = 0.0, after = 0.0;
-  for (size_t i = start / 2; i < start; ++i) before = std::max(before, double(std::fabs(fromStop.l[i] - fromStart.l[i])));
+  for (size_t i = size_t(rate * 0.1); i < start; ++i) before = std::max(before, double(std::fabs(fromStop.l[i] - fromStart.l[i])));
   for (size_t i = size_t(rate * 0.1); i < length; ++i) {
     after = std::max(after, double(std::fabs(fromStop.l[start + i] - fromStart.l[i])));
   }
   CAPTURE(before, after);
-  REQUIRE(before > 0.02);  // not already in line before the start
+  // Before the start the stopped render runs half a cycle away from the song (the song starts on
+  // beat 8.5, the stopped clock from beat 0, at a different tempo). Measured 0.147 to 0.148 at
+  // each rate, against an output swing of about 0.19 for a full LFO cycle; 0.1 shows they are
+  // clearly out of line.
+  REQUIRE(before > 0.1);
   REQUIRE(after < 1e-3);
 }
 

@@ -35,7 +35,11 @@ class BeatClock {
   static constexpr double kMaxTempo = 1000.0;
   static constexpr double kMaxBeats = 1e12;    // a host position beyond this is ignored
   static constexpr double kJump = 1.0 / 64.0;  // further than a 64th note from the clock: a jump
-  static constexpr double kSameBeat = 1e-6;    // closer than this: the clock already agrees
+  // Closer than this (about 0.024 samples at 120 BPM and 48 kHz): the clock already agrees and
+  // keeps its count. A host whose reported positions are less consistent than this (rounded,
+  // say, from seconds) re-anchors the clock every block: it still follows the host, but the beat
+  // is then only as independent of the block size as the host's own reports.
+  static constexpr double kSameBeat = 1e-6;
 
   void prepare(double sampleRate) { rate_ = std::isfinite(sampleRate) && sampleRate > 0.0 ? sampleRate : 48000.0; }
   void reset() {  // position 0; keeps the last tempo and time signature
