@@ -36,7 +36,7 @@ TEST_CASE("Bare Clouds processes a block") {
   static clouds::GranularProcessor processor;
   static uint8_t large[118784];
   static uint8_t small[65536 - 128];
-  std::memset(&processor, 0, sizeof(processor));  // Init() leaves members uninitialised
+  std::memset(static_cast<void*>(&processor), 0, sizeof(processor));  // Init() leaves members uninitialised
   std::memset(large, 0, sizeof(large));
   std::memset(small, 0, sizeof(small));
   processor.Init(large, sizeof(large), small, sizeof(small));
@@ -86,7 +86,7 @@ TEST_CASE("Bare Beads processes a block at every media") {
   static uint8_t delayBuffer1[512 * 1024];
   static uint8_t delayBuffer2[256 * 1024];
   static uint16_t reverbBuffer[32768];
-  std::memset(&processor, 0, sizeof(processor));
+  std::memset(static_cast<void*>(&processor), 0, sizeof(processor));
   std::memset(delayBuffer1, 0, sizeof(delayBuffer1));
   std::memset(delayBuffer2, 0, sizeof(delayBuffer2));
   std::memset(reverbBuffer, 0, sizeof(reverbBuffer));
@@ -94,7 +94,7 @@ TEST_CASE("Bare Beads processes a block at every media") {
   processor.Init(buffers, reverbBuffer);
 
   beads::Parameters params;
-  std::memset(&params, 0, sizeof(params));
+  std::memset(static_cast<void*>(&params), 0, sizeof(params));
   for (beads::RandomizedParameter* r : {&params.time, &params.size, &params.shape, &params.pitch}) {
     r->base = 0.5f;
     r->attenuverter = 0.5f;
@@ -111,17 +111,17 @@ TEST_CASE("Bare Beads processes a block at every media") {
   mix.reverb_amount = 0.3f;
   mix.output_gate = false;
 
-  const size_t sampleRates[4] = {24000, 24000, 32000, 48000};  // by Media enumerator
   for (int media = 0; media < 4; ++media) {
     processor.Configure(beads::Processor::Media(media), false);
     const size_t blocks = 40;
-    const size_t size = sampleRates[media] / 4000;
+    const size_t rate = size_t(processor.sample_rate());  // the module's own table
+    const size_t size = rate / 4000;
     std::vector<float> result;
     for (size_t b = 0; b < blocks; ++b) {
       std::vector<beads::FloatFrame> in(size), out(size);
       bool freeze[64] = {};
       for (size_t i = 0; i < size; ++i) {
-        const float s = 0.5f * std::sin(kTwoPi * 440.0f * float(b * size + i) / float(sampleRates[media]));
+        const float s = 0.5f * std::sin(kTwoPi * 440.0f * float(b * size + i) / float(rate));
         in[i].l = s;
         in[i].r = s;
       }
@@ -133,13 +133,14 @@ TEST_CASE("Bare Beads processes a block at every media") {
       }
     }
     REQUIRE(allFinite(result));
+    REQUIRE(anyNonZero(result));  // dry_wet 0.5 passes some of the non-silent input
   }
 }
 
 TEST_CASE("Bare Elements reverb processes a block") {
   static elements::Reverb reverb;
   static uint16_t buffer[32768];
-  std::memset(&reverb, 0, sizeof(reverb));  // Init() leaves the decay and gain members unset
+  std::memset(static_cast<void*>(&reverb), 0, sizeof(reverb));  // Init() leaves the decay and gain members unset
   std::memset(buffer, 0, sizeof(buffer));
   reverb.Init(buffer);
   reverb.set_amount(0.5f);
