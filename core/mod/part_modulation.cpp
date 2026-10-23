@@ -183,11 +183,11 @@ void PartModulation::processVoice(int v, const ModParams& params, const ModPartI
   control->pan = sums.touched[kDestPan] ? clamp01(0.5f + sums.value[kDestPan]) * 2.0f - 1.0f : 0.0f;
 }
 
-float PartModulation::partLevel(const ModParams&, float base) const {
+float PartModulation::partLevel(float base) const {
   return modulated(base, partSums_, kDestPartLevel);
 }
 
-void PartModulation::partFxParams(const ModParams&, const ParamValues& base, ParamValues* out) const {
+void PartModulation::partFxParams(const ParamValues& base, ParamValues* out) const {
   ParamValues result = base;
   for (int i = 0; i < kPartFxParamCount; ++i)
     result.p[i] = modulated(base.p[i], partSums_, uint16_t(kDestPartFxP + i));

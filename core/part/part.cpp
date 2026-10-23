@@ -360,7 +360,7 @@ void Part::startTick(const PartParams& params, int offset) {
   modulation_.processPart(params.mod, part, voices, Voice::kControlBlock);
   partRetrigger_ = false;
   pendingJump_ = false;
-  partLevel_ = modulation_.partLevel(params.mod, settings_.level);
+  partLevel_ = modulation_.partLevel(settings_.level);
   for (int v = 0; v < kVoices; ++v) {
     controlValid_[v] = false;
     if (voices_[size_t(v)]->active()) controlVoice(v, params, part, Voice::kControlBlock);
