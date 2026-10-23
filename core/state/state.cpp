@@ -29,15 +29,7 @@ bool parseId(const std::string& key, uint32_t* id) {
   return true;
 }
 
-// Schema 1 (M0) -> 2: the nine M0 parameters kept their IDs and ranges, so no
-// transformation is needed. Schema 2 -> 3 (M2): Source engine selector. Schema 3 -> 4 (M3):
-// Filter and Shaper types, Off for older documents. Schema 4 -> 5 (M4): mod slots, routes and
-// envelope shapes; older documents load with no modulation at their old level (Voice Gain 0 dB,
-// Soft Clip off; provisional ruling 30).
-
-// Source engineSettings arrays hold kSourceParamCount numbers. Early unreleased schema 3 builds
-// wrote 8 (P1..P8); those load as a prefix, the rest keep the engine's defaults.
-constexpr size_t kLegacyEngineSettingsSize = 8;
+// Documents older than kSchemaVersion (pre-release builds) load as the init state.
 
 // Every slot's per-engine settings: {part: {engine: [P values]}}.
 struct Section {
@@ -82,9 +74,7 @@ bool readSection(const nlohmann::json& root, const Section& section, EngineStash
       uint32_t engine = 0;
       const auto& list = engineIt.value();
       bool valid = parseId(engineIt.key(), &engine) && engine < uint32_t(slotEngineCount(section.kind)) &&
-                   list.is_array() &&
-                   (list.size() == count ||
-                    (section.kind == SlotKind::Source && list.size() == kLegacyEngineSettingsSize));
+                   list.is_array() && list.size() == count;
       for (size_t p = 0; valid && p < list.size(); ++p) valid = list[p].is_number();
       if (!valid) {
         clean = false;
@@ -197,8 +187,9 @@ bool readPatchSection(const nlohmann::json& root, const char* key, bool newer,
 
 // The "routes" or "envelopeShapes" this version writes, merged with what it loaded: parts this
 // version does not have are kept whole; in each of its parts, entries past this version's count
-// are appended, and an entry it read is written back as loaded while it still reads the same, so
-// an edit replaces it. Entries that could not be read were dropped at load and stay dropped.
+// (a newer version's) are written back verbatim, and an entry it read is written back as loaded
+// while it still reads the same, so an edit replaces it. Entries that could not be read were
+// dropped at load and stay dropped.
 template <typename T, size_t N>
 void mergeExtras(nlohmann::json& ours, const std::string& loadedDump, const std::array<std::array<T, N>, kNumParts>& now,
                  bool (*parse)(const nlohmann::json&, T*)) {
@@ -293,6 +284,16 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
   }
   const long long schema = version->get<long long>();
   if (schema < 1) return LoadResult::Invalid;
+  if (schema < kSchemaVersion) {
+    // A pre-release document: EG13 keeps no migration for these. It opens as the init state, and
+    // nothing of it is kept for the next save.
+    synth.loadParams(synth.defaultSnapshot());
+    extraTopLevel_ = "{}";
+    extraParams_ = "{}";
+    loadedRoutes_.clear();
+    loadedShapes_.clear();
+    return LoadResult::OkWithWarnings;
+  }
   bool warnings = schema > kSchemaVersion;
 
   ParamSnapshot values = synth.defaultSnapshot();
@@ -312,38 +313,7 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
     values[size_t(index)] = clampParam(size_t(index), it.value().get<double>());
   }
 
-  if (schema < 3) {
-    // Schema 2 had no engine selector: its P values belong to the Macro Oscillator.
-    for (int part = 0; part < kNumParts; ++part) values[sourceEngineParamIndex(part)] = 0.0f;
-  }
-
-  if (schema < 4) {
-    // Schema 3 (M2) had no Filter or Shaper: those projects keep their sound with both Off,
-    // whose P values are unused.
-    for (int part = 0; part < kNumParts; ++part) {
-      values[filterEngineParamIndex(part)] = 0.0f;
-      values[shaperEngineParamIndex(part)] = 0.0f;
-      for (int p = 0; p < int(kFilterParamCount); ++p) values[filterParamIndex(part, p)] = 0.0f;
-      for (int p = 0; p < int(kShaperParamCount); ++p) values[shaperParamIndex(part, p)] = 0.0f;
-    }
-  }
-
   PatchData patch;  // no routes, ADSR custom shapes
-  if (schema < 5) {
-    // Schema 4 (M3) had no modulation: those projects load with every mod slot empty (Off, its
-    // P's at 0 as in Off's stash entry), no routes, and their old level (Voice Gain 0 dB, Soft
-    // Clip off). With no route to the Amp, the Amp follows the gate (spec §5.2).
-    for (int part = 0; part < kNumParts; ++part) {
-      for (int slot = 0; slot < kNumModSlots; ++slot) {
-        values[modEngineParamIndex(part, slot)] = 0.0f;
-        values[modScopeParamIndex(part, slot)] = 0.0f;
-        for (int p = 0; p < int(kModSlotParamCount); ++p) values[modParamIndex(part, slot, p)] = 0.0f;
-      }
-      for (int r = 0; r < kNumRoutes; ++r) values[routeAmountParamIndex(part, r)] = 0.0f;
-    }
-    values[masterParamIndex(MasterParam::VoiceGain)] = 1.0f;
-    values[masterParamIndex(MasterParam::SoftClip)] = 0.0f;
-  }
   const bool newer = schema > kSchemaVersion;
   if (!readPatchSection(root, "routes", newer, patch.routes, &parseRoute)) warnings = true;
   if (!readPatchSection(root, "envelopeShapes", newer, patch.shapes, &parseShape)) warnings = true;

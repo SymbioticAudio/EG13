@@ -2,9 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <string>
-#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -61,24 +59,14 @@ TEST_CASE("Saved state has decimal parameter IDs") {
   REQUIRE(json.find("\"16711680\":") != std::string::npos);  // master level
 }
 
-TEST_CASE("Schema 1 documents from M0 load unchanged") {
-  Synth s(PluginKind::Instrument);
-  state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":1,"params":{"257":0.9,"16711680":0.5}})") ==
-          state::LoadResult::Ok);
-  REQUIRE(s.param(kModel) == double(0.9f));
-  REQUIRE(s.param(params::kMasterLevel) == 0.5);
-  REQUIRE(store.save(s).find("\"schemaVersion\":5") != std::string::npos);
-}
-
 TEST_CASE("Unusable state is rejected and leaves the synth unchanged") {
   Synth s(PluginKind::Instrument);
   s.setParam(kTimbre, 0.25);
   state::StateStore store;
-  for (const char* bad : {"", "not json", "[]", "{}", R"({"schemaVersion":2})",
-                          R"({"schemaVersion":"2","params":{}})",
+  for (const char* bad : {"", "not json", "[]", "{}", R"({"schemaVersion":5})",
+                          R"({"schemaVersion":"5","params":{}})",
                           R"({"schemaVersion":0,"params":{}})",
-                          R"({"schemaVersion":2,"params":[]})"}) {
+                          R"({"schemaVersion":5,"params":[]})"}) {
     INFO(bad);
     REQUIRE(store.load(s, bad) == state::LoadResult::Invalid);
     REQUIRE(s.param(kTimbre) == 0.25);
@@ -89,7 +77,7 @@ TEST_CASE("Missing parameters fall back to the defaults for the synth's kind") {
   Synth fx(PluginKind::Effect);
   fx.setParam(masterId(MasterParam::Dry), 0.2);
   state::StateStore store;
-  REQUIRE(store.load(fx, R"({"schemaVersion":2,"params":{"257":0.9}})") == state::LoadResult::Ok);
+  REQUIRE(store.load(fx, R"({"schemaVersion":5,"params":{"257":0.9}})") == state::LoadResult::Ok);
   REQUIRE(fx.param(masterId(MasterParam::Dry)) ==
           double(paramDefault(masterParamIndex(MasterParam::Dry), PluginKind::Effect)));
   REQUIRE(fx.param(kTimbre) == double(paramDefault(sourceParamIndex(0, 2), PluginKind::Effect)));
@@ -99,13 +87,13 @@ TEST_CASE("Unknown data is preserved on resave") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
   const char* json =
-      R"({"schemaVersion":2,"params":{"257":0.9,"999999":0.5},"future":{"x":1}})";
+      R"({"schemaVersion":5,"params":{"257":0.9,"999999":0.5},"future":{"x":1}})";
   REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
   const std::string saved = store.save(s);
   REQUIRE(saved.find("\"999999\":0.5") != std::string::npos);
   REQUIRE(saved.find("\"future\":{\"x\":1}") != std::string::npos);
 
-  REQUIRE(store.load(s, R"({"schemaVersion":2,"params":{}})") == state::LoadResult::Ok);
+  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{}})") == state::LoadResult::Ok);
   const std::string resaved = store.save(s);
   REQUIRE(resaved.find("\"999999\":") == std::string::npos);
   REQUIRE(resaved.find("future") == std::string::npos);
@@ -114,7 +102,7 @@ TEST_CASE("Unknown data is preserved on resave") {
 TEST_CASE("Malformed entries are skipped with a warning") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
-  const char* json = R"({"schemaVersion":2,"params":{"257":0.9,"abc":0.5,"259":"x"}})";
+  const char* json = R"({"schemaVersion":5,"params":{"257":0.9,"abc":0.5,"259":"x"}})";
   REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
   REQUIRE(s.param(kModel) == double(0.9f));
   REQUIRE(s.param(kTimbre) == double(paramDefault(sourceParamIndex(0, 2), PluginKind::Instrument)));
@@ -129,10 +117,34 @@ TEST_CASE("Newer schema versions load what is understood, with a warning") {
   REQUIRE(s.param(kModel) == double(0.9f));
 }
 
+TEST_CASE("Documents older than schema 5 load as the init state, with a warning") {
+  for (PluginKind kind : {PluginKind::Instrument, PluginKind::Effect}) {
+    for (const char* old : {R"({"schemaVersion":4,"params":{"257":0.9},"engineSettings":{"0":{"1":[0.1]}},"x":1})",
+                            R"({"schemaVersion":1,"params":{"257":0.9,"16711680":0.5}})"}) {
+      INFO(old);
+      Synth s(kind);
+      state::StateStore store;
+      // Extras kept from an earlier load: an unknown parameter and key, and a newer version's route.
+      REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{"999999":0.5},"future":{"x":1},)"
+                            R"("routes":{"0":[[1,2,0,4]],"2":[[5,5,5]]}})") == state::LoadResult::OkWithWarnings);
+      s.setParam(kTimbre, 0.123);
+      s.setRoute(1, 3, Route{kSrcModWheel, kDestPan, kSrcNone});
+      REQUIRE(store.load(s, old) == state::LoadResult::OkWithWarnings);
+      const Synth init(kind);
+      for (size_t i = 0; i < kParamCount; ++i) REQUIRE(s.param(paramSpec(i).id) == init.param(paramSpec(i).id));
+      REQUIRE(s.engineStash() == init.engineStash());
+      REQUIRE(s.patch().routes == init.patch().routes);
+      REQUIRE(s.patch().shapes == init.patch().shapes);
+      // The next save is this version's own: nothing of either document is written back.
+      REQUIRE(nlohmann::json::parse(store.save(s)) == nlohmann::json::parse(state::StateStore{}.save(init)));
+    }
+  }
+}
+
 TEST_CASE("Loaded values are clamped and stepped values rounded") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
-  const std::string json = R"({"schemaVersion":2,"params":{"259":1.7,")" +
+  const std::string json = R"({"schemaVersion":5,"params":{"259":1.7,")" +
                            std::to_string(partId(0, PartParam::VoiceCount)) + R"(":5.6}})";
   REQUIRE(store.load(s, json) == state::LoadResult::Ok);
   REQUIRE(s.param(kTimbre) == 1.0);
@@ -142,7 +154,7 @@ TEST_CASE("Loaded values are clamped and stepped values rounded") {
 TEST_CASE("Huge loaded values clamp instead of overflowing") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":2,"params":{"259":1e300}})") == state::LoadResult::Ok);
+  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{"259":1e300}})") == state::LoadResult::Ok);
   REQUIRE(s.param(kTimbre) == 1.0);
 }
 
@@ -151,7 +163,7 @@ TEST_CASE("A load while processing is reflected immediately") {
   s.prepare(48000.0, 256);
   s.setActive(true);
   state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":2,"params":{"16711680":0.25}})") ==
+  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{"16711680":0.25}})") ==
           state::LoadResult::Ok);
   REQUIRE(s.param(params::kMasterLevel) == 0.25);
   s.setActive(false);
@@ -175,36 +187,13 @@ TEST_CASE("Saved state is schema 5 and carries every engine's settings") {
   REQUIRE(stash[stashIndex(0, 0, 1)] == 0.9f);
 }
 
-TEST_CASE("Schema 2 FX project keeps Macro Oscillator") {
-  Synth fx(PluginKind::Effect);
-  state::StateStore store;
-  REQUIRE(store.load(fx, R"({"schemaVersion":2,"params":{"257":0.9,"16711681":1.0}})") ==
-          state::LoadResult::Ok);
-  REQUIRE(fx.engine(0) == int(SourceEngine::Macro));
-  REQUIRE(fx.engine(1) == int(SourceEngine::Macro));
-  REQUIRE(fx.param(257) == double(0.9f));                  // Macro Model
-  REQUIRE(fx.param(params::id(params::kMasterPart, params::Slot::Part, 1)) == 1.0);  // Dry
-}
-
-TEST_CASE("Schema 3 without engineSettings uses each engine's defaults") {
-  Synth s(PluginKind::Instrument);
-  state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":3,"params":{}})") == state::LoadResult::Ok);
-  const EngineStash stash = s.engineStash();
-  const EngineStash defaults = Synth::defaultStash();
-  // The engines in use report their live values (a host default may differ from the engine's own,
-  // e.g. the init patch's cutoff); every other engine holds its own defaults.
-  for (size_t i = 0; i < kSlotStashSize; ++i) {
-    if (!currentEntry(s, i)) REQUIRE(stash[i] == defaults[i]);
-  }
-}
-
 TEST_CASE("Malformed engineSettings entries are dropped with a warning") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
   const char* json =
-      R"({"schemaVersion":3,"params":{},"engineSettings":{"0":{"1":[0.1,0.2],"9":[1,1,1,1,1,1,1,1],)"
-      R"("2":[0.5,0.5,0.5,0.5,0.5,0.5,0.5,"x"],"3":[0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3]},"7":{}}})";
+      R"({"schemaVersion":5,"params":{},"engineSettings":{"0":{"1":[0.1,0.2],"9":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],)"
+      R"("2":[0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,"x"],)"
+      R"("3":[0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3]},"7":{}}})";
   REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
   const EngineStash stash = s.engineStash();
   REQUIRE(stash[stashIndex(0, 3, 0)] == 0.3f);
@@ -253,26 +242,12 @@ TEST_CASE("engineSettings arrays have 16 numbers") {
   REQUIRE(size_t(std::count(list.begin(), list.end(), ',')) == kSourceParamCount - 1);
 }
 
-TEST_CASE("An 8-number engineSettings array loads as P1..P8") {
-  Synth s(PluginKind::Instrument);
-  state::StateStore store;
-  const std::string json = R"({"schemaVersion":3,"params":{},"engineSettings":{"1":{"2":)" +
-                           engineArray(8, 0.25) + "}}}";
-  REQUIRE(store.load(s, json) == state::LoadResult::Ok);
-  const EngineStash stash = s.engineStash();
-  const EngineStash defaults = Synth::defaultStash();
-  for (int p = 0; p < int(kSourceParamCount); ++p) {
-    INFO(p);
-    REQUIRE(stash[stashIndex(1, 2, p)] == (p < 8 ? 0.25f : defaults[stashIndex(1, 2, p)]));
-  }
-}
-
 TEST_CASE("engineSettings arrays of other lengths are dropped with a warning") {
-  for (size_t count : {size_t(9), size_t(15), size_t(17)}) {
+  for (size_t count : {size_t(8), size_t(9), size_t(15), size_t(17)}) {
     INFO(count);
     Synth s(PluginKind::Instrument);
     state::StateStore store;
-    const std::string json = R"({"schemaVersion":3,"params":{},"engineSettings":{"1":{"2":)" +
+    const std::string json = R"({"schemaVersion":5,"params":{},"engineSettings":{"1":{"2":)" +
                              engineArray(count, 0.25) + R"(,"3":)" + engineArray(16, 0.5) + "}}}";
     REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
     const EngineStash stash = s.engineStash();
@@ -284,61 +259,10 @@ TEST_CASE("engineSettings arrays of other lengths are dropped with a warning") {
   }
 }
 
-TEST_CASE("Schema 2 documents load P9..P16 at their defaults") {
-  Synth s(PluginKind::Instrument);
-  s.setParam(paramSpec(sourceParamIndex(0, 12)).id, 0.6);
-  state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":2,"params":{"257":0.9}})") == state::LoadResult::Ok);
-  for (int p = 8; p < int(kSourceParamCount); ++p) {
-    REQUIRE(s.param(paramSpec(sourceParamIndex(0, p)).id) ==
-            double(paramDefault(sourceParamIndex(0, p), PluginKind::Instrument)));
-  }
-}
-
 namespace {
 uint32_t filterTypeId(int part) { return paramSpec(filterEngineParamIndex(part)).id; }
 uint32_t shaperTypeId(int part) { return paramSpec(shaperEngineParamIndex(part)).id; }
 }  // namespace
-
-TEST_CASE("Schema 3 projects load with Filter and Shaper Off and pass audio as before") {
-  Synth fx(PluginKind::Effect);
-  state::StateStore store;
-  REQUIRE(store.load(fx, R"({"schemaVersion":3,"params":{"16711681":1.0}})") == state::LoadResult::Ok);
-  for (int part = 0; part < kNumParts; ++part) {
-    REQUIRE(fx.engine(SlotKind::Filter, part) == int(FilterEngine::Off));
-    REQUIRE(fx.engine(SlotKind::Shaper, part) == int(ShaperEngine::Off));
-    for (int p = 0; p < int(kFilterParamCount); ++p) REQUIRE(fx.param(paramSpec(filterParamIndex(part, p)).id) == 0.0);
-  }
-  REQUIRE(fx.engine(SlotKind::Source, 0) == int(SourceEngine::AudioInput));
-  // M2's EG13 FX passed the input at unity, aligned with Dry: still so.
-  fx.prepare(44100.0, 256);
-  const size_t latency = size_t(fx.latencySamples());
-  std::vector<float> l(13230), r(13230), ol(13230), orr(13230);
-  for (size_t i = 0; i < l.size(); ++i) {
-    l[i] = 0.5f * float(std::sin(6.283185307179586 * 220.0 * double(i) / 44100.0));
-    r[i] = -l[i];
-  }
-  for (size_t done = 0; done < l.size(); done += 256) {
-    const int n = int(std::min<size_t>(256, l.size() - done));
-    const float* in[2] = {l.data() + done, r.data() + done};
-    float* out[2] = {ol.data() + done, orr.data() + done};
-    fx.process(in, out, nullptr, n);
-  }
-  for (size_t i = latency + 2205; i < l.size(); ++i) {
-    REQUIRE(std::fabs(ol[i] - 2.0f * l[i - latency]) < 1e-4f);  // wet + Dry (Dry 1.0)
-  }
-}
-
-TEST_CASE("A new EG13 FX starts with the Analog Filter, a schema 4 load keeps what it says") {
-  Synth fx(PluginKind::Effect);
-  REQUIRE(fx.engine(SlotKind::Filter, 0) == int(FilterEngine::Analog));
-  state::StateStore store;
-  const std::string json = state::StateStore{}.save(fx);
-  Synth again(PluginKind::Effect);
-  again.setParam(filterTypeId(0), 0);
-  REQUIRE(store.load(again, json) == state::LoadResult::Ok);
-  REQUIRE(again.engine(SlotKind::Filter, 0) == int(FilterEngine::Analog));
-}
 
 TEST_CASE("Filter and Shaper settings round-trip with every engine's stash") {
   Synth a(PluginKind::Instrument);
@@ -382,7 +306,7 @@ TEST_CASE("Malformed filterSettings and shaperSettings entries are dropped with 
   Synth s(PluginKind::Instrument);
   state::StateStore store;
   const char* json =
-      R"({"schemaVersion":4,"params":{},)"
+      R"({"schemaVersion":5,"params":{},)"
       R"("filterSettings":{"0":{"1":[0.1,0.2,0.3],"2":[0.4,0.4,0.4,0.4],"9":[1,1,1,1]}},)"
       R"("shaperSettings":{"1":{"2":[0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5]}}})";
   REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
@@ -403,13 +327,13 @@ TEST_CASE("Filter and Shaper settings: wrong types, out-of-range values and Off"
   state::StateStore store;
   SECTION("a non-number element drops the entry") {
     Synth s(PluginKind::Instrument);
-    REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"filterSettings":{"0":{"1":[0.1,"x",0.3,0.4]}}})") ==
+    REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"filterSettings":{"0":{"1":[0.1,"x",0.3,0.4]}}})") ==
             state::LoadResult::OkWithWarnings);
     REQUIRE(s.engineStash()[slotStashIndex(SlotKind::Filter, 0, 1, 0)] == defaults[slotStashIndex(SlotKind::Filter, 0, 1, 0)]);
   }
   SECTION("values outside 0..1 clamp") {
     Synth s(PluginKind::Instrument);
-    REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"filterSettings":{"1":{"2":[-0.5,1.5,0.25,7]}}})") ==
+    REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"filterSettings":{"1":{"2":[-0.5,1.5,0.25,7]}}})") ==
             state::LoadResult::Ok);
     const EngineStash stash = s.engineStash();
     REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 2, 0)] == 0.0f);
@@ -419,7 +343,7 @@ TEST_CASE("Filter and Shaper settings: wrong types, out-of-range values and Off"
   }
   SECTION("a part that is not an object, or a section that is not an object, is dropped") {
     Synth s(PluginKind::Instrument);
-    REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"filterSettings":{"0":[0.1,0.2,0.3,0.4]},"shaperSettings":7})") ==
+    REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"filterSettings":{"0":[0.1,0.2,0.3,0.4]},"shaperSettings":7})") ==
             state::LoadResult::OkWithWarnings);
     const EngineStash stash = s.engineStash();
     for (size_t i = 0; i < kStashSize; ++i) {
@@ -429,43 +353,12 @@ TEST_CASE("Filter and Shaper settings: wrong types, out-of-range values and Off"
   SECTION("Off's entry (engine 0) loads like any other") {
     Synth s(PluginKind::Instrument);
     const std::string eq = std::to_string(paramSpec(shaperEngineParamIndex(1)).id);
-    const std::string json = R"({"schemaVersion":4,"params":{")" + eq + R"(":2},)" +
+    const std::string json = R"({"schemaVersion":5,"params":{")" + eq + R"(":2},)" +
                              R"("shaperSettings":{"1":{"0":[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,0,0.5]}}})";
     REQUIRE(store.load(s, json) == state::LoadResult::Ok);
     REQUIRE(s.engine(SlotKind::Shaper, 1) == int(ShaperEngine::Eq));
     REQUIRE(s.engineStash()[slotStashIndex(SlotKind::Shaper, 1, 0, 4)] == 0.5f);
   }
-}
-
-TEST_CASE("Older projects of both plugins load with Filter and Shaper Off and their P's at 0") {
-  struct Case {
-    PluginKind kind;
-    int schema;
-  };
-  for (const Case c : {Case{PluginKind::Instrument, 1}, Case{PluginKind::Instrument, 3}, Case{PluginKind::Effect, 1},
-                       Case{PluginKind::Effect, 2}, Case{PluginKind::Effect, 3}}) {
-    INFO("schema " << c.schema << (c.kind == PluginKind::Effect ? " EG13 FX" : " EG13"));
-    Synth s(c.kind);
-    state::StateStore store;
-    const std::string json = R"({"schemaVersion":)" + std::to_string(c.schema) + R"(,"params":{}})";
-    REQUIRE(store.load(s, json) == state::LoadResult::Ok);
-    for (int part = 0; part < kNumParts; ++part) {
-      REQUIRE(s.engine(SlotKind::Filter, part) == int(FilterEngine::Off));
-      REQUIRE(s.engine(SlotKind::Shaper, part) == int(ShaperEngine::Off));
-      for (int p = 0; p < int(kFilterParamCount); ++p) REQUIRE(s.param(paramSpec(filterParamIndex(part, p)).id) == 0.0);
-      for (int p = 0; p < int(kShaperParamCount); ++p) REQUIRE(s.param(paramSpec(shaperParamIndex(part, p)).id) == 0.0);
-    }
-  }
-}
-
-TEST_CASE("A schema 4 EG13 FX project saved with Filter Off stays Off") {
-  Synth fx(PluginKind::Effect);
-  fx.setParam(paramSpec(filterEngineParamIndex(0)).id, double(FilterEngine::Off));
-  const std::string json = state::StateStore{}.save(fx);
-  Synth again(PluginKind::Effect);
-  state::StateStore store;
-  REQUIRE(store.load(again, json) == state::LoadResult::Ok);
-  REQUIRE(again.engine(SlotKind::Filter, 0) == int(FilterEngine::Off));
 }
 
 TEST_CASE("Every slot, part and engine's settings round-trip to their own place") {
@@ -528,12 +421,12 @@ TEST_CASE("Mod slot settings and scopes round-trip per engine") {
 TEST_CASE("mod settings arrays have 17 numbers; a scope is 0 or 1") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"mod2Settings":{"0":{"4":[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.7]}}})") ==
+  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"mod2Settings":{"0":{"4":[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.7]}}})") ==
           state::LoadResult::Ok);
   const EngineStash stash = s.engineStash();
   REQUIRE(stash[slotStashIndex(SlotKind::Mod2, 0, 4, 15)] == 0.1f);
   REQUIRE(stash[scopeStashIndex(0, 1, 4)] == 1.0f);  // 0.7 rounds to per part
-  REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{},"mod2Settings":{"0":{"4":[0.1,0.1]}}})") ==
+  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"mod2Settings":{"0":{"4":[0.1,0.1]}}})") ==
           state::LoadResult::OkWithWarnings);
 }
 
@@ -555,103 +448,6 @@ TEST_CASE("Saved state is schema 5 and carries routes and envelope shapes") {
   REQUIRE(patch.shapes[0][3] == shape);
   REQUIRE(patch.shapes[1][3] == EnvelopeShape{});
   REQUIRE(b.appliedPatch().routes[1][7] == patch.routes[1][7]);  // inactive: applied at once
-}
-
-TEST_CASE("Schema 1 to 4 projects load with no modulation at their old level") {
-  for (int schema = 1; schema <= 4; ++schema) {
-    for (PluginKind kind : {PluginKind::Instrument, PluginKind::Effect}) {
-      INFO("schema " << schema << (kind == PluginKind::Effect ? " EG13 FX" : " EG13"));
-      Synth s(kind);
-      state::StateStore store;
-      const std::string json = R"({"schemaVersion":)" + std::to_string(schema) + R"(,"params":{}})";
-      REQUIRE(store.load(s, json) == state::LoadResult::Ok);
-      for (int part = 0; part < kNumParts; ++part) {
-        for (int slot = 0; slot < kNumModSlots; ++slot) {
-          REQUIRE(s.engine(modSlotKind(slot), part) == int(ModEngineKind::Off));
-          REQUIRE(s.param(paramSpec(modScopeParamIndex(part, slot)).id) == 0.0);
-          // Off's P's, as Filter and Shaper Off in schema 3 projects: the stash holds Off's zeros.
-          for (int p = 0; p < int(kModSlotParamCount); ++p) REQUIRE(s.param(paramSpec(modParamIndex(part, slot, p)).id) == 0.0);
-        }
-        for (int r = 0; r < kNumRoutes; ++r) {
-          REQUIRE(s.patch().routes[size_t(part)][size_t(r)] == Route{});
-          REQUIRE(s.param(paramSpec(routeAmountParamIndex(part, r)).id) == 0.0);
-        }
-      }
-      REQUIRE(s.param(paramSpec(masterParamIndex(MasterParam::VoiceGain)).id) == 1.0);  // 0 dB
-      REQUIRE(s.param(paramSpec(masterParamIndex(MasterParam::SoftClip)).id) == 0.0);   // off
-    }
-  }
-}
-
-namespace {
-// Whether a parameter is new in M4 (schema 5): an M3 project never saved it.
-bool newInM4(size_t index) {
-  SlotKind kind = SlotKind::Source;
-  int part = 0, other = 0;
-  if (slotParamOf(index, &kind, &part, &other) && isModSlot(kind)) return true;
-  if (slotSelectorOf(index, &kind, &part) && isModSlot(kind)) return true;
-  if (modScopeOf(index, &part, &other) || routeAmountOf(index, &part, &other)) return true;
-  for (int p = 0; p < kNumParts; ++p) {
-    for (PartParam q : {PartParam::MpeMode, PartParam::MpeBendRange, PartParam::CcA, PartParam::CcB, PartParam::CcC,
-                        PartParam::CcD}) {
-      if (index == partParamIndex(p, q)) return true;
-    }
-  }
-  return index == masterParamIndex(MasterParam::VoiceGain) || index == masterParamIndex(MasterParam::SoftClip);
-}
-}  // namespace
-
-TEST_CASE("An EG13 FX project saved before modulation sounds as it did") {
-  // An M3-shaped document: every M3 parameter at EG13 FX's values with the Filter Off and Dry at
-  // 100 %, so M3 passed its input at unity plus Dry (as in "Schema 3 projects load with Filter and Shaper Off ...").
-  Synth fx(PluginKind::Effect);
-  const ParamSnapshot defaults = fx.defaultSnapshot();
-  std::string json = R"({"schemaVersion":4,"params":{)";
-  bool first = true;
-  int written = 0;
-  for (size_t i = 0; i < kParamCount; ++i) {
-    if (newInM4(i)) continue;
-    const float v = i == filterEngineParamIndex(0)              ? 0.0f
-                    : i == masterParamIndex(MasterParam::Dry) ? 1.0f
-                                                              : defaults[i];
-    char entry[64];
-    std::snprintf(entry, sizeof(entry), "%s\"%u\":%.9g", first ? "" : ",", unsigned(paramSpec(i).id), double(v));
-    json += entry;
-    first = false;
-    ++written;
-  }
-  json += "}}";
-  REQUIRE(written > 0);
-  REQUIRE(json.find("\"" + std::to_string(masterId(MasterParam::VoiceGain)) + "\":") == std::string::npos);
-  state::StateStore store;
-  REQUIRE(store.load(fx, json) == state::LoadResult::Ok);
-  REQUIRE(fx.engine(SlotKind::Source, 0) == int(SourceEngine::AudioInput));
-  REQUIRE(fx.engine(SlotKind::Filter, 0) == int(FilterEngine::Off));
-  REQUIRE(fx.engine(SlotKind::Mod1, 0) == int(ModEngineKind::Off));  // the new FX's LFO is not added
-  REQUIRE(fx.patch().routes[0][0] == Route{});
-  REQUIRE(fx.param(masterId(MasterParam::SoftClip)) == 0.0);
-  // Wet + Dry peak at 0.9, above the soft clipper's knee (-3 dBFS): Soft Clip On would bend it.
-  fx.prepare(44100.0, 256);
-  fx.setActive(true);
-  const size_t latency = size_t(fx.latencySamples());
-  std::vector<float> l(13230), r(13230), ol(13230), orr(13230);
-  for (size_t i = 0; i < l.size(); ++i) {
-    l[i] = 0.45f * float(std::sin(6.283185307179586 * 220.0 * double(i) / 44100.0));
-    r[i] = -l[i];
-  }
-  for (size_t done = 0; done < l.size(); done += 256) {
-    const int n = int(std::min<size_t>(256, l.size() - done));
-    const float* in[2] = {l.data() + done, r.data() + done};
-    float* out[2] = {ol.data() + done, orr.data() + done};
-    fx.beginBlock();
-    fx.process(in, out, nullptr, n);
-  }
-  fx.setActive(false);
-  float worst = 0.0f;
-  for (size_t i = latency + 2205; i < l.size(); ++i) {  // wet + Dry (Dry 1.0)
-    worst = std::max({worst, std::fabs(ol[i] - 2.0f * l[i - latency]), std::fabs(orr[i] - 2.0f * r[i - latency])});
-  }
-  REQUIRE(worst < 1e-4f);
 }
 
 TEST_CASE("Malformed routes and envelope shapes are dropped with a warning") {

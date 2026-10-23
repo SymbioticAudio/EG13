@@ -246,8 +246,8 @@ const std::array<ParamSpec, kParamCount>& table() {
                                               true, ParamFormat::PartMode};
     t[masterParamIndex(MasterParam::SplitNote)] = {master(MasterParam::SplitNote), "Split Note",
                                                    "Master", 0, 127, 60, 60, true, ParamFormat::Note};
-    // Voice Gain: 0 = -12 dB (instrument), 1 = 0 dB (EG13 FX, and projects before M4). RULE: new
-    // options are appended (max grows). Provisional ruling 24.
+    // Voice Gain: 0 = -12 dB (instrument), 1 = 0 dB (EG13 FX). RULE: new options are appended
+    // (max grows). Provisional ruling 24.
     t[masterParamIndex(MasterParam::VoiceGain)] = {master(MasterParam::VoiceGain), "Voice Gain", "Master", 0, 1,
                                                    0.0f, 1.0f, true, ParamFormat::VoiceGain};
     // Soft Clip: 0 Off, 1 On (provisional ruling 23). RULE: new options (e.g. other curves) are

@@ -59,8 +59,6 @@ Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second outpu
   - Part A's Mod 1 is an LFO at about 0.25 Hz, per part, routed to the Analog Filter's cutoff, +20 %: with the filter fully open it sweeps down to about 5 kHz and back every four seconds.
   - Voice Gain 0 dB (EG13 FX usually plays a single voice), Soft Clip on.
 
-## Projects from earlier versions
+## Saved projects
 
-Projects saved before Filters and Shapers existed open with Filter and Shaper *Off*, so they sound as they did. They do report a higher latency than before (about 10.9 ms instead of 4.6 ms for EG13 at 48 kHz), because every voice now keeps room for the Shaper's latency even when it is *Off* (see Latency). This applies even in EG13 FX, whose new default is the Analog Filter on Part A. A brand-new EG13 FX instance starts with the Analog Filter; a project saved with the current version keeps whatever Filter and Shaper it was saved with. Each engine's remembered settings are saved with the project.
-
-Projects saved before modulation existed open with every mod slot empty, no routes, *Voice Gain* at 0 dB and *Soft Clip* off, so they play at the level they had. One thing does change: with no route to the Amp, the Amp follows the keys, so a sound that used to ring on after you let go (a struck Resonator, a long Macro Oscillator decay) now stops 5 ms after the key. Add an envelope on a mod slot and route it to the Amp to bring the tail back. The routes, the envelopes' custom shapes and every mod engine's settings are saved with the project.
+A project saves every setting, each engine's remembered settings, the routes and the envelopes' custom shapes. Projects saved by pre-release versions of EG13 open as the init patch.
