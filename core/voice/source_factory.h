@@ -14,6 +14,9 @@ struct SourceSpec {
   int nativeBlock;
   // Part FX engines: the slot's wrapper runs them in whole native blocks (setWholeBlocks).
   bool wholeBlocks = false;
+  // Part FX engines: the slot scales this engine's output by it (its trim, partFxTrim; M5 G11),
+  // inside the slot's crossfade, so each engine keeps its own trim through a type change.
+  float outputGain = 1.0f;
 };
 
 using SourceFactory = SourceSpec (*)();

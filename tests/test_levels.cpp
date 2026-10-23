@@ -97,12 +97,15 @@ TEST_CASE("Reported latency per plugin and host rate", "[levels]") {
         sourceOnly.prepare(rate, 512, kind == PluginKind::Effect ? Voice::Alignment::Input : Voice::Alignment::Notes, q);
         ProcessorSlot shapers(makeAllShapers());
         shapers.prepare(rate, Voice::kControlBlock, q);
-        std::printf("%-6s %-10s %6.0f Hz: %4d samples (%.2f ms) = Source %d + Shaper %d\n",
+        ProcessorSlot partFx(makeAllPartFx());  // M5: every part has a Part FX slot, Off included
+        partFx.prepare(rate, 512, q);
+        std::printf("%-6s %-10s %6.0f Hz: %4d samples (%.2f ms) = Source %d + Shaper %d + Part FX %d\n",
                     q == ConverterQuality::Live ? "Live" : "Studio", kind == PluginKind::Effect ? "EG13 FX" : "EG13",
                     rate, synth.latencySamples(), 1000.0 * synth.latencySamples() / rate,
-                    sourceOnly.latencySamples(), shapers.latencySamples());
+                    sourceOnly.latencySamples(), shapers.latencySamples(), partFx.latencySamples());
         REQUIRE(synth.latencySamples() > 0);
-        REQUIRE(synth.latencySamples() == sourceOnly.latencySamples() + shapers.latencySamples());
+        REQUIRE(synth.latencySamples() ==
+                sourceOnly.latencySamples() + shapers.latencySamples() + partFx.latencySamples());
       }
     }
   }

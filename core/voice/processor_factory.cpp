@@ -42,7 +42,9 @@ SourceSpec makeShaper(int engine) {
   return makeOff();
 }
 
-SourceSpec makePartFx(int engine) {
+namespace {
+
+SourceSpec partFxEngine(int engine) {
   switch (PartFxEngine(engine)) {
     case PartFxEngine::Granular:
       return {std::make_unique<CloudsEngine>(), CloudsEngine::kNativeRate, CloudsEngine::kNativeBlock, true};
@@ -57,6 +59,14 @@ SourceSpec makePartFx(int engine) {
   SourceSpec off = makeOff();
   off.wholeBlocks = true;  // Off pads to the slot's latency, whole-block FIFO included
   return off;
+}
+
+}  // namespace
+
+SourceSpec makePartFx(int engine) {
+  SourceSpec spec = partFxEngine(engine);
+  spec.outputGain = partFxTrim(engine);  // the engine's trim (G11), applied inside the slot's crossfade
+  return spec;
 }
 
 std::vector<SourceSpec> makeAllPartFx() {

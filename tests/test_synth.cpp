@@ -1620,8 +1620,10 @@ TEST_CASE("Each part has its own random seeds") {
   }
   synth.prepare(kRate, kBlock);
   synth.noteOn(0, 60, 1.0f);
-  Stereo a(96000), b(96000);
-  run(synth, a, 0, 96000, nullptr, &b);
+  // The Random / S&H's first new value reaches Part Level at about 2 s, plus the part's latency
+  // (Part FX included, M5): render 3 s.
+  Stereo a(144000), b(144000);
+  run(synth, a, 0, 144000, nullptr, &b);
   REQUIRE(test::rms(a.r, 4800, 96000) > 0.01);  // Random pans each part right of centre
   REQUIRE(test::rms(b.r, 4800, 96000) > 0.01);
   REQUIRE(a.l != b.l);

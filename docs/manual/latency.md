@@ -36,12 +36,12 @@ maxBlock-sample host blocks. 149.7 dB is the measurement floor (float buffers).
 
 | Mode | Plugin | 44.1 kHz | 48 kHz | 96 kHz |
 |---|---|---|---|---|
-| Live | EG13 (note onsets aligned) | 230 samples (5.22 ms) | 268 samples (5.58 ms) | 273 samples (2.84 ms) |
-| Live | EG13 FX (input aligned with Dry) | 366 samples (8.30 ms) | 400 samples (8.33 ms) | 537 samples (5.59 ms) |
-| Studio | EG13 (note onsets aligned) | 446 samples (10.11 ms) | 521 samples (10.85 ms) | 501 samples (5.22 ms) |
-| Studio | EG13 FX (input aligned with Dry) | 722 samples (16.37 ms) | 791 samples (16.48 ms) | 1041 samples (10.84 ms) |
+| Live | EG13 (note onsets aligned) | 462 samples (10.48 ms) | 531 samples (11.06 ms) | 798 samples (8.31 ms) |
+| Live | EG13 FX (input aligned with Dry) | 598 samples (13.56 ms) | 663 samples (13.81 ms) | 1062 samples (11.06 ms) |
+| Studio | EG13 (note onsets aligned) | 918 samples (20.82 ms) | 1060 samples (22.08 ms) | 1578 samples (16.44 ms) |
+| Studio | EG13 FX (input aligned with Dry) | 1194 samples (27.07 ms) | 1330 samples (27.71 ms) | 2118 samples (22.06 ms) |
 
-Two engines set these figures: the Modal Synth's 32 kHz engine and the Ring Mod / Vocoder's 96 kHz engine, which runs in 60-sample blocks. Every Shaper, Off included, is delayed to match the Ring Mod / Vocoder, so changing the Shaper never moves the sound in time. This latency is the accepted cost for version 1 (owner decision, 2026-10-20). Filters add no latency. Each mode has its own fixed latency: within a mode, changing engines never moves the sound.
+Three engines set these figures: the Modal Synth's 32 kHz engine, the Ring Mod / Vocoder's 96 kHz engine, which runs in 60-sample blocks, and the Part FX Granular's 32 kHz engine. Every Shaper, Off included, is delayed to match the Ring Mod / Vocoder, so changing the Shaper never moves the sound in time. Every Part FX, Off included, is delayed to match Granular (Live 232 / 263 / 525 samples, Studio 472 / 539 / 1077 samples at 44.1 / 48 / 96 kHz), so the Part FX adds that delay even when it is Off, and changing it never moves the sound in time. This latency is the accepted cost for version 1 (owner decision, 2026-10-20). Filters add no latency. Each mode has its own fixed latency: within a mode, changing engines never moves the sound.
 
 - **EG13** aligns note onsets. Sound that the Input excites through the Modal Synth or Resonator therefore arrives up to about 6 ms after the Dry signal.
 - **EG13 FX** aligns the processed Input exactly with Dry.

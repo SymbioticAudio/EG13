@@ -54,6 +54,10 @@ class ProcessorSlot {
   // belong to the requested engine, as the host already shows them.
   void setEngine(int engine);
 
+  // Main thread: scales one engine's output, before the crossfade (default: its SourceSpec's
+  // outputGain). The Part FX slot mutes Off this way: its bypass line carries the part mix.
+  void setOutputGain(int engine, float gain);
+
   void noteOn(float note, float velocity);
   void noteOff();
   void setNote(float note);
@@ -71,6 +75,7 @@ class ProcessorSlot {
               const ParamValues& p, bool stereo, int n);
 
   std::vector<std::unique_ptr<NativeRateWrapper>> engines_;
+  std::vector<float> outputGain_;  // per engine
   int current_ = 0;
   int previous_ = -1;
   int pending_ = -1;

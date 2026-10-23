@@ -4,6 +4,12 @@
 
 EG13 has two parts, A and B. Each plays up to eight voices. Each voice runs Source → Filter → Shaper → Amp, then its pan. Each part also has four mod slots and a modulation matrix ([Modulation](modulation.md)). Every engine of every slot is ready in every voice (a per-part mod slot's engines once per part), so changing an engine never loads anything.
 
+The voices of a part are summed and go through the part's **Part FX** ([Part FX](part-fx.md)), then the part's **Level**, **Pan** and **Mono** switch:
+
+Σ voices → Part FX → Level / Pan / Mono → the part's Output
+
+The Part FX is always in the chain: with Part FX *Off* the sum passes unchanged, with the same delay as any effect. Anything that takes "the other part's output" (the *Input source* setting's *Other part*, and the Ring Mod / Vocoder's *Other part* signal) gets the other part after its Part FX, level, pan and Mono.
+
 The master **Mode** decides which notes reach which part: *Single* (only A plays), *Layer* (both play every note), *Split* (A below the split note, B from it up) or *Multi* (each part on its own MIDI channel). In Single mode Part B is silent but still runs, so it can feed Part A (see below).
 
 A voice stops (and becomes free for a new note) when its note is released and either its sound after the Amp, or the sound reaching its Shaper, has been silent (below −90 dBFS) for 50 ms (the second check waits for the Shaper's latency too). The second check exists because the Ring Mod / Vocoder's internal oscillator keeps sounding after the note has died. See [Modulation](modulation.md) for the Amp.

@@ -14,14 +14,17 @@ namespace {
 constexpr double kGainSmoothingSeconds = 0.01;
 }  // namespace
 
-Part::Part(ModEngineFactory mods) : Part(makeAllSources, makeAllFilters, makeAllShapers, mods) {}
+Part::Part(ModEngineFactory mods)
+    : Part(makeAllSources, makeAllFilters, makeAllShapers, mods, makeAllPartFx) {}
 
-Part::Part(SlotFactory sources, SlotFactory filters, SlotFactory shapers, ModEngineFactory mods)
-    : modulation_(mods) {
+Part::Part(SlotFactory sources, SlotFactory filters, SlotFactory shapers, ModEngineFactory mods,
+           SlotFactory partFx)
+    : fx_(partFx()), modulation_(mods) {
   for (int v = 0; v < kVoices; ++v) voices_.push_back(std::make_unique<Voice>(sources(), filters(), shapers()));
 }
 
-Part::Part(SourceFactory factory, ModEngineFactory mods) : modulation_(mods) {
+Part::Part(SourceFactory factory, ModEngineFactory mods, SlotFactory partFx)
+    : fx_(partFx()), modulation_(mods) {
   for (int v = 0; v < kVoices; ++v) voices_.push_back(std::make_unique<Voice>(factory()));
 }
 
@@ -35,6 +38,8 @@ void Part::setSeedBase(uint32_t base) {
 void Part::prepare(double hostRate, int maxBlock, Voice::Alignment alignment, ConverterQuality q) {
   for (auto& voice : voices_) voice->prepare(hostRate, maxBlock, alignment, q);
   for (auto& buffer : mix_) buffer.assign(size_t(maxBlock), 0.0f);
+  for (auto& buffer : fxOut_) buffer.assign(size_t(maxBlock), 0.0f);
+  fx_.prepare(hostRate, maxBlock, voiceLatencySamples(), q);
   int sourceLatency = 0;
   for (auto& voice : voices_) sourceLatency = std::max(sourceLatency, voice->sourceLatencySamples());
   inputDelay_.assign(size_t(sourceLatency), 0.0f);
@@ -49,6 +54,8 @@ void Part::prepare(double hostRate, int maxBlock, Voice::Alignment alignment, Co
 
 void Part::reset() {
   for (auto& voice : voices_) voice->reset();
+  fx_.reset();
+  fxTrigger_ = false;
   std::fill(inputDelay_.begin(), inputDelay_.end(), 0.0f);
   inputDelayPos_ = 0;
   allocator_.allNotesOff();
@@ -124,6 +131,8 @@ void Part::applySettings(const PartSettings& s) {
     for (auto& voice : voices_) voice->setShaperEngine(s.shaperEngine);
   }
   for (int slot = 0; slot < kNumModSlots; ++slot) modulation_.configure(slot, s.modEngine[slot], s.modPerPart[slot]);
+  fx_.setEngine(s.partFxEngine);  // crossfades while sounding; unchanged: nothing happens
+  fx_.setInput(PartFxInput(std::clamp(s.partFxInput, 0, kNumPartFxInputs - 1)));
 
   const float glide = glideSeconds(s.glide);
   for (auto& voice : voices_) voice->setGlideSeconds(glide);
@@ -160,6 +169,7 @@ void Part::noteOn(int key, float velocity, int channel) {
     } else {
       moveNote(0, key);
     }
+    fxTrigger_ = true;  // every key press triggers the Part FX (provisional ruling 13)
     alwaysOnNotes_.noteOn(key, velocity);
     voices_[0]->glideTo(key);
     return;
@@ -283,6 +293,9 @@ void Part::process(const VoiceInputs& in, float* const* out, const SlotParams& p
     voices_[size_t(v)]->process(voiceIn, mix, params, n);
     if (allocator_.sounding(v) && !voices_[size_t(v)]->active()) allocator_.voiceIdle(v);
   }
+  const float* fxIn[2] = {mix_[0].data(), mix_[1].data()};
+  float* fxOut[2] = {fxOut_[0].data(), fxOut_[1].data()};
+  fx_.process(fxIn, in.input, fxOut, n);
   writeOutput(out, 0, n, false);
 }
 
@@ -361,6 +374,11 @@ void Part::startTick(const PartParams& params, int offset) {
   partRetrigger_ = false;
   pendingJump_ = false;
   partLevel_ = modulation_.partLevel(settings_.level);
+  // The Part FX's controls for this tick (they act after the voices' latency, in PartFx).
+  ParamValues fx;
+  modulation_.partFxParams(params.partFx, &fx);
+  fx_.beginTick(fx, fxNote(), fxTrigger_);
+  fxTrigger_ = false;
   for (int v = 0; v < kVoices; ++v) {
     controlValid_[v] = false;
     if (voices_[size_t(v)]->active()) controlVoice(v, params, part, Voice::kControlBlock);
@@ -403,6 +421,9 @@ void Part::process(const VoiceInputs& in, float* const* out, const PartParams& p
       voices_[size_t(v)]->render(slice, mix, count);
       if (allocator_.sounding(v) && !voices_[size_t(v)]->active()) allocator_.voiceIdle(v);
     }
+    const float* fxIn[2] = {mix[0], mix[1]};
+    float* fxOut[2] = {fxOut_[0].data() + done, fxOut_[1].data() + done};
+    fx_.process(fxIn, in.input ? input : nullptr, fxOut, count);
     // The part's gains per slice, so a Part Level change lands at its tick whatever the block.
     writeOutput(out, done, count, true);
     tickPos_ = (tickPos_ + count) % Voice::kControlBlock;
@@ -425,13 +446,15 @@ void Part::writeOutput(float* const* out, int from, int n, bool modulated) {
     }
     const float gl = gainL_.next();
     const float gr = gainR_.next();
+    const float l = fxOut_[0][size_t(i)];
+    const float r = fxOut_[1][size_t(i)];
     if (settings_.mono) {
-      const float centre = 0.5f * (mix_[0][size_t(i)] + mix_[1][size_t(i)]) * gl;
+      const float centre = 0.5f * (l + r) * gl;
       out[0][i] = centre;
       out[1][i] = centre;
     } else {
-      out[0][i] = mix_[0][size_t(i)] * gl;
-      out[1][i] = mix_[1][size_t(i)] * gr;
+      out[0][i] = l * gl;
+      out[1][i] = r * gr;
     }
   }
 }
@@ -472,6 +495,7 @@ void Part::perform(const VoiceActions& actions) {
     Voice& voice = *voices_[size_t(a.voice)];
     switch (a.type) {
       case VoiceAction::Type::Trigger:
+        fxTrigger_ = true;  // every note-on triggers the Part FX; a legato glide does not
         if (!voice.active()) {
           modulation_.startVoice(a.voice);  // a voice from silence: fresh mod engines
           controlValid_[a.voice] = false;
@@ -491,6 +515,16 @@ void Part::perform(const VoiceActions& actions) {
         break;
     }
   }
+}
+
+float Part::fxNote() const {
+  float note = float(settings_.baseNote);
+  if (alwaysOn_) {
+    note = voices_[0]->currentNote();  // the held key, or the Base note with no key held
+  } else if (lastVoice_ >= 0) {
+    note = voices_[size_t(lastVoice_)]->currentNote();
+  }
+  return note + float(settings_.transpose) + bend_ * float(settings_.bendRange);
 }
 
 void Part::updatePitchOffset() {

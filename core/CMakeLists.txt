@@ -31,6 +31,7 @@ add_library(eg13_core STATIC
   voice/processor_factory.cpp
   voice/processor_slot.cpp
   part/part.cpp
+  part/part_fx.cpp
   mod/mod_factory.cpp
   mod/mod_routes.cpp
   mod/part_modulation.cpp

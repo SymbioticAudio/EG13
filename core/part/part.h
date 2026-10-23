@@ -7,8 +7,10 @@
 #include "engine/pot_smoother.h"
 #include "mod/beat_clock.h"
 #include "mod/part_modulation.h"
+#include "part/part_fx.h"
 #include "util/smoothed_value.h"
 #include "voice/mono_note_stack.h"
+#include "voice/processor_factory.h"
 #include "voice/source_factory.h"
 #include "voice/voice.h"
 #include "voice/voice_allocator.h"
@@ -37,6 +39,8 @@ struct PartSettings {
   int filterEngine = 0;  // FilterEngine
   int shaperEngine = 0;  // ShaperEngine
   int inputSource = 0;  // 0 external, 1 other part, 2 both (routed by the Synth)
+  int partFxEngine = 0;  // PartFxEngine
+  int partFxInput = 0;   // PartFxInput
   int modEngine[kNumModSlots] = {};      // ModEngineKind per mod slot
   bool modPerPart[kNumModSlots] = {};    // scope per mod slot
   int mpe = 0;              // 0 off, 1 lower zone, 2 upper zone (the Synth works out the channels)
@@ -67,12 +71,14 @@ struct ModTiming {
 // Everything one process() call of a modulated part reads besides audio.
 struct PartParams {
   SlotParams slots;     // host values of the Source, Filter and Shaper P's
+  ParamValues partFx;   // host values of the Part FX P's
   ModParams mod;        // mod slot P's, routes and amounts, envelope shapes
   ModTiming timing;
   float voiceGain = 1.0f;  // the master Voice Gain (spec §5.2's Amp gain)
 };
 
-// One part: 8 voices, their allocator, the part's modulation and the part's settings.
+// One part: 8 voices, their allocator, the part's modulation, its Part FX and the part's
+// settings. The voices' sum goes through the Part FX, then the part's level, pan and Mono.
 class Part {
  public:
   static_assert(VoiceAllocator::kMaxVoices == PartModulation::kVoices,
@@ -83,9 +89,10 @@ class Part {
   using SlotFactory = std::vector<SourceSpec> (*)();
 
   explicit Part(ModEngineFactory mods = makeAllModEngines);  // every engine of every slot
-  explicit Part(SourceFactory factory, ModEngineFactory mods = makeAllModEngines);  // tests
+  explicit Part(SourceFactory factory, ModEngineFactory mods = makeAllModEngines,
+                SlotFactory partFx = makeAllPartFx);  // tests
   Part(SlotFactory sources, SlotFactory filters, SlotFactory shapers,
-       ModEngineFactory mods = makeAllModEngines);  // per voice (tests)
+       ModEngineFactory mods = makeAllModEngines, SlotFactory partFx = makeAllPartFx);  // tests
 
   void setSeedBase(uint32_t base);  // main thread, before prepare(): the part's random seeds
   void prepare(double hostRate, int maxBlock, Voice::Alignment alignment = Voice::Alignment::Notes,
@@ -112,9 +119,11 @@ class Part {
   void noteExpression(int channel, int key, Expression expression, float value);
 
   // Modulated (M4): the part's mod slots and matrix on a fixed 16-sample grid, then each voice's
-  // Amp and pan. Overwrites out[0], out[1] with n samples (n <= maxBlock).
+  // Amp and pan; the Part FX (M5) gets its P's, note and triggers on the same grid. Overwrites
+  // out[0], out[1] with n samples (n <= maxBlock).
   void process(const VoiceInputs& in, float* const* out, const PartParams& params, int n);
-  // Unmodulated (M1-M3 tests): no mod slots, Amp, pan or gains.
+  // Unmodulated (M1-M3 tests): no mod slots, Amp, pan or gains; the Part FX keeps its last
+  // controls (zero P's after a reset).
   void process(const VoiceInputs& in, float* const* out, const SlotParams& params, int n);
   // Source parameters only; in: the part's Input (nullable).
   void process(const float* const* in, float* const* out, const ParamValues& source, int n);
@@ -123,7 +132,10 @@ class Part {
   }
 
   int activeVoiceCount() const;
-  int latencySamples() const { return voices_[0]->latencySamples(); }
+  // The voices' latency plus the Part FX slot's: when a note's sound leaves the part.
+  int latencySamples() const { return voiceLatencySamples() + fx_.latencySamples(); }
+  int voiceLatencySamples() const { return voices_[0]->latencySamples(); }
+  const PartFx& partFx() const { return fx_; }  // tests
   const VoiceControl& lastControl(int voice) const { return controls_[voice]; }  // tests
   const PartModulation& modulation() const { return modulation_; }               // tests
 
@@ -134,7 +146,11 @@ class Part {
   void delayInputSide(const float* const* input, int n);  // fills inputSide_[0..n)
   void updatePitchOffset();
   void updateGains(float level);
-  // mix_ x the part's gains (and Mono) into out. modulated: the Part Level comes from the
+  // The note the Part FX plays (provisional ruling 18): the most recently started voice's, on an
+  // Always-on part its voice's (the held key, or the Base note), before any note the Base note;
+  // plus Transpose and the part's pitch bend.
+  float fxNote() const;
+  // fxOut_ x the part's gains (and Mono) into out. modulated: the Part Level comes from the
   // matrix, delayed by the voices' latency so it lines up with their sound.
   void writeOutput(float* const* out, int from, int n, bool modulated);
   ModVoiceInputs voiceInputs(int v) const;
@@ -151,6 +167,9 @@ class Part {
   SmoothedValue gainL_;
   SmoothedValue gainR_;
   std::vector<float> mix_[2];
+  PartFx fx_;
+  std::vector<float> fxOut_[2];
+  bool fxTrigger_ = false;  // a note started since the last tick (a Part FX trigger)
   // The Input for the Shaper's side signals: mono, delayed by the voices' Source latency so
   // it reaches the Shaper with the voice (one line shared by every voice).
   std::vector<float> inputDelay_;
