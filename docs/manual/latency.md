@@ -9,37 +9,35 @@ EG13 reports **one fixed latency**, and every engine is delayed to match the slo
 The master setting **Latency Mode** chooses how the rate converters work. Every converter in EG13 follows it: Sources, Shaper and Part FX.
 
 - **Studio** uses the full-fidelity converters. Choose it for mixing, rendering and anything played back from the host's timeline, where the host compensates the latency.
-- **Live** uses the lowest-latency converters that keep Studio's sound quality: images and aliases at least 96 dB down, and a frequency response within 0.1 dB of Studio's. Choose it for playing EG13 live or tracking through it.
+- **Live** uses lower-latency converters, which roughly halve EG13's latency. Images and aliases stay at least 96 dB down. Choose it for playing EG13 live or tracking through it.
 
 The instrument starts in **Live**; EG13 FX starts in **Studio**. The setting is saved with your project. Hosts show it with the other parameters but can't automate it.
 
-In this version Live and Studio sound the same, and Live saves up to about 1 ms (the table below). Converters with lower latency were measured, and each one lost some top end (up to 0.35 dB) or let more aliasing through than the 96 dB floor allows, so none qualified.
+Live can be up to 0.3 dB softer at the very top of each engine's range. That is around 7 kHz for engines that run at 24 kHz, 9 kHz at 32 kHz and 13 to 14 kHz at 48 kHz. Below that, Live and Studio sound the same.
 
 <!--
 Live candidate report (tests/test_converter_quality.cpp, `eg13_tests "[.converter]"`, 2026-10-23).
 r8brain, transition band 30 %, worst case over hosts 44.1 / 48 / 96 kHz and natives 24 / 32 / 47.87 / 48 / 96 kHz.
-Floors (M5 plan ruling 1): stop band >= 96 dB; passband within 0.1 dB of 1 kHz up to Studio's -0.1 dB edge.
-  phase    atten   stop band  passband  worst 48 kHz input path (prime 2 / 1)
-  linear    96.00     92.40    0.3488     315 / 267
-  linear   108.00    104.51    0.2856     311 / 263
-  linear   120.00    116.63    0.2332     474 / 462
-  linear   136.00    130.25    0.1825     466 / 454
-  linear   150.00    144.06    0.1493     460 / 448
-  linear   180.15    149.65    0.0955     539 / 491   <- selected with prime 1
-  minimum   96.00     92.39    0.3510     285 / 237   fails ruling 3 (impulse +3/+6 samples, Dry + wet notch -38 dB)
-  minimum  108.00    104.51    0.2870     277 / 229   fails ruling 3
-  minimum  120.00    116.77    0.2339     422 / 410   fails ruling 3
-  minimum  136.00    130.34    0.1826     406 / 394   fails ruling 3
-  minimum  150.00    143.98    0.1495     396 / 384   fails ruling 3
-  minimum  180.15    149.36    0.0959     482 / 434   fails ruling 3 (notch -57 dB)
+Floors (owner decisions of 2026-10-23): stop band >= 96 dB; passband within 0.3 dB of 1 kHz up to
+Studio's -0.1 dB edge; ruling 3's Dry + wet notch no deeper than -1.1 dB (Studio -0.99, Live -1.08).
+  phase    atten   stop band  passband  notch     worst 48 kHz input path (prime 2 / 1)
+  linear    96.00     92.40    0.3488   -1.11      315 / 267   fails stop band, notch
+  linear   108.00    104.51    0.2856   -1.08      311 / 263   <- selected with prime 1
+  linear   120.00    116.63    0.2332   -1.05      474 / 462
+  linear   136.00    130.25    0.1825   -1.03      466 / 454
+  linear   150.00    144.06    0.1493   -1.01      460 / 448
+  linear   180.15    149.65    0.0955   -0.99      539 / 491   (Studio, prime 2)
+  minimum   96 .. 180.15: 30-60 samples faster; all fail ruling 3 (impulse 2-6 samples off,
+                          Dry + wet notch -35 to -57 dB)
+Live droop at Studio's -0.1 dB edge (worst over hosts): 24 kHz -0.27 dB, 32 kHz -0.25 dB, 48 kHz -0.29 dB.
 The prime of one native block has no under- or overruns at any host rate with 1-, 7-, 129- and
 maxBlock-sample host blocks. 149.7 dB is the measurement floor (float buffers).
 -->
 
 | Mode | Plugin | 44.1 kHz | 48 kHz | 96 kHz |
 |---|---|---|---|---|
-| Live | EG13 (note onsets aligned) | 418 samples (9.48 ms) | 491 samples (10.23 ms) | 501 samples (5.22 ms) |
-| Live | EG13 FX (input aligned with Dry) | 672 samples (15.24 ms) | 737 samples (15.35 ms) | 993 samples (10.34 ms) |
+| Live | EG13 (note onsets aligned) | 230 samples (5.22 ms) | 268 samples (5.58 ms) | 273 samples (2.84 ms) |
+| Live | EG13 FX (input aligned with Dry) | 366 samples (8.30 ms) | 400 samples (8.33 ms) | 537 samples (5.59 ms) |
 | Studio | EG13 (note onsets aligned) | 446 samples (10.11 ms) | 521 samples (10.85 ms) | 501 samples (5.22 ms) |
 | Studio | EG13 FX (input aligned with Dry) | 722 samples (16.37 ms) | 791 samples (16.48 ms) | 1041 samples (10.84 ms) |
 

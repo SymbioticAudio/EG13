@@ -16,23 +16,22 @@ namespace eg13 {
 // over r8brain at 96 / 108 / 120 / 136 / 150 / 180.15 dB, linear and minimum phase, transition
 // band 30 %, input prime 2 or 1 native blocks. Measured 2026-10-23 (worst over hosts 44.1 / 48 /
 // 96 kHz and natives 24 / 32 / 47.87 / 48 / 96 kHz):
-//   attenuation   stop band   passband dev.   worst 48 kHz input path (prime 2 / 1)
-//    96 dB         92.4 dB     0.35 dB         315 / 267
-//   108 dB        104.5 dB     0.29 dB         311 / 263
-//   120 dB        116.6 dB     0.23 dB         474 / 462  (r8brain adds a stage at 24 kHz)
-//   136 dB        130.3 dB     0.18 dB         466 / 454
-//   150 dB        144.1 dB     0.15 dB         460 / 448
-//   180.15 dB     149.7 dB     0.10 dB         539 / 491  (149.7: the float measurement floor)
-// Minimum phase is 30-60 samples faster at each attenuation but fails ruling 3: impulses land 2-4
+//   attenuation   stop band   passband dev.   Dry + wet notch   worst 48 kHz input path (prime 2 / 1)
+//    96 dB         92.4 dB     0.35 dB         -1.11 dB          315 / 267
+//   108 dB        104.5 dB     0.29 dB         -1.08 dB          311 / 263   <- Live, prime 1
+//   120 dB        116.6 dB     0.23 dB         -1.05 dB          474 / 462  (r8brain adds a stage at 24 kHz)
+//   136 dB        130.3 dB     0.18 dB         -1.03 dB          466 / 454
+//   150 dB        144.1 dB     0.15 dB         -1.01 dB          460 / 448
+//   180.15 dB     149.7 dB     0.10 dB         -0.99 dB          539 / 491  (149.7: the float measurement floor)
+// Floors (owner decisions of 2026-10-23): stop band >= 96 dB; passband within 0.3 dB of 1 kHz up
+// to Studio's -0.1 dB edge; Dry + wet notch no deeper than -1.1 dB (Studio -0.99, Live -1.08).
+// Minimum phase is 30-60 samples faster at each attenuation but fails ruling 3: impulses land 2-6
 // samples off the reported latency and Dry plus the engine notches by 35-57 dB below f_pass.
-// Only 180.15 dB holds the passband to within 0.1 dB of Studio's: with the transition band fixed,
-// a lower attenuation rolls off earlier (0.12-0.35 dB down at Studio's -0.1 dB edge). The one
-// change that qualifies is the smaller input prime (no under- or overruns at any host rate and
-// block), so Live is Studio's converter with one native block of prime: 12-48 samples less.
+// The one-block input prime has no under- or overruns at any host rate and block.
 ConverterSpec converterSpec(ConverterQuality q) {
   switch (q) {
     case ConverterQuality::Live:
-      return {ConverterPhase::Linear, 180.15, NativeRateWrapper::kTransitionBandPercent, 1};
+      return {ConverterPhase::Linear, 108.0, NativeRateWrapper::kTransitionBandPercent, 1};
     case ConverterQuality::Studio:
       break;
   }

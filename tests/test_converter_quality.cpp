@@ -33,9 +33,14 @@ using namespace eg13;
 
 namespace {
 
-// Ruling 1's floors: the owner's provisional quality floors, as two constants.
+// Ruling 1's floors and ruling 3's comb limit. Owner decisions of 2026-10-23, after the first
+// sweep (task-2-report.md): the passband floor was raised from 0.1 to 0.3 dB and the comb limit
+// set to -1.1 dB, so Live is linear 108 dB. Measured worst Dry + wet notch below f_pass: Studio
+// -0.99 dB, Live -1.08 dB (both from integer-sample latency rounding).
 constexpr double kStopBandFloorDb = 96.0;
-constexpr double kRippleFloorDb = 0.1;
+constexpr double kRippleFloorDb = 0.3;   // the round trip within 0.3 dB of 1 kHz, 20 Hz .. f_pass
+constexpr double kPassbandEdgeDb = 0.1;  // f_pass: where Studio's round trip falls 0.1 dB
+constexpr double kCombFloorDb = -1.1;    // ruling 3: Dry + a unity engine path, 20 Hz .. f_pass
 
 constexpr double kTwoPi = 6.283185307179586;
 constexpr double kAmplitude = 0.5;
@@ -303,7 +308,7 @@ double passbandEdge(double host, const Native& native) {
   RoundTrip studio(converterSpec(ConverterQuality::Studio), host, native);
   const double ref = studio.levelDb(1000.0);
   double f = 1100.0;
-  while (f < host / 2.0 && studio.levelDb(f) >= ref - kRippleFloorDb) f += 100.0;
+  while (f < host / 2.0 && studio.levelDb(f) >= ref - kPassbandEdgeDb) f += 100.0;
   cache[key] = f;
   return f;
 }
@@ -468,6 +473,21 @@ TEST_CASE("Live converters meet the floors at every rate pair") {
                    << " dB (f_pass " << passbandEdge(host, native) << " Hz)");
       REQUIRE(rejection >= kStopBandFloorDb);  // input aliases and output images, ruling 1, G3
       REQUIRE(ripple <= kRippleFloorDb);       // 20 Hz .. f_pass of Studio at the same rates
+    }
+  }
+}
+
+TEST_CASE("Live keeps impulses and Dry + wet aligned (ruling 3)") {
+  const ConverterSpec live = converterSpec(ConverterQuality::Live);
+  for (double host : kHosts) {
+    for (const Native& native : kNatives) {
+      if (bypassed(host, native.rate)) continue;
+      const Alignment a = alignment(live, host, native);
+      INFO("host " << host << " native " << native.rate << " impulse error out " << a.worstOutputError << " in "
+                   << a.worstInputError << " notch " << a.deepestNotchDb << " dB");
+      REQUIRE(a.worstOutputError <= 1);
+      REQUIRE(a.worstInputError <= 1);
+      REQUIRE(a.deepestNotchDb >= kCombFloorDb);
     }
   }
 }
@@ -722,31 +742,27 @@ TEST_CASE("Live candidate report", "[.converter]") {
       c.worst48 = std::max(c.worst48, l);
       latencies += std::to_string(l) + " ";
     }
-    if (c.spec.phase == ConverterPhase::Minimum) {
-      if (alignCache.find(key) == alignCache.end()) {
-        Alignment worst;
-        for (double host : kHosts) {
-          for (const Native& native : kNatives) {
-            if (bypassed(host, native.rate)) continue;
-            const Alignment a = alignment(c.spec, host, native);
-            worst.worstOutputError = std::max(worst.worstOutputError, a.worstOutputError);
-            worst.worstInputError = std::max(worst.worstInputError, a.worstInputError);
-            worst.deepestNotchDb = std::min(worst.deepestNotchDb, a.deepestNotchDb);
-          }
+    // Ruling 3 on every candidate (owner, 2026-10-23: the comb limit binds linear phase too).
+    if (alignCache.find(key) == alignCache.end()) {
+      Alignment worst;
+      for (double host : kHosts) {
+        for (const Native& native : kNatives) {
+          if (bypassed(host, native.rate)) continue;
+          const Alignment a = alignment(c.spec, host, native);
+          worst.worstOutputError = std::max(worst.worstOutputError, a.worstOutputError);
+          worst.worstInputError = std::max(worst.worstInputError, a.worstInputError);
+          worst.deepestNotchDb = std::min(worst.deepestNotchDb, a.deepestNotchDb);
         }
-        alignCache[key] = worst;
       }
-      const Alignment& a = alignCache[key];
-      c.alignmentOk = a.worstOutputError <= 1 && a.worstInputError <= 1 && a.deepestNotchDb >= -1.0;
-      std::printf("%-8s %7.2f %5d | %9.2f %8.4f | %5s | %-34s | %4d  (align: out %+d in %+d notch %.2f dB%s)\n",
-                  "minimum", c.spec.attenuationDb, c.spec.primeBlocks, f.rejectionDb, f.rippleDb,
-                  c.primeOk ? "ok" : "FAIL", latencies.c_str(), c.worst48, a.worstOutputError, a.worstInputError,
-                  a.deepestNotchDb, c.alignmentOk ? "" : ", FAILS ruling 3");
-    } else {
-      std::printf("%-8s %7.2f %5d | %9.2f %8.4f | %5s | %-34s | %4d\n", "linear", c.spec.attenuationDb,
-                  c.spec.primeBlocks, f.rejectionDb, f.rippleDb, c.primeOk ? "ok" : "FAIL", latencies.c_str(),
-                  c.worst48);
+      alignCache[key] = worst;
     }
+    const Alignment& a = alignCache[key];
+    c.alignmentOk = a.worstOutputError <= 1 && a.worstInputError <= 1 && a.deepestNotchDb >= kCombFloorDb;
+    std::printf("%-8s %7.2f %5d | %9.2f %8.4f | %5s | %-34s | %4d  (align: out %+d in %+d notch %.2f dB%s)\n",
+                c.spec.phase == ConverterPhase::Linear ? "linear" : "minimum", c.spec.attenuationDb,
+                c.spec.primeBlocks, f.rejectionDb, f.rippleDb, c.primeOk ? "ok" : "FAIL", latencies.c_str(),
+                c.worst48, a.worstOutputError, a.worstInputError, a.deepestNotchDb,
+                c.alignmentOk ? "" : ", FAILS ruling 3");
   }
   // Ruling 1's rule: the lowest worst-case 48 kHz input-path latency; ties to linear phase, then
   // to the higher attenuation.
@@ -791,7 +807,7 @@ TEST_CASE("Live candidate report", "[.converter]") {
       const double ref = trip.levelDb(1000.0);
       const double edge = passbandEdge(48000.0, native);
       double own = 1100.0;
-      while (own < 24000.0 && trip.levelDb(own) >= ref - kRippleFloorDb) own += 100.0;
+      while (own < 24000.0 && trip.levelDb(own) >= ref - kPassbandEdgeDb) own += 100.0;
       char cell[64];
       std::snprintf(cell, sizeof(cell), "  %.0f k: %+.2f / %5.0f", native.rate / 1000.0,
                     trip.levelDb(edge - 100.0) - ref, own);
