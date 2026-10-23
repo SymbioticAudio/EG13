@@ -13,3 +13,15 @@
 [submodule "third_party/r8brain-free-src"]
 	path = third_party/r8brain-free-src
 	url = https://github.com/avaneev/r8brain-free-src.git
+[submodule "third_party/AudibleInstruments"]
+	path = third_party/AudibleInstruments
+	url = https://github.com/VCVRack/AudibleInstruments.git
+[submodule "third_party/sst-filters"]
+	path = third_party/sst-filters
+	url = https://github.com/surge-synthesizer/sst-filters.git
+[submodule "third_party/sst-basic-blocks"]
+	path = third_party/sst-basic-blocks
+	url = https://github.com/surge-synthesizer/sst-basic-blocks.git
+[submodule "third_party/simde"]
+	path = third_party/simde
+	url = https://github.com/simd-everywhere/simde.git

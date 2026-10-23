@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -70,6 +71,12 @@ inline double rms(const std::vector<float>& x, size_t start, size_t end) {
   double sum = 0.0;
   for (size_t i = start; i < end; ++i) sum += double(x[i]) * double(x[i]);
   return end > start ? std::sqrt(sum / double(end - start)) : 0.0;
+}
+
+// Index of the sample with the largest magnitude (the first, on a tie).
+inline int peakIndex(const std::vector<float>& x) {
+  return int(std::max_element(x.begin(), x.end(), [](float a, float b) { return std::fabs(a) < std::fabs(b); }) -
+             x.begin());
 }
 
 }  // namespace eg13::test

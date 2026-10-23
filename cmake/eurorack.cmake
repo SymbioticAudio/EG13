@@ -29,6 +29,27 @@ add_library(eg13_eurorack STATIC
   ${EURORACK_DIR}/rings/dsp/fm_voice.cc
   ${EURORACK_DIR}/rings/dsp/string_synth_part.cc
   ${EURORACK_DIR}/rings/resources.cc
+  ${EURORACK_DIR}/warps/dsp/modulator.cc
+  ${EURORACK_DIR}/warps/dsp/oscillator.cc
+  ${EURORACK_DIR}/warps/dsp/vocoder.cc
+  ${EURORACK_DIR}/warps/dsp/filter_bank.cc
+  ${EURORACK_DIR}/warps/resources.cc
+  ${EURORACK_DIR}/stages/segment_generator.cc
+  ${EURORACK_DIR}/stages/resources.cc
+  ${EURORACK_DIR}/tides2/ramp/ramp_extractor.cc
+  ${EURORACK_DIR}/tides2/poly_slope_generator.cc
+  ${EURORACK_DIR}/tides2/resources.cc
+  ${EURORACK_DIR}/marbles/random/discrete_distribution_quantizer.cc
+  ${EURORACK_DIR}/marbles/random/lag_processor.cc
+  ${EURORACK_DIR}/marbles/random/output_channel.cc
+  ${EURORACK_DIR}/marbles/random/quantizer.cc
+  ${EURORACK_DIR}/marbles/random/t_generator.cc
+  ${EURORACK_DIR}/marbles/random/x_y_generator.cc
+  ${EURORACK_DIR}/marbles/ramp/ramp_extractor.cc
+  ${EURORACK_DIR}/marbles/resources.cc
+  ${EURORACK_DIR}/peaks/modulations/lfo.cc
+  ${EURORACK_DIR}/peaks/modulations/multistage_envelope.cc
+  ${EURORACK_DIR}/peaks/resources.cc
   ${EURORACK_DIR}/stmlib/dsp/units.cc
   ${EG13_EURORACK_PATCHES}/stmlib/utils/random.cc)
 target_include_directories(eg13_eurorack SYSTEM BEFORE PUBLIC ${EG13_EURORACK_PATCHES})

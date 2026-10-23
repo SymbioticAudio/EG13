@@ -43,7 +43,7 @@ const EngineParamInfo kParams[8] = {
     {"Aux Mix", 0.0f, formatPercent},
 };
 
-const EngineInfo kInfo = {"plaits", "Macro Oscillator", 8, kParams, false};
+const EngineInfo kInfo = {"plaits", "Macro Oscillator", 8, kParams, false, true, 0, nullptr};
 
 // Firmware pot smoothing, per 12-sample block: Ui::Poll runs once per audio block
 // (plaits.cc:81, dsp.h:51 kBlockSize = 12) and each PotController applies
@@ -162,6 +162,7 @@ void PlaitsEngine::process(const float* const*, float* const* out, const ParamVa
     const float s = ((1.0f - mix) * float(f.out) + mix * float(f.aux)) / 32768.0f;
     out[0][i] = s;
     out[1][i] = s;
+    if (aux_) out[2][i] = float(f.aux) / 32768.0f;  // the AUX jack (plaits/dsp/voice.h Frame)
   }
 }
 

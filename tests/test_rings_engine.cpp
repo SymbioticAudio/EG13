@@ -726,3 +726,89 @@ TEST_CASE("Resonator smooths Spread per sample") {
   engine.process(nullptr, out, step, 1);
   REQUIRE(engine.smoothedSpread() == 1.0f);
 }
+
+TEST_CASE("Resonator AUX is upstream Rings' even output") {
+  REQUIRE(RingsEngine::staticInfo().hasAux);
+  constexpr int kBlocks = 200;
+  constexpr int kN = RingsEngine::kNativeBlock;
+  std::vector<float> odd, even;
+  renderUpstream(kBlocks, odd, even);
+  ParamValues p = defaults();
+  p.p[0] = 3.5f / 6.0f;  // FM Voice, as renderUpstream
+  RingsEngine engine;
+  engine.setAuxEnabled(true);
+  engine.prepare(RingsEngine::kNativeRate, 256);
+  engine.noteOn(60.0f, 1.0f);
+  std::vector<float> l(size_t(kBlocks * kN)), r(l.size()), aux(l.size());
+  for (int b = 0; b < kBlocks; ++b) {
+    float* out[3] = {l.data() + b * kN, r.data() + b * kN, aux.data() + b * kN};
+    engine.process(nullptr, out, p, kN);
+  }
+  REQUIRE(test::rms(even, 0, even.size()) > 0.001);
+  for (size_t i = 0; i < aux.size(); ++i) REQUIRE(aux[i] == even[i]);
+}
+
+// The AUX jack is the firmware's aux buffer at every polyphony and with String + Reverb (whose
+// aux the firmware negates after the reverb, part.cc:559-561), and turning AUX on leaves the
+// main outputs unchanged.
+TEST_CASE("Resonator AUX is upstream Rings' aux output at polyphony 2 and 4 and with Reverb") {
+  constexpr int kBlocks = 600;
+  constexpr int kN = RingsEngine::kNativeBlock;
+  const std::vector<int> strumBlocks = {0, 150, 300, 450};
+  const std::vector<float> notes = {57.0f, 62.0f, 66.0f, 71.0f};
+  struct Case {
+    int voices;
+    float polyParam;
+    int model;
+  };
+  for (const Case c : {Case{2, kPoly2, 3}, Case{4, kPoly4, 2}, Case{2, kPoly2, 5}, Case{4, kPoly4, 5}}) {
+    std::vector<float> odd, even;
+    stmlib::Random::Seed(1);
+    renderUpstreamPoly(c.voices, rings::ResonatorModel(c.model), strumBlocks, notes, kBlocks, odd, even);
+    ParamValues p = defaults();
+    p.p[0] = (float(c.model) + 0.5f) / 6.0f;
+    p.p[8] = c.polyParam;
+    std::vector<float> l[2], r[2], aux(size_t(kBlocks * kN));
+    for (int withAux = 0; withAux < 2; ++withAux) {
+      RingsEngine engine;
+      engine.setAuxEnabled(withAux == 1);
+      engine.prepare(RingsEngine::kNativeRate, 256);
+      stmlib::Random::Seed(1);
+      l[withAux].assign(size_t(kBlocks * kN), 0.0f);
+      r[withAux].assign(size_t(kBlocks * kN), 0.0f);
+      size_t next = 0;
+      for (int b = 0; b < kBlocks; ++b) {
+        if (next < strumBlocks.size() && strumBlocks[next] == b) engine.noteOn(notes[next++], 1.0f);
+        float* out[3] = {l[withAux].data() + b * kN, r[withAux].data() + b * kN, aux.data() + b * kN};
+        engine.process(nullptr, out, p, kN);
+      }
+    }
+    INFO("voices " << c.voices << " model " << c.model);
+    REQUIRE(test::rms(even, 0, even.size()) > 0.001);
+    REQUIRE(aux == even);
+    REQUIRE(l[1] == l[0]);
+    REQUIRE(r[1] == r[0]);
+  }
+}
+
+TEST_CASE("A new note's velocity glides the Resonator's gain over 5 ms") {
+  RingsEngine engine;
+  engine.prepare(RingsEngine::kNativeRate, 256);
+  std::vector<float> l(256), r(256);
+  float* out[2] = {l.data(), r.data()};
+  ParamValues p = defaults();
+  p.p[8] = kPoly2;
+  engine.noteOn(60.0f, 1.0f);
+  engine.process(nullptr, out, p, 256);
+  REQUIRE(engine.velocityGain() == 1.0f);
+  engine.noteOn(64.0f, 0.25f);
+  engine.process(nullptr, out, p, 24);  // one native block, half a millisecond
+  REQUIRE(engine.velocityGain() > 0.8f);
+  REQUIRE(engine.velocityGain() < 1.0f);
+  for (int b = 0; b < 10; ++b) engine.process(nullptr, out, p, 256);  // 53 ms
+  REQUIRE(std::fabs(engine.velocityGain() - 0.25f) < 1e-3f);
+  engine.reset();
+  engine.noteOn(60.0f, 0.5f);
+  engine.process(nullptr, out, p, 24);
+  REQUIRE(engine.velocityGain() == 0.5f);  // a note after a reset starts at its velocity
+}

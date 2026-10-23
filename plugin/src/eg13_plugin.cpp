@@ -27,6 +27,21 @@ struct Plugin {
 
 Plugin* self(const clap_plugin_t* p) { return static_cast<Plugin*>(p->plugin_data); }
 
+// The host's transport (CLAP beat times are fixed point) for the beat clock.
+Transport transportFrom(const clap_event_transport_t& t) {
+  Transport out;
+  out.playing = (t.flags & CLAP_TRANSPORT_IS_PLAYING) != 0;
+  out.hasTempo = (t.flags & CLAP_TRANSPORT_HAS_TEMPO) != 0;
+  out.tempo = t.tempo;
+  out.hasBeats = (t.flags & CLAP_TRANSPORT_HAS_BEATS_TIMELINE) != 0;
+  out.beats = double(t.song_pos_beats) / double(CLAP_BEATTIME_FACTOR);
+  out.barStart = double(t.bar_start) / double(CLAP_BEATTIME_FACTOR);
+  out.hasTimeSignature = (t.flags & CLAP_TRANSPORT_HAS_TIME_SIGNATURE) != 0;
+  out.numerator = t.tsig_num;
+  out.denominator = t.tsig_denom;
+  return out;
+}
+
 // ---- events -----------------------------------------------------------------
 
 void handleEvent(Plugin* plugin, const clap_event_header_t* hdr) {
@@ -44,9 +59,28 @@ void handleEvent(Plugin* plugin, const clap_event_header_t* hdr) {
       const auto* ev = reinterpret_cast<const clap_event_note_t*>(hdr);
       if (ev->key < 0) {
         plugin->synth.allNotesOff();
+      } else if (hdr->type == CLAP_EVENT_NOTE_OFF) {
+        plugin->synth.noteOff(ev->channel, ev->key, float(ev->velocity));  // release velocity
       } else {
         plugin->synth.noteOff(ev->channel, ev->key);
       }
+      break;
+    }
+    case CLAP_EVENT_NOTE_EXPRESSION: {
+      // Provisional ruling 12: tuning, pressure and brightness; the others are not used yet.
+      const auto* ev = reinterpret_cast<const clap_event_note_expression_t*>(hdr);
+      if (ev->key > 127) break;  // key -1 (a wildcard): every note, as Part::noteExpression reads it
+      if (ev->expression_id == CLAP_NOTE_EXPRESSION_TUNING) {
+        plugin->synth.noteExpression(ev->channel, ev->key, Expression::Bend, float(ev->value));
+      } else if (ev->expression_id == CLAP_NOTE_EXPRESSION_PRESSURE) {
+        plugin->synth.noteExpression(ev->channel, ev->key, Expression::Pressure, float(ev->value));
+      } else if (ev->expression_id == CLAP_NOTE_EXPRESSION_BRIGHTNESS) {
+        plugin->synth.noteExpression(ev->channel, ev->key, Expression::Slide, float(ev->value));
+      }
+      break;
+    }
+    case CLAP_EVENT_TRANSPORT: {
+      plugin->synth.setTransport(transportFrom(*reinterpret_cast<const clap_event_transport_t*>(hdr)));
       break;
     }
     case CLAP_EVENT_PARAM_VALUE: {
@@ -62,10 +96,16 @@ void handleEvent(Plugin* plugin, const clap_event_header_t* hdr) {
       const int d2 = ev->data[2] & 0x7F;
       if (status == 0x90 && d2 > 0) {
         plugin->synth.noteOn(channel, d1, float(d2) / 127.0f);
-      } else if (status == 0x80 || status == 0x90) {
-        plugin->synth.noteOff(channel, d1);
+      } else if (status == 0x80) {
+        plugin->synth.noteOff(channel, d1, float(d2) / 127.0f);  // with release velocity
+      } else if (status == 0x90) {
+        plugin->synth.noteOff(channel, d1);  // velocity 0: no release velocity (64)
+      } else if (status == 0xA0) {
+        plugin->synth.polyPressure(channel, d1, float(d2) / 127.0f);
       } else if (status == 0xB0) {
         plugin->synth.controlChange(channel, d1, d2);
+      } else if (status == 0xD0) {
+        plugin->synth.channelPressure(channel, float(d1) / 127.0f);
       } else if (status == 0xE0) {
         plugin->synth.pitchBend(channel, float(((d2 << 7) | d1) - 8192) / 8192.0f);
       }
@@ -119,7 +159,7 @@ bool notePortsGet(const clap_plugin_t*, uint32_t index, bool isInput,
                   clap_note_port_info_t* info) {
   if (!isInput || index != 0) return false;
   info->id = 0;
-  info->supported_dialects = CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI;
+  info->supported_dialects = CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI | CLAP_NOTE_DIALECT_MIDI_MPE;
   info->preferred_dialect = CLAP_NOTE_DIALECT_CLAP;
   std::snprintf(info->name, sizeof(info->name), "%s", "Notes");
   return true;
@@ -285,6 +325,7 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
   eg13::ScopedFlushDenormals flushDenormals;
   Plugin* plugin = self(p);
   plugin->synth.beginBlock();
+  if (proc->transport != nullptr) plugin->synth.setTransport(transportFrom(*proc->transport));
   const uint32_t frames = proc->frames_count;
   const uint32_t numEvents = proc->in_events->size(proc->in_events);
 

@@ -1,11 +1,17 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <algorithm>
+#include <iterator>
 #include <limits>
 #include <set>
 #include <string>
 
 #include "engine/audio_input_engine.h"
+#include "engine/engine_registry.h"
+#include "engine/ripples_engine.h"
+#include "engine/tides_engine.h"
+#include "mod/mod_factory.h"
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 
@@ -21,10 +27,13 @@ std::string text(size_t index, double value) {
 
 }  // namespace
 
-TEST_CASE("The table has 68 parameters with unique IDs") {
+TEST_CASE("The table has 286 parameters with unique IDs") {
   REQUIRE(kSourceParamCount == 16);
-  REQUIRE(kParamsPerPart == 32);
-  REQUIRE(kParamCount == 68);
+  REQUIRE(kFilterParamCount == 4);
+  REQUIRE(kShaperParamCount == 12);
+  REQUIRE(kModSlotParamCount == 16);
+  REQUIRE(kParamsPerPart == 140);
+  REQUIRE(kParamCount == 286);
   std::set<uint32_t> ids;
   for (size_t i = 0; i < kParamCount; ++i) ids.insert(paramSpec(i).id);
   REQUIRE(ids.size() == kParamCount);
@@ -136,10 +145,17 @@ TEST_CASE("Source P9..P16 have their own IDs after P1..P8") {
       REQUIRE(paramSpec(sourceParamIndex(part, p)).maxValue == 1.0f);
     }
   }
-  // Layout per part: selector, P1..P16, then the part settings.
-  REQUIRE(partParamIndex(0, PartParam::Level) == 17);
-  REQUIRE(sourceEngineParamIndex(1) == 32);
-  REQUIRE(masterParamIndex(MasterParam::Level) == 64);
+  // Layout per part: Source selector + P1..P16, Filter + P1..P4, Shaper + P1..P12, four mod slots
+  // (selector + P1..P16 + Scope), 12 route amounts, part settings.
+  REQUIRE(filterEngineParamIndex(0) == 17);
+  REQUIRE(shaperEngineParamIndex(0) == 22);
+  REQUIRE(modEngineParamIndex(0, 0) == 35);
+  REQUIRE(modScopeParamIndex(0, 0) == 52);
+  REQUIRE(modEngineParamIndex(0, 3) == 89);
+  REQUIRE(routeAmountParamIndex(0, 0) == 107);
+  REQUIRE(partParamIndex(0, PartParam::Level) == 119);
+  REQUIRE(sourceEngineParamIndex(1) == 140);
+  REQUIRE(masterParamIndex(MasterParam::Level) == 280);
 }
 
 TEST_CASE("Engine selector and Input source format readable values") {
@@ -170,4 +186,255 @@ TEST_CASE("Source parameters format and name through the selected engine") {
   REQUIRE(std::string(paramSpec(sourceParamIndex(1, 15)).name) == "(unused)");
   REQUIRE(paramDefault(sourceParamIndex(1, 15), PluginKind::Instrument) == 0.0f);
   REQUIRE(paramDefault(sourceParamIndex(0, 15), PluginKind::Effect) == 0.0f);
+}
+
+TEST_CASE("Filter and Shaper parameters have permanent IDs") {
+  for (int part = 0; part < kNumParts; ++part) {
+    const uint32_t p = uint32_t(part);
+    REQUIRE(paramSpec(filterEngineParamIndex(part)).id == params::id(p, params::Slot::Filter, 0));
+    REQUIRE(paramSpec(shaperEngineParamIndex(part)).id == params::id(p, params::Slot::Shaper, 0));
+    for (int i = 0; i < int(kFilterParamCount); ++i) {
+      REQUIRE(paramSpec(filterParamIndex(part, i)).id == params::id(p, params::Slot::Filter, uint32_t(i + 1)));
+      REQUIRE(paramSpec(filterParamIndex(part, i)).maxValue == 1.0f);
+      REQUIRE_FALSE(paramSpec(filterParamIndex(part, i)).stepped);
+    }
+    for (int i = 0; i < int(kShaperParamCount); ++i) {
+      REQUIRE(paramSpec(shaperParamIndex(part, i)).id == params::id(p, params::Slot::Shaper, uint32_t(i + 1)));
+    }
+    for (size_t selector : {filterEngineParamIndex(part), shaperEngineParamIndex(part)}) {
+      REQUIRE(paramSpec(selector).stepped);
+      REQUIRE(paramSpec(selector).minValue == 0.0f);
+      REQUIRE(paramSpec(selector).maxValue == 31.0f);
+      REQUIRE(std::string(paramSpec(selector).name) == "Type");
+    }
+  }
+  REQUIRE(std::string(paramSpec(filterParamIndex(1, 0)).module) == "Part B/Filter");
+  REQUIRE(std::string(paramSpec(shaperParamIndex(0, 11)).module) == "Part A/Shaper");
+  // Source IDs are unchanged.
+  REQUIRE(paramSpec(sourceParamIndex(0, 0)).id == params::id(0, params::Slot::Source, 1));
+  REQUIRE(paramSpec(sourceParamIndex(1, 15)).id == params::id(1, params::Slot::Source, 16));
+}
+
+TEST_CASE("Filter and Shaper defaults per plugin") {
+  for (int part = 0; part < kNumParts; ++part) {
+    // The instrument init patch's filter (M4, provisional ruling 28).
+    REQUIRE(paramDefault(filterEngineParamIndex(part), PluginKind::Instrument) == float(FilterEngine::StateVariable));
+    REQUIRE(paramDefault(shaperEngineParamIndex(part), PluginKind::Instrument) == 0.0f);
+    REQUIRE(paramDefault(shaperEngineParamIndex(part), PluginKind::Effect) == 0.0f);
+  }
+  REQUIRE(paramDefault(filterEngineParamIndex(0), PluginKind::Effect) == float(FilterEngine::Analog));
+  REQUIRE(paramDefault(filterEngineParamIndex(1), PluginKind::Effect) == 0.0f);
+  REQUIRE(paramDefault(filterParamIndex(0, 0), PluginKind::Effect) ==
+          RipplesEngine::staticInfo().params[0].defaultValue);
+  // Filter/Shaper P host defaults are one value per position, whatever the default engine
+  // (final review I1): Off ignores them, the other engines get a sensible reset.
+  REQUIRE(paramDefault(filterParamIndex(0, 0), PluginKind::Instrument) == 0.7f);  // the init patch's cutoff
+  REQUIRE(paramDefault(filterParamIndex(1, 0), PluginKind::Effect) == 1.0f);
+  REQUIRE(paramDefault(filterParamIndex(1, 1), PluginKind::Instrument) == 0.0f);
+  REQUIRE(paramDefault(shaperParamIndex(0, 1), PluginKind::Instrument) == 0.5f);  // EQ gain 0 dB
+  REQUIRE(paramDefault(shaperParamIndex(1, 3), PluginKind::Effect) == 0.5f);
+  REQUIRE(std::string(paramSpec(filterParamIndex(0, 0)).name) == "Cutoff");  // the SVF's
+}
+
+TEST_CASE("Filter and Shaper parameters name and format through their engines") {
+  char buf[64];
+  const PartEngines analog{0, int(FilterEngine::Analog), int(ShaperEngine::Eq)};
+  REQUIRE(std::string(paramName(filterParamIndex(0, 0), analog)) == "Frequency");
+  formatParam(filterParamIndex(0, 0), 1.0, buf, sizeof(buf), analog);
+  REQUIRE(std::string(buf) == "20.00 kHz");
+  REQUIRE(std::string(paramName(filterParamIndex(0, 3), analog)) == "(unused)");
+  formatParam(filterParamIndex(0, 3), 0.5, buf, sizeof(buf), analog);
+  REQUIRE(std::string(buf) == "-");
+  REQUIRE(std::string(paramName(shaperParamIndex(1, 11), analog)) == "Output");
+  formatParam(shaperParamIndex(1, 11), 0.5 / 7.0, buf, sizeof(buf), analog);
+  REQUIRE(std::string(buf) == "EQ");
+  const PartEngines off;
+  REQUIRE(std::string(paramName(shaperParamIndex(0, 0), off)) == "(unused)");
+  REQUIRE(std::string(paramName(sourceParamIndex(0, 0), off)) == "Model");
+  formatParam(filterEngineParamIndex(0), 1, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Analog Filter");
+  formatParam(filterEngineParamIndex(0), 3, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "State Variable Filter");
+  formatParam(filterEngineParamIndex(0), 17, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Off");
+  formatParam(shaperEngineParamIndex(0), 1, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Ring Mod / Vocoder");
+}
+
+TEST_CASE("Slot lookups find every slot parameter and selector") {
+  int counted[kNumSlotKinds] = {};
+  for (size_t i = 0; i < kParamCount; ++i) {
+    SlotKind kind = SlotKind::Source;
+    int part = -1, p = -1;
+    if (slotParamOf(i, &kind, &part, &p)) {
+      REQUIRE(slotParamIndex(kind, part, p) == i);
+      ++counted[int(kind)];
+    }
+    if (slotSelectorOf(i, &kind, &part)) REQUIRE(slotEngineParamIndex(kind, part) == i);
+  }
+  REQUIRE(counted[0] == 2 * 16);
+  REQUIRE(counted[1] == 2 * 4);
+  REQUIRE(counted[2] == 2 * 12);
+  for (int k = int(SlotKind::Mod1); k <= int(SlotKind::Mod4); ++k) REQUIRE(counted[k] == 2 * 16);
+  for (int e = 0; e < slotEngineCount(SlotKind::Filter); ++e) {
+    REQUIRE(slotEngineInfo(SlotKind::Filter, e).paramCount <= int(kFilterParamCount));
+  }
+  for (int e = 0; e < slotEngineCount(SlotKind::Shaper); ++e) {
+    REQUIRE(slotEngineInfo(SlotKind::Shaper, e).paramCount <= int(kShaperParamCount));
+  }
+  REQUIRE(slotEngineFromSelector(SlotKind::Shaper, 2.0) == 2);
+  REQUIRE(slotEngineFromSelector(SlotKind::Filter, 9.0) == 0);
+}
+
+TEST_CASE("Mod slot, scope, route and new setting IDs are stable") {
+  REQUIRE(paramSpec(modEngineParamIndex(0, 0)).id == params::id(0, params::Slot::Mod1, 0));
+  REQUIRE(paramSpec(modParamIndex(0, 0, 0)).id == params::id(0, params::Slot::Mod1, 1));
+  REQUIRE(paramSpec(modParamIndex(1, 3, 15)).id == params::id(1, params::Slot::Mod4, 16));
+  REQUIRE(paramSpec(modScopeParamIndex(0, 2)).id == params::id(0, params::Slot::Mod3, 17));
+  REQUIRE(paramSpec(routeAmountParamIndex(0, 0)).id == params::id(0, params::Slot::Matrix, 1));
+  REQUIRE(paramSpec(routeAmountParamIndex(1, 11)).id == params::id(1, params::Slot::Matrix, 12));
+  REQUIRE(paramSpec(partParamIndex(0, PartParam::MpeMode)).id == params::id(0, params::Slot::Part, 16));
+  REQUIRE(paramSpec(partParamIndex(1, PartParam::CcD)).id == params::id(1, params::Slot::Part, 21));
+  REQUIRE(paramSpec(masterParamIndex(MasterParam::VoiceGain)).id ==
+          params::id(params::kMasterPart, params::Slot::Part, 4));
+  REQUIRE(paramSpec(masterParamIndex(MasterParam::SoftClip)).id ==
+          params::id(params::kMasterPart, params::Slot::Part, 5));
+  // Earlier IDs keep their entries.
+  REQUIRE(paramIndex(params::id(0, params::Slot::Shaper, 12)) == int(shaperParamIndex(0, 11)));
+  REQUIRE(paramIndex(params::id(1, params::Slot::Part, 15)) == int(partParamIndex(1, PartParam::InputSource)));
+  REQUIRE(std::string(paramSpec(modEngineParamIndex(1, 1)).module) == "Part B/Mod 2");
+  REQUIRE(std::string(paramSpec(routeAmountParamIndex(0, 4)).module) == "Part A/Matrix");
+  REQUIRE(std::string(paramSpec(routeAmountParamIndex(0, 4)).name) == "Route 5");
+  REQUIRE(std::string(paramSpec(modScopeParamIndex(0, 0)).name) == "Scope");
+  int part = -1, slot = -1;
+  REQUIRE(modScopeOf(modScopeParamIndex(1, 3), &part, &slot));
+  REQUIRE(part == 1);
+  REQUIRE(slot == 3);
+  REQUIRE_FALSE(modScopeOf(modParamIndex(1, 3, 15), &part, &slot));
+  int route = -1;
+  REQUIRE(routeAmountOf(routeAmountParamIndex(1, 7), &part, &route));
+  REQUIRE(route == 7);
+  REQUIRE_FALSE(routeAmountOf(partParamIndex(0, PartParam::Level), &part, &route));
+}
+
+TEST_CASE("The init patches set mod engines, scopes, routes and amounts") {
+  for (int part = 0; part < kNumParts; ++part) {
+    REQUIRE(paramDefault(modEngineParamIndex(part, 0), PluginKind::Instrument) == float(ModEngineKind::Envelope));
+    REQUIRE(paramDefault(modEngineParamIndex(part, 1), PluginKind::Instrument) == float(ModEngineKind::Envelope));
+    REQUIRE(paramDefault(modEngineParamIndex(part, 2), PluginKind::Instrument) == float(ModEngineKind::Lfo));
+    REQUIRE(paramDefault(modEngineParamIndex(part, 3), PluginKind::Instrument) == 0.0f);
+    REQUIRE(paramDefault(modScopeParamIndex(part, 0), PluginKind::Instrument) == 0.0f);
+    REQUIRE(initPatchRoute(PluginKind::Instrument, part, 0) == Route{modOutputSource(0, 0), kDestAmp, kSrcVelocity});
+    REQUIRE(initPatchRoute(PluginKind::Instrument, part, 1) == Route{modOutputSource(1, 0), kDestFilterP, kSrcNone});
+    REQUIRE(initPatchRoute(PluginKind::Instrument, part, 2) == Route{modOutputSource(2, 0), kDestPitch, kSrcModWheel});
+    REQUIRE(initPatchRoute(PluginKind::Instrument, part, 3) == Route{});
+    REQUIRE(paramDefault(routeAmountParamIndex(part, 0), PluginKind::Instrument) == 1.0f);
+    REQUIRE(paramDefault(routeAmountParamIndex(part, 1), PluginKind::Instrument) == 0.3f);
+    REQUIRE(paramDefault(routeAmountParamIndex(part, 2), PluginKind::Instrument) * 24.0f == 0.5f);
+    REQUIRE(paramDefault(routeAmountParamIndex(part, 3), PluginKind::Instrument) == 0.0f);
+  }
+  REQUIRE(paramDefault(modEngineParamIndex(0, 0), PluginKind::Effect) == float(ModEngineKind::Lfo));
+  REQUIRE(paramDefault(modScopeParamIndex(0, 0), PluginKind::Effect) == 1.0f);  // per part
+  REQUIRE(paramDefault(modEngineParamIndex(1, 0), PluginKind::Effect) == 0.0f);
+  REQUIRE(initPatchRoute(PluginKind::Effect, 0, 0) == Route{modOutputSource(0, 0), kDestFilterP, kSrcNone});
+  REQUIRE(initPatchRoute(PluginKind::Effect, 1, 0) == Route{});
+  REQUIRE(paramDefault(routeAmountParamIndex(0, 0), PluginKind::Effect) == 0.2f);
+  REQUIRE(paramDefault(routeAmountParamIndex(1, 0), PluginKind::Effect) == 0.0f);
+  // The init LFO rates (provisional ruling 29).
+  REQUIRE(std::fabs(paramDefault(modParamIndex(0, 2, 2), PluginKind::Instrument) -
+                    TidesEngine::frequencyFor(5.0, TidesEngine::Medium)) < 1e-6f);
+  REQUIRE(std::fabs(paramDefault(modParamIndex(0, 0, 2), PluginKind::Effect) -
+                    TidesEngine::frequencyFor(0.25, TidesEngine::Medium)) < 1e-6f);
+  // Voice Gain -12 dB in the instrument, 0 dB in EG13 FX; Soft Clip on in both.
+  REQUIRE(paramDefault(masterParamIndex(MasterParam::VoiceGain), PluginKind::Instrument) == 0.0f);
+  REQUIRE(paramDefault(masterParamIndex(MasterParam::VoiceGain), PluginKind::Effect) == 1.0f);
+  REQUIRE(paramDefault(masterParamIndex(MasterParam::SoftClip), PluginKind::Instrument) == 1.0f);
+  REQUIRE(paramDefault(partParamIndex(0, PartParam::MpeBendRange), PluginKind::Instrument) == 48.0f);
+  REQUIRE(paramDefault(partParamIndex(0, PartParam::CcA), PluginKind::Instrument) == 2.0f);
+  REQUIRE(paramDefault(partParamIndex(0, PartParam::CcD), PluginKind::Instrument) == 16.0f);
+}
+
+TEST_CASE("Mod slot host defaults suit every mod engine") {
+  // A host's reset sets each mod P to one value whatever engine is selected (provisional ruling
+  // 1). Every engine must play sensibly there, and away from the documented init-patch rates
+  // they are the engines' own defaults, so a reset and a fresh engine agree.
+  for (int e = 1; e < kNumModEngines; ++e) {
+    const EngineInfo& info = modEngineInfo(e).engine;
+    for (int p = 0; p < info.paramCount; ++p) {
+      INFO("engine " << info.displayName << " P" << p + 1);
+      REQUIRE(paramDefault(modParamIndex(1, 3, p), PluginKind::Instrument) == info.params[p].defaultValue);
+    }
+    for (PluginKind plugin : {PluginKind::Instrument, PluginKind::Effect}) {
+      for (int slot = 0; slot < kNumModSlots; ++slot) {
+        ParamValues p;
+        for (int i = 0; i < kModParamCount; ++i) p.p[i] = paramDefault(modParamIndex(0, slot, i), plugin);
+        auto engine = makeModEngine(e);
+        engine->prepare(48000.0);
+        engine->reset();
+        float lowest[kMaxModOutputs], highest[kMaxModOutputs];
+        std::fill(std::begin(lowest), std::end(lowest), 2.0f);
+        std::fill(std::begin(highest), std::end(highest), -2.0f);
+        float out[kMaxModOutputs];
+        for (int t = 0; t < 9000; ++t) {  // 3 s, the gate toggling every half second
+          ModContext ctx;
+          ctx.gate = (t / 1500) % 2 == 0;
+          ctx.beat = double(t) * 16.0 * 2.0 / 48000.0;
+          ctx.beatsPerSample = 2.0 / 48000.0;
+          engine->process(ctx, p, 16, out);
+          for (int k = 0; k < kMaxModOutputs; ++k) {
+            REQUIRE(std::isfinite(out[k]));
+            lowest[k] = std::min(lowest[k], out[k]);
+            highest[k] = std::max(highest[k], out[k]);
+          }
+        }
+        INFO("engine " << info.displayName << " slot " << slot);
+        REQUIRE(highest[0] - lowest[0] > 0.1f);  // output 1 moves
+        for (int k = 0; k < kMaxModOutputs; ++k) {
+          REQUIRE(lowest[k] >= -1.0f);
+          REQUIRE(highest[k] <= 1.0f);
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("Mod slot and route parameters name and format through their engines and destinations") {
+  char buf[64];
+  PartEngines engines;
+  engines.mod[0] = int(ModEngineKind::Lfo);
+  engines.mod[1] = int(ModEngineKind::Envelope);
+  engines.routeDestination[0] = kDestPitch;
+  engines.routeDestination[1] = kDestFilterP;
+  REQUIRE(std::string(paramName(modParamIndex(0, 0, 1), engines)) == "Sync");
+  REQUIRE(std::string(paramName(modParamIndex(0, 0, 7), engines)) == "(unused)");
+  REQUIRE(std::string(paramName(modParamIndex(0, 1, 1), engines)) == "Attack");
+  REQUIRE(std::string(paramName(modParamIndex(0, 3, 0), engines)) == "(unused)");  // Off
+  formatParam(modParamIndex(0, 1, 1), 0.0, buf, sizeof(buf), engines);
+  REQUIRE(std::string(buf) == "1 ms");
+  formatParam(modParamIndex(0, 0, 7), 0.5, buf, sizeof(buf), engines);
+  REQUIRE(std::string(buf) == "-");
+  formatParam(modEngineParamIndex(0, 2), 3, buf, sizeof(buf), engines);
+  REQUIRE(std::string(buf) == "Random / S&H");
+  formatParam(modEngineParamIndex(0, 2), 25, buf, sizeof(buf), engines);
+  REQUIRE(std::string(buf) == "Off");
+  formatParam(modScopeParamIndex(0, 2), 1, buf, sizeof(buf), engines);
+  REQUIRE(std::string(buf) == "Per part");
+  formatParam(routeAmountParamIndex(0, 0), 0.5 / 24.0, buf, sizeof(buf), engines);
+  REQUIRE(std::string(buf) == "+0.50 st");
+  formatParam(routeAmountParamIndex(0, 1), -0.3, buf, sizeof(buf), engines);
+  REQUIRE(std::string(buf) == "-30%");
+  formatParam(routeAmountParamIndex(0, 2), 0.3, buf, sizeof(buf), engines);
+  REQUIRE(std::string(buf) == "-");  // an empty route
+  formatParam(partParamIndex(0, PartParam::MpeMode), 2, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "Upper zone");
+  formatParam(partParamIndex(0, PartParam::CcB), 74, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "CC 74");
+  formatParam(partParamIndex(0, PartParam::MpeBendRange), 48, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "+/-48 st");
+  formatParam(masterParamIndex(MasterParam::VoiceGain), 0, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "-12 dB");
+  formatParam(masterParamIndex(MasterParam::SoftClip), 1, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "On");
+  REQUIRE(clampParam(routeAmountParamIndex(0, 0), -3.0) == -1.0f);
+  REQUIRE(clampParam(modScopeParamIndex(0, 0), 0.6) == 1.0f);
 }

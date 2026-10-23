@@ -45,7 +45,7 @@ const EngineParamInfo kParams[9] = {
     {"Polyphony", 0.5f / 3.0f, formatPolyphony},  // stepped thirds; default 1 voice
 };
 
-const EngineInfo kInfo = {"rings", "Resonator", 9, kParams, true};
+const EngineInfo kInfo = {"rings", "Resonator", 9, kParams, true, true, 0, nullptr};
 
 constexpr float kMaxKnob = 0.9995f;  // Rings' own clamp for structure, damping, position
 constexpr float kTonic = 60.0f;      // reference the played note is measured from
@@ -83,7 +83,8 @@ struct RingsEngine::Impl {
 RingsEngine::RingsEngine()
     : impl_(std::make_unique<Impl>()),
       pots_(kPotLp, kInfo.paramCount, kNativeBlock),
-      spread_(kMixDeclickSeconds) {
+      spread_(kMixDeclickSeconds),
+      velocityGain_(kMixDeclickSeconds) {
   reset();
 }
 
@@ -117,6 +118,7 @@ float RingsEngine::smoothedParam(int index) const {
 void RingsEngine::prepare(double hostRate, int) {
   pitchOffset_ = float(12.0 * std::log2(kNativeRate / hostRate));
   spread_.prepare(hostRate);
+  velocityGain_.prepare(hostRate);
   reset();
 }
 
@@ -131,6 +133,7 @@ void RingsEngine::reset() {
   model_ = -1;
   pots_.reset();
   spread_.reset();
+  velocityGain_.reset();
 }
 
 void RingsEngine::noteOn(float note, float velocity) {
@@ -213,10 +216,15 @@ void RingsEngine::renderBlock(const float* const* in, const ParamValues& p, floa
   const float spreadTarget = clamp01(p.p[7]);
   for (int i = 0; i < count; ++i) {
     const float spread = spread_.next(spreadTarget);
+    const float velocity = velocityGain_.next(velocity_);
     const float odd = s.odd[i];
     const float even = evenSign * s.even[i];
-    out[0][offset + i] = (odd + (1.0f - spread) * even) * velocity_;
-    out[1][offset + i] = (even + (1.0f - spread) * odd) * velocity_;
+    out[0][offset + i] = (odd + (1.0f - spread) * even) * velocity;
+    out[1][offset + i] = (even + (1.0f - spread) * odd) * velocity;
+    // The AUX jack: the raw even output (part.cc:530-535), times velocity. It is
+    // deliberately not the sign-corrected, spread-mixed signal above: the module's
+    // AUX jack carries the unfolded even output, polarity included (preflight F18).
+    if (aux_) out[2][offset + i] = s.even[i] * velocity;
   }
 }
 

@@ -4,20 +4,32 @@
 #include <cmath>
 #include <thread>
 
+#include "util/soft_clip.h"
+
 namespace eg13 {
 
 namespace {
 constexpr double kGainSmoothingSeconds = 0.01;
+constexpr float kVoiceHeadroom = 0.25118864f;  // -12 dB (Voice Gain option 0, provisional ruling 24)
 }  // namespace
 
 Synth::Synth(PluginKind kind) : kind_(kind) {
+  for (auto& learn : learn_) learn.store(-1, std::memory_order_relaxed);
   for (auto& part : parts_) part = std::make_unique<Part>();
+  seedParts();
   loadParams(defaultSnapshot());
 }
 
 Synth::Synth(PluginKind kind, SourceFactory factory) : kind_(kind) {
+  for (auto& learn : learn_) learn.store(-1, std::memory_order_relaxed);
   for (auto& part : parts_) part = std::make_unique<Part>(factory);
+  seedParts();
   loadParams(defaultSnapshot());
+}
+
+// Each part its own random seeds (Random / S&H, the Random source). Constructors, before prepare().
+void Synth::seedParts() {
+  for (int p = 0; p < kNumParts; ++p) parts_[size_t(p)]->setSeedBase(uint32_t(p + 1) * 1000u);
 }
 
 void Synth::prepare(double sampleRate, int maxBlock) {
@@ -33,12 +45,16 @@ void Synth::prepare(double sampleRate, int maxBlock) {
   for (auto& part : partIn_) {
     for (auto& buffer : part) buffer.assign(size_t(maxBlock), 0.0f);
   }
+  for (auto& part : otherIn_) {
+    for (auto& buffer : part) buffer.assign(size_t(maxBlock), 0.0f);
+  }
   feedDelay_ = size_t(std::min(maxBlock, kFeedBlock));
   for (auto& ring : feedRing_) ring.assign(2 * feedDelay_, 0.0f);
   feedPos_ = 0;
   masterGain_.prepare(sampleRate, kGainSmoothingSeconds);
   dryGain_.prepare(sampleRate, kGainSmoothingSeconds);
   partBMute_.prepare(sampleRate, kGainSmoothingSeconds);
+  clock_.prepare(sampleRate);
   reset();
 }
 
@@ -62,6 +78,7 @@ void Synth::reset() {
   masterGain_.reset(load(masterParamIndex(MasterParam::Level)));
   dryGain_.reset(load(masterParamIndex(MasterParam::Dry)));
   partBMute_.reset(PartMode(int(load(masterParamIndex(MasterParam::Mode)))) == PartMode::Single ? 0.0f : 1.0f);
+  clock_.reset();
 }
 
 int Synth::clampChannel(int channel) { return std::clamp(channel, 0, 15); }
@@ -81,20 +98,20 @@ void Synth::noteOn(int channel, int key, float velocity) {
     if (mode == PartMode::Single && p != 0) continue;
     if (!part.acceptsChannel(channel) || !part.acceptsKey(key)) continue;
     if (mode == PartMode::Split && ((p == 0) != (key < split))) continue;
-    part.noteOn(key, velocity);
+    part.noteOn(key, velocity, channel);
     mask = uint8_t(mask | (1u << p));
   }
   routed_[channel][key] = uint8_t(routed_[channel][key] | mask);
 }
 
-void Synth::noteOff(int channel, int key) {
+void Synth::noteOff(int channel, int key, float releaseVelocity) {
   if (key < 0 || key > 127) return;
   const int first = channel < 0 ? 0 : clampChannel(channel);
   const int last = channel < 0 ? 15 : first;
   for (int ch = first; ch <= last; ++ch) {
     const uint8_t mask = routed_[ch][key];
     for (int p = 0; p < kNumParts; ++p) {
-      if (mask & (1u << p)) parts_[size_t(p)]->noteOff(key);
+      if (mask & (1u << p)) parts_[size_t(p)]->noteOff(key, releaseVelocity);
     }
     routed_[ch][key] = 0;
   }
@@ -102,11 +119,74 @@ void Synth::noteOff(int channel, int key) {
 
 void Synth::pitchBend(int channel, float value) {
   for (auto& part : parts_) {
-    if (part->acceptsChannel(channel)) part->pitchBend(value);
+    const PartSettings& s = part->settings();
+    if (s.mpe != 0 && channel >= 0 && channel != s.mpeMaster) {
+      if (part->isMemberChannel(channel)) {
+        part->memberExpression(channel, Expression::Bend, std::clamp(value, -1.0f, 1.0f) * float(s.mpeBendRange));
+      }
+    } else if (part->acceptsChannel(channel)) {
+      part->pitchBend(value);
+    }
   }
 }
 
+void Synth::channelPressure(int channel, float value) {
+  for (auto& part : parts_) {
+    if (part->isMemberChannel(channel)) {
+      part->memberExpression(channel, Expression::Pressure, value);
+    } else if (part->acceptsChannel(channel)) {
+      part->setController(PartController::ChannelPressure, value);
+    }
+  }
+}
+
+void Synth::polyPressure(int channel, int key, float value) {
+  for (auto& part : parts_) {
+    if (part->acceptsChannel(channel)) part->noteExpression(channel, key, Expression::Pressure, value);
+  }
+}
+
+void Synth::noteExpression(int channel, int key, Expression expression, float value) {
+  for (auto& part : parts_) {
+    if (part->acceptsChannel(channel)) part->noteExpression(channel, key, expression, value);
+  }
+}
+
+// Controllers a learn never takes: sustain, bank select, data entry, data increment and
+// decrement, (N)RPN and channel mode.
+static bool learnable(int cc) {
+  return cc != 0 && cc != 32 && cc != 6 && cc != 38 && cc != 64 && !(cc >= 96 && cc <= 101) && cc < 120;
+}
+
 void Synth::controlChange(int channel, int cc, int value) {
+  const float v = float(std::clamp(value, 0, 127)) / 127.0f;
+  for (int p = 0; p < kNumParts; ++p) {
+    Part& part = *parts_[size_t(p)];
+    if (!part.acceptsChannel(channel)) continue;
+    int learning = learn_[size_t(p)].load(std::memory_order_acquire);
+    if (learning >= 0 && learning < 4 && !part.isMemberChannel(channel) && learnable(cc) &&
+        learn_[size_t(p)].compare_exchange_strong(learning, -1, std::memory_order_acq_rel)) {
+      const size_t index = partParamIndex(p, PartParam(uint32_t(PartParam::CcA) + uint32_t(learning)));
+      setParam(paramSpec(index).id, double(cc));
+      queueHostUpdate({paramSpec(index).id, float(cc)});
+      engineChanged_.store(true, std::memory_order_release);
+    }
+    const bool member = part.isMemberChannel(channel);
+    if (cc == 74) {
+      if (member) {
+        part.memberExpression(channel, Expression::Slide, v);
+      } else {
+        part.setController(PartController::Slide, v);
+      }
+    }
+    if (member) continue;  // other controllers on a member channel are not per note: ignored
+    if (cc == 1) part.setController(PartController::ModWheel, v);
+    for (int k = 0; k < 4; ++k) {
+      if (cc == int(load(partParamIndex(p, PartParam(uint32_t(PartParam::CcA) + uint32_t(k)))))) {
+        part.setController(PartController(int(PartController::CcA) + k), v);
+      }
+    }
+  }
   if (cc == 64) {
     for (auto& part : parts_) {
       if (part->acceptsChannel(channel)) part->sustain(value >= 64);
@@ -135,11 +215,15 @@ bool Synth::setParam(uint32_t id, double value) {
   // it in the same block (or flush) then land on the new engine. The P values
   // are swapped before the selector is stored, so a main-thread snapshot() or
   // engineStash() never sees the new selector with the old engine's values.
-  // While the kSourceParamCount P stores are in flight it can still see the old
-  // selector with some new P values; that read is benign (display, or a state
-  // save the host repeats) and the next one is consistent.
-  for (int part = 0; part < kNumParts; ++part) {
-    if (size_t(index) == sourceEngineParamIndex(part)) switchEngine(part, sourceEngineFromSelector(clamped));
+  // While the slot's P stores are in flight it can still see the old selector
+  // with some new P values; that read is benign (display, or a state save the
+  // host repeats) and the next one is consistent. Filter and Shaper selectors
+  // swap the same way as the Source's (their slots rely on it: an engine
+  // waiting for a crossfade keeps its own settings meanwhile).
+  SlotKind kind = SlotKind::Source;
+  int part = 0;
+  if (slotSelectorOf(size_t(index), &kind, &part)) {
+    switchEngine(kind, part, slotEngineFromSelector(kind, clamped));
   }
   values_[size_t(index)].store(clamped, std::memory_order_relaxed);
   return true;
@@ -171,30 +255,66 @@ void Synth::store(const ParamSnapshot& values) {
 
 EngineStash Synth::defaultStash() {
   EngineStash stash{};
+  for (int k = 0; k < kNumSlotKinds; ++k) {
+    const SlotKind kind = SlotKind(k);
+    for (int part = 0; part < kNumParts; ++part) {
+      for (int e = 0; e < slotEngineCount(kind); ++e) {
+        const EngineInfo& info = slotEngineInfo(kind, e);
+        for (int p = 0; p < int(slotParamCount(kind)); ++p) {
+          stash[slotStashIndex(kind, part, e, p)] = p < info.paramCount ? info.params[p].defaultValue : 0.0f;
+        }
+      }
+    }
+  }
+  // Each mod engine's own scope (spec §4: Random / S&H per part, the others per voice).
   for (int part = 0; part < kNumParts; ++part) {
-    for (int e = 0; e < kNumSourceEngines; ++e) {
-      const EngineInfo& info = sourceEngineInfo(e);
-      for (int p = 0; p < int(kSourceParamCount); ++p) {
-        stash[stashIndex(part, e, p)] = p < info.paramCount ? info.params[p].defaultValue : 0.0f;
+    for (int slot = 0; slot < kNumModSlots; ++slot) {
+      for (int e = 0; e < kNumModEngines; ++e) {
+        stash[scopeStashIndex(part, slot, e)] = modEngineInfo(e).perPartByDefault ? 1.0f : 0.0f;
       }
     }
   }
   return stash;
 }
 
-void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash) {  // main thread
+void Synth::adoptEngines(const ParamSnapshot& values) {
+  for (int k = 0; k < kNumSlotKinds; ++k) {
+    const SlotKind kind = SlotKind(k);
+    for (int part = 0; part < kNumParts; ++part) {
+      currentEngine_[size_t(k)][size_t(part)] = slotEngineFromSelector(kind, values[slotEngineParamIndex(kind, part)]);
+    }
+  }
+}
+
+PatchData Synth::defaultPatch(PluginKind kind) {
+  PatchData patch;
+  for (int part = 0; part < kNumParts; ++part) {
+    for (int r = 0; r < kNumRoutes; ++r) patch.routes[size_t(part)][size_t(r)] = initPatchRoute(kind, part, r);
+  }
+  return patch;  // envelope shapes: EnvelopeShape's default, an ADSR
+}
+
+void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash, const PatchData* patch) {  // main thread
   ParamSnapshot clamped{};
   for (size_t i = 0; i < kParamCount; ++i) clamped[i] = clampParam(i, double(values[i]));
   const EngineStash s = stash ? *stash : defaultStash();
+  mainPatch_ = patch ? *patch : defaultPatch(kind_);
   if (!active_.load(std::memory_order_acquire)) {  // no audio thread can run
     store(clamped);
     for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(s[i], std::memory_order_relaxed);
     hostUpdateCount_ = 0;  // superseded by the load
-    for (int part = 0; part < kNumParts; ++part) {
-      currentEngine_[size_t(part)] = sourceEngineFromSelector(clamped[sourceEngineParamIndex(part)]);
-    }
+    adoptEngines(clamped);
+    patch_ = mainPatch_;
     pendingState_.store(kIdle, std::memory_order_release);
+    editState_.store(kIdle, std::memory_order_release);
     return;
+  }
+  // A route edit still waiting is older than this load: drop it (the load carries mainPatch_).
+  for (;;) {
+    int expected = kReady;
+    if (editState_.compare_exchange_strong(expected, kIdle, std::memory_order_acq_rel)) break;
+    if (expected == kIdle) break;
+    std::this_thread::yield();  // kApplying: the audio thread is copying the edit
   }
   for (;;) {
     int expected = kReady;  // replace a snapshot the audio thread has not taken yet
@@ -205,20 +325,65 @@ void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash) { 
   }
   pendingValues_ = clamped;
   pendingStash_ = s;
+  pendingPatch_ = mainPatch_;
   pendingState_.store(kReady, std::memory_order_release);
 }
 
-void Synth::applyPending() {  // audio thread, or main thread while inactive
-  int expected = kReady;
-  if (!pendingState_.compare_exchange_strong(expected, kApplying, std::memory_order_acq_rel)) return;
-  store(pendingValues_);
-  for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(pendingStash_[i], std::memory_order_relaxed);
-  hostUpdateCount_ = 0;  // switches from before the load are superseded by it
-  // The snapshot's P values belong to its engines: adopt them without swapping.
-  for (int part = 0; part < kNumParts; ++part) {
-    currentEngine_[size_t(part)] = sourceEngineFromSelector(pendingValues_[sourceEngineParamIndex(part)]);
+void Synth::setRoute(int part, int route, const Route& value) {  // main thread
+  if (part < 0 || part >= kNumParts || route < 0 || route >= kNumRoutes) return;
+  mainPatch_.routes[size_t(part)][size_t(route)] = value;
+  publishPatch();
+  engineChanged_.store(true, std::memory_order_release);  // the route amount's text follows it
+}
+
+void Synth::setEnvelopeShape(int part, int slot, const EnvelopeShape& shape) {  // main thread
+  if (part < 0 || part >= kNumParts || slot < 0 || slot >= kNumModSlots) return;
+  mainPatch_.shapes[size_t(part)][size_t(slot)] = sanitized(shape);
+  publishPatch();
+}
+
+// The pendingState_ protocol for patch edits: the audio thread takes the whole patch at its next
+// block; a newer edit replaces one it has not taken yet.
+void Synth::publishPatch() {
+  if (!active_.load(std::memory_order_acquire)) {
+    patch_ = mainPatch_;
+    return;
   }
-  pendingState_.store(kIdle, std::memory_order_release);
+  for (;;) {
+    int expected = kReady;
+    if (editState_.compare_exchange_strong(expected, kWriting, std::memory_order_acq_rel)) break;
+    expected = kIdle;
+    if (editState_.compare_exchange_strong(expected, kWriting, std::memory_order_acq_rel)) break;
+    std::this_thread::yield();
+  }
+  editPatch_ = mainPatch_;
+  editState_.store(kReady, std::memory_order_release);
+}
+
+// A waiting route edit is claimed before the load is looked at, and applied after it. While the
+// edit is claimed (kApplying), loadParams spins in its cancel loop and cannot publish, so a load
+// found waiting here was published before the claim; that load did not cancel this edit, so the
+// edit is the newer of the two and goes on top of it. A load published after the claim waits for
+// the next block whole (its patch with its values). Checking the load first would let an edit
+// published after the check carry a newer load's routes one block before that load's values, and
+// the load would then overwrite the edit at the next block.
+void Synth::applyPending() {  // audio thread, or main thread while inactive
+  int edit = kReady;
+  const bool haveEdit = editState_.compare_exchange_strong(edit, kApplying, std::memory_order_acq_rel);
+  int expected = kReady;
+  if (pendingState_.compare_exchange_strong(expected, kApplying, std::memory_order_acq_rel)) {
+    store(pendingValues_);
+    patch_ = pendingPatch_;  // a load's routes and shapes arrive with its values
+    for (size_t i = 0; i < kStashSize; ++i) stash_[i].store(pendingStash_[i], std::memory_order_relaxed);
+    hostUpdateCount_ = 0;  // switches from before the load are superseded by it
+    // The snapshot's P values belong to its engines: adopt them without swapping.
+    adoptEngines(pendingValues_);
+    pendingState_.store(kIdle, std::memory_order_release);
+  }
+  if (haveEdit) {  // newer than the load just applied, if any
+    patch_ = editPatch_;
+    editState_.store(kIdle, std::memory_order_release);
+  }
 }
 
 EngineStash Synth::engineStash() const {  // main thread
@@ -227,27 +392,46 @@ EngineStash Synth::engineStash() const {  // main thread
   for (size_t i = 0; i < kStashSize; ++i) {
     s[i] = pending ? pendingStash_[i] : stash_[i].load(std::memory_order_relaxed);
   }
+  for (int k = 0; k < kNumSlotKinds; ++k) {
+    const SlotKind kind = SlotKind(k);
+    for (int part = 0; part < kNumParts; ++part) {
+      const int e = engine(kind, part);
+      for (int p = 0; p < int(slotParamCount(kind)); ++p) {
+        s[slotStashIndex(kind, part, e, p)] = float(param(paramSpec(slotParamIndex(kind, part, p)).id));
+      }
+    }
+  }
   for (int part = 0; part < kNumParts; ++part) {
-    const int e = engine(part);
-    for (int p = 0; p < int(kSourceParamCount); ++p) {
-      s[stashIndex(part, e, p)] = float(param(paramSpec(sourceParamIndex(part, p)).id));
+    for (int slot = 0; slot < kNumModSlots; ++slot) {
+      const int e = engine(modSlotKind(slot), part);
+      s[scopeStashIndex(part, slot, e)] = float(param(paramSpec(modScopeParamIndex(part, slot)).id));
     }
   }
   return s;
 }
 
-int Synth::engine(int part) const {
-  return sourceEngineFromSelector(param(paramSpec(sourceEngineParamIndex(part)).id));
+int Synth::engine(SlotKind kind, int part) const {
+  return slotEngineFromSelector(kind, param(paramSpec(slotEngineParamIndex(kind, part)).id));
+}
+
+PartEngines Synth::partEngines(int part) const {
+  PartEngines e;
+  e.source = engine(SlotKind::Source, part);
+  e.filter = engine(SlotKind::Filter, part);
+  e.shaper = engine(SlotKind::Shaper, part);
+  for (int slot = 0; slot < kNumModSlots; ++slot) e.mod[slot] = engine(modSlotKind(slot), part);
+  for (int r = 0; r < kNumRoutes; ++r) e.routeDestination[r] = mainPatch_.routes[size_t(part)][size_t(r)].destination;
+  return e;
 }
 
 const char* Synth::paramName(size_t index) const {
   const int part = index < size_t(kNumParts) * kParamsPerPart ? int(index / kParamsPerPart) : 0;
-  return eg13::paramName(index, engine(part));
+  return eg13::paramName(index, partEngines(part));
 }
 
 void Synth::formatParam(size_t index, double value, char* buf, size_t size) const {
   const int part = index < size_t(kNumParts) * kParamsPerPart ? int(index / kParamsPerPart) : 0;
-  eg13::formatParam(index, value, buf, size, engine(part));
+  eg13::formatParam(index, value, buf, size, partEngines(part));
 }
 
 int Synth::takeHostUpdates(HostUpdate* out, int max) {  // audio thread
@@ -258,19 +442,28 @@ int Synth::takeHostUpdates(HostUpdate* out, int max) {  // audio thread
   return count;
 }
 
-// Same threading as setParam. Saves the old engine's P1..P16, loads the new
+// Same threading as setParam. Saves the old engine's P values, loads the new
 // engine's and queues them for the host.
-void Synth::switchEngine(int part, int next) {
-  const int previous = currentEngine_[size_t(part)];
+void Synth::switchEngine(SlotKind kind, int part, int next) {
+  int& current = currentEngine_[size_t(kind)][size_t(part)];
+  const int previous = current;
   if (next == previous) return;
-  for (int p = 0; p < int(kSourceParamCount); ++p) {
-    const size_t index = sourceParamIndex(part, p);
-    stash_[stashIndex(part, previous, p)].store(load(index), std::memory_order_relaxed);
-    const float value = stash_[stashIndex(part, next, p)].load(std::memory_order_relaxed);
+  for (int p = 0; p < int(slotParamCount(kind)); ++p) {
+    const size_t index = slotParamIndex(kind, part, p);
+    stash_[slotStashIndex(kind, part, previous, p)].store(load(index), std::memory_order_relaxed);
+    const float value = stash_[slotStashIndex(kind, part, next, p)].load(std::memory_order_relaxed);
     values_[index].store(value, std::memory_order_relaxed);
     queueHostUpdate({paramSpec(index).id, value});
   }
-  currentEngine_[size_t(part)] = next;
+  if (isModSlot(kind)) {  // a mod engine remembers its scope too
+    const int slot = modSlotIndex(kind);
+    const size_t index = modScopeParamIndex(part, slot);
+    stash_[scopeStashIndex(part, slot, previous)].store(load(index), std::memory_order_relaxed);
+    const float value = stash_[scopeStashIndex(part, slot, next)].load(std::memory_order_relaxed);
+    values_[index].store(value, std::memory_order_relaxed);
+    queueHostUpdate({paramSpec(index).id, value});
+  }
+  current = next;
   engineChanged_.store(true, std::memory_order_release);
 }
 
@@ -291,24 +484,29 @@ float Synth::softLimit(float x) {
   return std::copysign(1.0f + d / (1.0f + d), x);
 }
 
-// External = plugin input; Other part = A takes B's output delayed by exactly
-// feedDelay_ samples (whatever the block sizes), B takes A's current chunk; Both =
-// their sum. Other-part feeds pass the soft limiter.
+// The other part's output for this chunk, soft-limited (spec §2.3): A takes B's output delayed
+// by exactly feedDelay_ samples (whatever the block sizes); B takes A's current chunk.
+void Synth::feedOther(int part, int n) {
+  for (int ch = 0; ch < 2; ++ch) {
+    float* dst = otherIn_[part][ch].data();
+    for (int i = 0; i < n; ++i) {
+      const float feed = part == 0 ? feedRing_[ch][(feedPos_ + size_t(i)) % feedRing_[ch].size()]
+                                   : partOut_[0][ch][size_t(i)];
+      dst[i] = softLimit(feed);
+    }
+  }
+}
+
+// The part's Input by its Input source setting: External = plugin input; Other part = the
+// soft-limited other-part feed; Both = their sum.
 void Synth::routeInput(int part, const float* const* in, int n) {
   const int source = std::clamp(parts_[size_t(part)]->settings().inputSource, 0, 2);
   const bool external = (source == 0 || source == 2) && in != nullptr;
   const bool other = source >= 1;
   for (int ch = 0; ch < 2; ++ch) {
     float* dst = partIn_[part][ch].data();
-    for (int i = 0; i < n; ++i) {
-      float v = external ? in[ch][i] : 0.0f;
-      if (other) {
-        const float feed = part == 0 ? feedRing_[ch][(feedPos_ + size_t(i)) % feedRing_[ch].size()]
-                                     : partOut_[0][ch][size_t(i)];
-        v += softLimit(feed);
-      }
-      dst[i] = v;
-    }
+    const float* feed = otherIn_[part][ch].data();
+    for (int i = 0; i < n; ++i) dst[i] = (external ? in[ch][i] : 0.0f) + (other ? feed[i] : 0.0f);
   }
 }
 
@@ -330,7 +528,34 @@ PartSettings Synth::readPartSettings(int part) const {
   s.mono = v(PartParam::Mono) >= 0.5f;
   s.output = int(v(PartParam::Output));
   s.engine = sourceEngineFromSelector(load(sourceEngineParamIndex(part)));
+  s.filterEngine = slotEngineFromSelector(SlotKind::Filter, load(filterEngineParamIndex(part)));
+  s.shaperEngine = slotEngineFromSelector(SlotKind::Shaper, load(shaperEngineParamIndex(part)));
   s.inputSource = int(v(PartParam::InputSource));
+  // MPE zones (provisional ruling 11): the lower zone's master is channel 1, the upper zone's 16;
+  // a zone has 15 member channels, or 7 each when the other part uses the other zone.
+  s.mpe = int(v(PartParam::MpeMode));
+  s.mpeBendRange = int(v(PartParam::MpeBendRange));
+  // Only a part that plays counts: in Single mode Part B's MPE setting is ignored. Part A wins
+  // channels both parts would use (the same zone chosen twice): Part B then hears none.
+  const bool otherPlays = part == 1 || PartMode(int(load(masterParamIndex(MasterParam::Mode)))) != PartMode::Single;
+  const int other = otherPlays ? int(load(partParamIndex(1 - part, PartParam::MpeMode))) : 0;
+  if (part == 1 && s.mpe != 0 && other == s.mpe) {
+    s.mpeMaster = -1;
+    s.mpeFirst = 1;
+    s.mpeLast = 0;
+  } else if (s.mpe == 1) {
+    s.mpeMaster = 0;
+    s.mpeFirst = 1;
+    s.mpeLast = other == 2 ? 7 : 15;
+  } else if (s.mpe == 2) {
+    s.mpeMaster = 15;
+    s.mpeFirst = other == 1 ? 8 : 0;
+    s.mpeLast = 14;
+  }
+  for (int slot = 0; slot < kNumModSlots; ++slot) {
+    s.modEngine[slot] = slotEngineFromSelector(modSlotKind(slot), load(modEngineParamIndex(part, slot)));
+    s.modPerPart[slot] = load(modScopeParamIndex(part, slot)) >= 0.5f;
+  }
   return s;
 }
 
@@ -359,6 +584,7 @@ void Synth::process(const float* const* in, float* const* mainOut, float* const*
     float* outSlice[2] = {mainOut[0] + done, mainOut[1] + done};
     float* busSlice[2] = {bus2Out ? bus2Out[0] + done : nullptr, bus2Out ? bus2Out[1] + done : nullptr};
     processChunk(in ? inSlice : nullptr, outSlice, bus2Out ? busSlice : nullptr, count);
+    clock_.advance(count);
     done += count;
   }
 }
@@ -366,16 +592,41 @@ void Synth::process(const float* const* in, float* const* mainOut, float* const*
 void Synth::processChunk(const float* const* in, float* const* mainOut, float* const* bus2Out, int n) {
   bool toBus2[kNumParts];
   bool heard[kNumParts];
+  ModTiming timing;
+  timing.origin = clock_.origin();
+  timing.elapsed = clock_.elapsed();
+  timing.beatsPerSample = clock_.beatsPerSample();
+  timing.jump = clock_.jumped();
+  timing.barStart = clock_.barStart();
+  timing.beatsPerBar = clock_.beatsPerBar();
+  const float voiceGain = load(masterParamIndex(MasterParam::VoiceGain)) >= 0.5f ? 1.0f : kVoiceHeadroom;
   for (int p = 0; p < kNumParts; ++p) {  // A before B: A -> B has no delay
-    ParamValues source;
-    for (int i = 0; i < int(kSourceParamCount); ++i) source.p[i] = load(sourceParamIndex(p, i));
-    const int inputSource = parts_[size_t(p)]->settings().inputSource;
-    const bool hasInput = inputSource >= 1 || in != nullptr;
+    Part& part = *parts_[size_t(p)];
+    PartParams params;
+    for (int i = 0; i < int(kSourceParamCount); ++i) params.slots.source.p[i] = load(sourceParamIndex(p, i));
+    for (int i = 0; i < int(kFilterParamCount); ++i) params.slots.filter.p[i] = load(filterParamIndex(p, i));
+    for (int i = 0; i < int(kShaperParamCount); ++i) params.slots.shaper.p[i] = load(shaperParamIndex(p, i));
+    for (int slot = 0; slot < kNumModSlots; ++slot) {
+      for (int i = 0; i < int(kModSlotParamCount); ++i) params.mod.slot[slot].p[i] = load(modParamIndex(p, slot, i));
+      params.mod.shapes[slot] = patch_.shapes[size_t(p)][size_t(slot)];
+    }
+    for (int r = 0; r < kNumRoutes; ++r) {
+      params.mod.routes.route[r] = patch_.routes[size_t(p)][size_t(r)];
+      params.mod.routes.amount[r] = load(routeAmountParamIndex(p, r));
+    }
+    params.timing = timing;
+    params.voiceGain = voiceGain;
+    feedOther(p, n);
+    const bool hasInput = part.settings().inputSource >= 1 || in != nullptr;
     if (hasInput) routeInput(p, in, n);
     const float* partIn[2] = {partIn_[p][0].data(), partIn_[p][1].data()};
+    const float* other[2] = {otherIn_[p][0].data(), otherIn_[p][1].data()};
     float* out[2] = {partOut_[p][0].data(), partOut_[p][1].data()};
-    parts_[size_t(p)]->process(hasInput ? partIn : nullptr, out, source, n);
-    const int output = parts_[size_t(p)]->settings().output;
+    VoiceInputs inputs;
+    inputs.input = hasInput ? partIn : nullptr;
+    inputs.other = other;
+    part.process(inputs, out, params, n);
+    const int output = part.settings().output;
     heard[p] = output != 2;  // Other part only: feeds the other part, not heard
     toBus2[p] = bus2Out != nullptr && output == 1;
   }
@@ -389,6 +640,7 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
   }
   feedPos_ = (feedPos_ + size_t(n)) % ringSize;
 
+  const bool softClipOn = load(masterParamIndex(MasterParam::SoftClip)) >= 0.5f;
   for (int i = 0; i < n; ++i) {
     float main[2] = {0.0f, 0.0f};
     float bus[2] = {0.0f, 0.0f};
@@ -417,8 +669,11 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
       dryPos_ = (dryPos_ + 1) % size_t(latency_);
     }
     for (int ch = 0; ch < 2; ++ch) {
-      mainOut[ch][i] = main[ch] * gain + delayed[ch] * dry;
-      if (bus2Out != nullptr) bus2Out[ch][i] = bus[ch] * gain;
+      const float m = main[ch] * gain + delayed[ch] * dry;
+      const float b = bus[ch] * gain;
+      // The master soft clipper (owner decision 2), on both outputs after Dry.
+      mainOut[ch][i] = softClipOn ? softClip(m) : m;
+      if (bus2Out != nullptr) bus2Out[ch][i] = softClipOn ? softClip(b) : b;
     }
   }
 }
