@@ -120,7 +120,7 @@ void Synth::noteOff(int channel, int key, float releaseVelocity) {
 void Synth::pitchBend(int channel, float value) {
   for (auto& part : parts_) {
     const PartSettings& s = part->settings();
-    if (s.mpe != 0 && channel != s.mpeMaster) {
+    if (s.mpe != 0 && channel >= 0 && channel != s.mpeMaster) {
       if (part->isMemberChannel(channel)) {
         part->memberExpression(channel, Expression::Bend, std::clamp(value, -1.0f, 1.0f) * float(s.mpeBendRange));
       }
@@ -152,13 +152,18 @@ void Synth::noteExpression(int channel, int key, Expression expression, float va
   }
 }
 
+// Controllers a learn never takes: sustain, bank select, data entry, (N)RPN and channel mode.
+static bool learnable(int cc) {
+  return cc != 0 && cc != 32 && cc != 6 && cc != 38 && cc != 64 && !(cc >= 98 && cc <= 101) && cc < 120;
+}
+
 void Synth::controlChange(int channel, int cc, int value) {
   const float v = float(std::clamp(value, 0, 127)) / 127.0f;
   for (int p = 0; p < kNumParts; ++p) {
     Part& part = *parts_[size_t(p)];
     if (!part.acceptsChannel(channel)) continue;
     int learning = learn_[size_t(p)].load(std::memory_order_acquire);
-    if (learning >= 0 && learning < 4 && cc != 64 && cc != 120 && cc != 123 &&
+    if (learning >= 0 && learning < 4 && !part.isMemberChannel(channel) && learnable(cc) &&
         learn_[size_t(p)].compare_exchange_strong(learning, -1, std::memory_order_acq_rel)) {
       const size_t index = partParamIndex(p, PartParam(uint32_t(PartParam::CcA) + uint32_t(learning)));
       setParam(paramSpec(index).id, double(cc));
@@ -529,8 +534,15 @@ PartSettings Synth::readPartSettings(int part) const {
   // a zone has 15 member channels, or 7 each when the other part uses the other zone.
   s.mpe = int(v(PartParam::MpeMode));
   s.mpeBendRange = int(v(PartParam::MpeBendRange));
-  const int other = int(load(partParamIndex(1 - part, PartParam::MpeMode)));
-  if (s.mpe == 1) {
+  // Only a part that plays counts: in Single mode Part B's MPE setting is ignored. Part A wins
+  // channels both parts would use (the same zone chosen twice): Part B then hears none.
+  const bool otherPlays = part == 1 || PartMode(int(load(masterParamIndex(MasterParam::Mode)))) != PartMode::Single;
+  const int other = otherPlays ? int(load(partParamIndex(1 - part, PartParam::MpeMode))) : 0;
+  if (part == 1 && s.mpe != 0 && other == s.mpe) {
+    s.mpeMaster = -1;
+    s.mpeFirst = 1;
+    s.mpeLast = 0;
+  } else if (s.mpe == 1) {
     s.mpeMaster = 0;
     s.mpeFirst = 1;
     s.mpeLast = other == 2 ? 7 : 15;

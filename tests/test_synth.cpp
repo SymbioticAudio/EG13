@@ -1795,3 +1795,50 @@ TEST_CASE("Polyphonic pressure, note expressions and release velocity reach thei
   run(synth, out, 0, kBlock);
   REQUIRE(a.lastControl(2).params.source.p[1] == kDefaultReleaseVelocity);
 }
+
+TEST_CASE("A controller with no learn pending leaves CC A alone") {
+  Synth synth(PluginKind::Instrument, sine);
+  synth.prepare(kRate, kBlock);
+  HostUpdate updates[kMaxHostUpdates];
+  synth.takeHostUpdates(updates, int(kMaxHostUpdates));
+  synth.takeEngineChanged();
+  const double before = synth.param(partId(0, PartParam::CcA));
+  synth.controlChange(0, 33, 127);
+  REQUIRE(synth.param(partId(0, PartParam::CcA)) == before);
+  REQUIRE(synth.takeHostUpdates(updates, int(kMaxHostUpdates)) == 0);
+  REQUIRE_FALSE(synth.takeEngineChanged());
+}
+
+TEST_CASE("Single mode ignores Part B's zone; the same zone twice goes to Part A") {
+  Synth synth(PluginKind::Instrument, sine);
+  synth.setParam(partId(0, PartParam::MpeMode), 1);
+  synth.setParam(partId(1, PartParam::MpeMode), 2);  // Part B is off in Single mode
+  synth.prepare(kRate, kBlock);
+  Stereo out(kBlock);
+  run(synth, out, 0, kBlock);
+  REQUIRE(synth.part(0).isMemberChannel(14));
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Multi));
+  run(synth, out, 0, kBlock);
+  REQUIRE_FALSE(synth.part(0).isMemberChannel(14));
+  synth.setParam(partId(1, PartParam::MpeMode), 1);  // both want the lower zone
+  run(synth, out, 0, kBlock);
+  REQUIRE(synth.part(0).isMemberChannel(14));
+  synth.noteOn(2, 60, 1.0f);
+  run(synth, out, 0, kBlock);
+  REQUIRE(synth.activeVoiceCount(0) == 1);
+  REQUIRE(synth.activeVoiceCount(1) == 0);
+}
+
+TEST_CASE("Learning skips MPE member channels and reserved controllers, and stays armed") {
+  Synth synth(PluginKind::Instrument, sine);
+  synth.setParam(partId(0, PartParam::MpeMode), 1);
+  synth.prepare(kRate, kBlock);
+  Stereo out(kBlock);
+  run(synth, out, 0, kBlock);
+  synth.learnCc(0, 1);
+  synth.controlChange(3, 33, 127);  // a member channel
+  for (int cc : {0, 32, 6, 38, 64, 98, 99, 100, 101, 120, 121, 123, 127}) synth.controlChange(0, cc, 127);
+  REQUIRE(synth.param(partId(0, PartParam::CcB)) == 4.0);  // still the default
+  synth.controlChange(0, 33, 127);  // the master channel
+  REQUIRE(synth.param(partId(0, PartParam::CcB)) == 33.0);
+}

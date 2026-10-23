@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -127,7 +128,7 @@ class Synth {
   void allNotesOff();
   // Main thread: the next controller message on a channel the part hears sets CC A..D (slot
   // 0..3) to its number; -1 cancels. For EG13's interface (M6).
-  void learnCc(int part, int slot) { learn_[size_t(part)].store(slot, std::memory_order_release); }
+  void learnCc(int part, int slot) { learn_[size_t(std::clamp(part, 0, kNumParts - 1))].store(slot, std::memory_order_release); }
 
   // Audio thread while active, main thread while inactive. Never from both at once.
   bool setParam(uint32_t id, double value);
