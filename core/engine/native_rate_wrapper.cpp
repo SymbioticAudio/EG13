@@ -124,6 +124,10 @@ void NativeRateWrapper::prepare(double hostRate, int maxBlock) {
   engineLatency_ = int(std::lround(double(inner_->nativeLatency()) * hostRate / native));
   latency_ += engineLatency_;
   if (usesInput_) inputLatency_ += engineLatency_;
+  if (bypass_ && wholeBlocks_) {  // the whole-block FIFO: one native block, in host samples
+    latency_ += nativeBlock_;
+    if (usesInput_) inputLatency_ += nativeBlock_;
+  }
   extra_ = 0;
   for (auto& line : delay_) line.clear();
   reset();
@@ -169,6 +173,9 @@ void NativeRateWrapper::restartConversion() {
   outPath_.reset();
   lastInConverted_ = bypass_ ? 0 : inChannels_;
   lastOutConverted_ = bypass_ ? 0 : outChannels_;
+  wholePos_ = 0;
+  for (auto& block : native_) std::fill(block.begin(), block.end(), 0.0f);
+  for (auto& block : nativeIn_) std::fill(block.begin(), block.end(), 0.0f);
 }
 
 void NativeRateWrapper::noteOn(float note, float velocity) { inner_->noteOn(note, velocity); }
@@ -181,7 +188,9 @@ const EngineInfo& NativeRateWrapper::info() const { return inner_->info(); }
 
 void NativeRateWrapper::process(const float* const* in, float* const* out, const ParamValues& p,
                                 int n) {
-  if (bypass_) {
+  if (bypass_ && wholeBlocks_) {
+    processWholeBlocks(in, out, p, n);
+  } else if (bypass_) {
     inner_->process(usesInput_ ? in : nullptr, out, p, n);
   } else {
     if (restartPending_) restartConversion();  // after an output fallback (fallBackOutput)
@@ -581,6 +590,27 @@ void NativeRateWrapper::renderNativeBlock(const ParamValues& p) {
   lastOutConverted_ = active;
   fifoRead_ = 0;
   fifoSize_ = size_t(produced);
+}
+
+// Each host sample enters the input block and leaves from the output block at the same
+// position, so everything is one native block late; a full input block renders the next output
+// block. As on the converted path, absent inputs read as silence, and the engine gets the
+// P's of the call in which its block fills.
+void NativeRateWrapper::processWholeBlocks(const float* const* in, float* const* out, const ParamValues& p,
+                                           int n) {
+  const float* nativeIn[kMaxChannels] = {nativeIn_[0].data(), nativeIn_[1].data(), nativeIn_[2].data(),
+                                         nativeIn_[3].data()};
+  float* native[kMaxChannels] = {native_[0].data(), native_[1].data(), native_[2].data(), native_[3].data()};
+  for (int i = 0; i < n; ++i) {
+    for (int ch = 0; ch < inChannels_; ++ch) {
+      nativeIn_[ch][wholePos_] = in != nullptr && in[ch] != nullptr ? in[ch][i] : 0.0f;
+    }
+    for (int ch = 0; ch < outChannels_; ++ch) out[ch][i] = native_[ch][wholePos_];
+    if (++wholePos_ == size_t(nativeBlock_)) {
+      inner_->process(usesInput_ ? nativeIn : nullptr, native, p, nativeBlock_);
+      wholePos_ = 0;
+    }
+  }
 }
 
 void NativeRateWrapper::applyExtraDelay(float* const* out, int n) {

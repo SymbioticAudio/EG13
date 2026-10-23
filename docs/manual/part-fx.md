@@ -32,6 +32,7 @@ Every note the part plays is also sent to the Part FX: a voice trigger, not a le
 - **Granular:** each note starts a grain trigger.
 - **Granular Delay:** with *Seed* set to *Notes*, each note is a seed.
 - **Resonator:** each note strums it at that note's pitch.
+- **Reverb:** ignores notes.
 
 The note and the controls take effect after the voices' delay, on a 16-sample grid, so they line up with the sound they act on.
 
@@ -49,4 +50,13 @@ Based on Rings. To be written when the engine arrives (M5 Task 7).
 
 ## Reverb
 
-Uses the reverb of Elements on its own. To be written when the engine arrives (M5 Task 3).
+The reverb at the end of Elements (the module behind the Modal Synth), used on its own, with its controls brought out separately. It runs at the module's own rate of 32 kHz, so, as on the module, everything that passes through it, the dry part included, loses the very top of the treble.
+
+- **Amount** (P1): the module's own dry/wet crossfade. 0 % is the dry sound only, 100 % the reverb only, 50 % (the default) an equal mix.
+- **Time** (P2): how long the tail rings, from short (0 %) to very long (100 %). The range is the one Clouds uses for its reverb of the same design.
+- **Diffusion** (P3): how quickly the echoes smear into a smooth wash. Low settings keep more of the separate early echoes. The range is Elements' own, so it is a subtle control.
+- **Brightness** (P4): a low-pass inside the reverb's loop. Low settings make the tail darker as it decays; high settings keep it bright. The range is Clouds' too.
+- **Freeze** (P9): on (50 % or more), the reverb holds its current tail indefinitely and ignores new input, as Elements does at the top of its Space range. While frozen, Time and Brightness have no effect (the tail neither decays nor darkens); Amount still sets how much of the frozen tail you hear against the dry sound. Turning Freeze off lets the tail decay again with the current Time.
+- P5 to P8 and P10 to P16 are unused.
+
+On the module one *Space* knob moves the amount and the time together, and the diffusion and brightness are fixed by each patch. Here they are four separate controls, so any of them can be set or modulated on its own. The sound enters the reverb at the module's fixed input gain (0.2).

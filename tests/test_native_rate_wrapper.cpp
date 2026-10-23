@@ -841,3 +841,169 @@ TEST_CASE("After a fallback the output is aligned again") {
     REQUIRE(worst <= 1e-3);
   }
 }
+
+// Preflight ruling G8: setWholeBlocks(true) runs a bypassed engine through a one-native-block
+// FIFO, so it only ever sees whole native blocks whatever the host slicing, and the wrapper's
+// latency grows by one native block.
+namespace {
+
+// Passes its input through and marks the first sample of every call with +1 on L; records the
+// smallest and largest call.
+class CallMarkEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int) override {}
+  void reset() override {}
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  void process(const float* const* in, float* const* out, const ParamValues&, int n) override {
+    smallest = std::min(smallest, n);
+    largest = std::max(largest, n);
+    for (int i = 0; i < n; ++i) {
+      out[0][i] = (in ? in[0][i] : 0.0f) + (i == 0 ? 1.0f : 0.0f);
+      out[1][i] = in ? in[1][i] : 0.0f;
+    }
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"callmark", "Call mark", 0, nullptr, true, false, 0, nullptr};
+    return kInfo;
+  }
+  int smallest = 1 << 30;
+  int largest = 0;
+};
+
+}  // namespace
+
+TEST_CASE("Whole blocks: a bypassed engine sees only native blocks, one block late") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  constexpr int kBlock = 16;
+  const size_t n = 3000;
+  Channels in(n);
+  for (size_t i = 0; i < n; ++i) in.c[0][i] = in.c[1][i] = float(0.5 * std::sin(0.013 * double(i)));
+  std::vector<Channels> outs;
+  for (int chunk : {1, 7, 129}) {
+    auto engine = std::make_unique<CallMarkEngine>();
+    CallMarkEngine* probe = engine.get();
+    NativeRateWrapper w(std::move(engine), 32000.0, kBlock);
+    w.setQuality(q);
+    w.setWholeBlocks(true);
+    REQUIRE(w.wholeBlocks());
+    w.prepare(32000.0, 256);
+    REQUIRE(w.latencySamples() == kBlock);
+    REQUIRE(w.inputLatencySamples() == kBlock);
+    outs.push_back(runAll(w, in, false, chunk));
+    INFO("chunk " << chunk);
+    REQUIRE(probe->smallest == kBlock);
+    REQUIRE(probe->largest == kBlock);
+  }
+  REQUIRE(outs[0].c[0] == outs[1].c[0]);
+  REQUIRE(outs[0].c[0] == outs[2].c[0]);
+  REQUIRE(outs[0].c[1] == outs[1].c[1]);
+  REQUIRE(outs[0].c[1] == outs[2].c[1]);
+  // Exactly the input one native block late, with a call mark every native block.
+  for (size_t i = 0; i < n; ++i) {
+    INFO("sample " << i);
+    const float expectedR = i >= kBlock ? in.c[1][i - kBlock] : 0.0f;
+    const float expectedL = i >= kBlock ? in.c[0][i - kBlock] + (i % kBlock == 0 ? 1.0f : 0.0f) : 0.0f;
+    REQUIRE(outs[0].c[1][i] == expectedR);
+    REQUIRE(outs[0].c[0][i] == expectedL);
+  }
+}
+
+TEST_CASE("Whole blocks: onset after reset, AUX, extra delay and the engine's own latency") {
+  // A note before the first block is rendered into it and leaves one native block later.
+  NativeRateWrapper impulse(std::make_unique<test::ImpulseEngine>(), 48000.0, 12);
+  impulse.setWholeBlocks(true);
+  impulse.prepare(48000.0, 256);
+  REQUIRE(impulse.latencySamples() == 12);
+  REQUIRE(impulse.inputLatencySamples() == 0);  // the engine reads no input
+  render(impulse, ParamValues{}, 100, 7);
+  impulse.reset();
+  impulse.noteOn(60.0f, 1.0f);
+  auto out = render(impulse, ParamValues{}, 200, 5);
+  REQUIRE(test::peakIndex(out) == 12);
+  REQUIRE(out[12] == 1.0f);
+
+  impulse.setExtraDelay(30);
+  REQUIRE(impulse.latencySamples() == 42);
+  impulse.reset();
+  impulse.noteOn(60.0f, 1.0f);
+  out = render(impulse, ParamValues{}, 200, 9);
+  REQUIRE(test::peakIndex(out) == 42);
+
+  NativeRateWrapper aux(std::make_unique<test::AuxImpulseEngine>(), 48000.0, 12);
+  aux.setAuxEnabled(true);
+  aux.setWholeBlocks(true);
+  aux.prepare(48000.0, 256);
+  aux.noteOn(60.0f, 1.0f);
+  const Channels a = runAll(aux, Channels(200), false, 3);
+  REQUIRE(test::peakIndex(a.c[2]) == 12);
+  REQUIRE(a.c[2][12] == 1.0f);
+
+  NativeRateWrapper fixed(std::make_unique<test::FixedLatencyEngine>(), 96000.0, 60);
+  fixed.setWholeBlocks(true);
+  fixed.prepare(96000.0, 256);
+  REQUIRE(fixed.latencySamples() == 120);
+  REQUIRE(fixed.inputLatencySamples() == 120);
+  Channels in(2000);
+  in.c[0][500] = 1.0f;
+  REQUIRE(test::peakIndex(runAll(fixed, in, false, 37).c[0]) == 620);
+}
+
+TEST_CASE("Whole blocks change nothing when unset or when converting") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  {  // unset (the default): the bypass passes each call straight through
+    auto engine = std::make_unique<CallMarkEngine>();
+    CallMarkEngine* probe = engine.get();
+    NativeRateWrapper w(std::move(engine), 32000.0, 16);
+    REQUIRE_FALSE(w.wholeBlocks());
+    w.setQuality(q);
+    w.prepare(32000.0, 256);
+    REQUIRE(w.latencySamples() == 0);
+    REQUIRE(w.inputLatencySamples() == 0);
+    Channels in(500);
+    in.c[0][3] = 0.5f;
+    const Channels out = runAll(w, in, false, 7);
+    REQUIRE(probe->largest == 7);
+    REQUIRE(out.c[0][3] == 0.5f);
+    REQUIRE(out.c[0][0] == 1.0f);
+  }
+  for (double rate : {44100.0, 48000.0, 96000.0}) {
+    NativeRateWrapper plain(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+    NativeRateWrapper whole(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+    plain.setQuality(q);
+    whole.setQuality(q);
+    whole.setWholeBlocks(true);
+    plain.prepare(rate, 256);
+    whole.prepare(rate, 256);
+    INFO("rate " << rate);
+    REQUIRE(whole.latencySamples() == plain.latencySamples());
+    REQUIRE(whole.inputLatencySamples() == plain.inputLatencySamples());
+    Channels in(6000);
+    for (size_t i = 0; i < 6000; ++i) in.c[0][i] = in.c[1][i] = float(0.5 * std::sin(0.02 * double(i)));
+    const Channels a = runAll(plain, in, false, 7);
+    const Channels b = runAll(whole, in, false, 7);
+    REQUIRE(a.c[0] == b.c[0]);
+    REQUIRE(a.c[1] == b.c[1]);
+  }
+}
+
+TEST_CASE("Whole blocks in bypass allocate nothing") {
+  NativeRateWrapper w(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+  w.setWholeBlocks(true);
+  w.prepare(32000.0, 256);
+  Channels in(256);
+  Channels out(256);
+  const float* i2[2] = {in.c[0].data(), in.c[1].data()};
+  float* o2[2] = {out.c[0].data(), out.c[1].data()};
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int block = 0; block < 200; ++block) {
+      if (block == 100) w.reset();
+      w.process(block % 5 == 0 ? nullptr : i2, o2, ParamValues{}, 1 + block % 256);
+    }
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
+}

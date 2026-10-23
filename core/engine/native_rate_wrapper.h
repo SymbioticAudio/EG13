@@ -62,6 +62,14 @@ class NativeRateWrapper final : public VoiceEngine {
   void setSpecForTest(const ConverterSpec& spec) { spec_ = spec; }
   const ConverterSpec& spec() const { return spec_; }
 
+  // Main thread, before prepare(). On: at the native rate (bypass) the engine runs through a
+  // one-native-block FIFO, so it only ever sees whole native blocks whatever the host slicing,
+  // and both latencies grow by nativeBlock (M5 preflight ruling G8: the Part FX engines, whose
+  // output depends on their block size). While converting the engine already runs in native
+  // blocks, so it changes nothing. Off (the default): a bypassed engine gets each host slice.
+  void setWholeBlocks(bool on) { wholeBlocks_ = on; }
+  bool wholeBlocks() const { return wholeBlocks_; }
+
   // Main thread. Resets the extra delay: call setExtraDelay after every prepare.
   void prepare(double hostRate, int maxBlock) override;
   void reset() override;
@@ -130,6 +138,8 @@ class NativeRateWrapper final : public VoiceEngine {
                      std::vector<double>& scratch);
   void pushInput(const float* const* in, int n);
   void renderNativeBlock(const ParamValues& p);
+  // Bypass with whole blocks: the one-native-block FIFO (native_ out, nativeIn_ in).
+  void processWholeBlocks(const float* const* in, float* const* out, const ParamValues& p, int n);
   // A resumed converter came back out of step: never skip on this path until the next
   // prepare(), and restart every converter and FIFO of the wrapper together (a one-off gap),
   // so the output keeps the reported latency.
@@ -146,6 +156,8 @@ class NativeRateWrapper final : public VoiceEngine {
   double nativeRate_;
   int nativeBlock_;
   bool bypass_ = true;
+  bool wholeBlocks_ = false;
+  size_t wholePos_ = 0;  // samples into the current native block of the bypass FIFO
   bool usesInput_ = false;
   bool auxEnabled_ = false;
   int inChannels_ = 0;   // 0, or 2 + the engine's side inputs
