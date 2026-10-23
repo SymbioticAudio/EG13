@@ -6,7 +6,7 @@ In the host, each part has the groups *Part A/Mod 1* … *Part A/Mod 4* (each wi
 
 ## How modulation runs
 
-Each modulation engine runs at its module's own rate, as on the hardware (Envelope 31.25 kHz, LFO 62.5 kHz, Random / S&H 32 kHz, Function Generator 48 kHz), whatever your project's sample rate, so its times and rates are the module's. EG13 reads every engine's outputs once every 16 samples (a third of a millisecond at 48 kHz), works out the routes, and moves the results smoothly across the next 16 samples (see [Smoothing](smoothing.md); with host buffers shorter than 16 samples, routes into the Filter and Shaper glide across the buffer instead, which can change a render by a tiny, inaudible amount). A key press reaches a modulation engine within a quarter of a millisecond.
+Each modulation engine runs at its module's own rate, as on the hardware (Envelope 31.25 kHz, LFO 62.5 kHz, Random / S&H 32 kHz, Function Generator 48 kHz), whatever your project's sample rate, so its times and rates are the module's. EG13 reads every engine's outputs once every 16 samples (a third of a millisecond at 48 kHz), works out the routes, and moves the results smoothly across the next 16 samples (see [Smoothing](smoothing.md); with host buffers shorter than 16 samples, routes into the Filter and Shaper glide only to the end of each buffer, which can change a render by about 1 % of the level at most, briefly, during a fast change; with longer buffers far less, if at all). A key press reaches a modulation engine within about half a millisecond.
 
 ## Mod engines
 
@@ -32,7 +32,7 @@ A slope generator with four outputs.
 - **Shape**, **Slope** and **Smoothness** shape the wave as on the module: Slope moves the peak (a ramp down, a triangle at 50 %, a ramp up); Shape morphs the curve; Smoothness below 50 % rounds it off, above 50 % folds it.
 - **Output** chooses what the four outputs carry, as the module's output mode button does: *Phase* (default: the same wave on all four, each later than the previous by an amount set by **Shift**; at the default 100 % they are a quarter cycle apart), *Gates* (out 1 the wave scaled by Shift, out 2 the raw wave, outs 3 and 4 end-of-attack and end-of-release gates), *Amplitude* (Shift pans the wave across the outputs) or *Frequency* (Shift picks frequency ratios between the outputs).
 - Each new note on the voice restarts the cycle (per-voice scope). A per-part LFO restarts when you start playing after all keys were up.
-- **Sync** *On* locks the LFO to the host's tempo: Frequency then picks a ratio from Tides' table (from one cycle every 16 beats to 16 cycles per beat; 50 % is one cycle per beat) and the cycle lines up with the song position. With the transport stopped it keeps running at the last tempo the host gave (120 BPM if none); when the transport starts it jumps into line with the song. With Sync on, notes do not restart the cycle.
+- **Sync** *On* locks the LFO to the host's tempo: Frequency then picks a ratio from Tides' table (from one cycle every 16 beats to 16 cycles per beat; 50 % is one cycle per beat) and the cycle lines up with the song position. With the transport stopped it keeps running at the last tempo the host gave (120 BPM if none); when the transport starts it jumps into line with the song. With Sync on, notes do not restart the cycle, Range is ignored, and the notes no longer shape *AD* and *AR*: *AD* plays one attack-decay per cycle, and *AR* rises for the first half of each cycle and falls for the second. The host still shows Frequency's value in semitones with Sync on (it cannot see the Sync setting): read it as the ratio's position.
 - In Cycle mode the outputs swing from −100 % to +100 %; in AD and AR they run from 0 to 100 %.
 - Defaults: Cycle at 2 Hz, Phase outputs a quarter cycle apart, Sync off.
 
@@ -52,15 +52,15 @@ Random gates and random voltages, with the module's controls (the knob mappings 
 
 One channel of the module in its full-control mode. One output.
 
-- **Mode**: *Envelope* (an ADSR: **Attack**, **Decay**, **Sustain**, **Release**, from 0 to 100 %), *LFO* (**Rate** from 0.03 Hz to 155 Hz; **Waveform** *Sine*, *Triangle*, *Square*, *Steps* or *Noise*; **Wave Shape** folds the sine, skews the triangle, sets the square's width or the number of steps; **Phase** is where a new note restarts the cycle), *Tap LFO* (the notes you play are the taps: the LFO follows their tempo, with Waveform, Wave Shape and Phase as in LFO mode) or *Random* (a random wave at **Rate**; **Smoothness** goes from stepped, through straight lines, to smooth curves).
-- Each mode keeps its own controls, so switching modes and back restores them. Attack, Decay, Sustain and Release sit at the same positions as the Envelope engine's, so routes into them suit both.
+- **Mode**: *Envelope* (an ADSR: **Attack**, **Decay**, **Sustain**, **Release**, from 0 to 100 %), *LFO* (**Rate** from 0.03 Hz to 155 Hz; **Waveform** *Sine*, *Triangle*, *Square*, *Steps* or *Noise*; **Wave Shape** folds the sine, skews the triangle, sets the square's width or the number of steps, or sets how smooth the noise is; **Phase** is where a new note restarts the cycle), *Tap LFO* (the notes you play are the taps: the LFO follows their tempo, with Waveform, Wave Shape and Phase as in LFO mode) or *Random* (a random wave at **Rate**; **Smoothness** goes from stepped, through straight lines, to smooth curves).
+- Envelope mode has its own controls (Attack, Decay, Sustain, Release), so switching to an LFO mode and back restores them. The LFO modes share theirs: LFO and Random use the same Rate, and LFO and Tap LFO the same Waveform, Wave Shape and Phase. Attack, Decay, Sustain and Release sit at the same positions as the Envelope engine's, so routes into them suit both.
 - A new note restarts the envelope, and the LFO at its Phase (per-voice scope).
 - The envelope runs from 0 to 100 %; the LFOs swing from −100 % to +100 % (the module's ±5 V).
 - Defaults: Envelope with the fastest attack, about 0.4 s decay and release, full sustain; LFO at about 2.2 Hz, sine.
 
 ## The matrix
 
-Each of a part's twelve routes has a **source**, a **destination**, an **amount** from −100 % to +100 % (the host parameter *Route 1* … *Route 12*), and optionally a second source, **via**, that scales the amount (for example an LFO into pitch *via* the mod wheel: the wheel sets the vibrato depth). A route adds source × amount × via to its destination.
+Each of a part's twelve routes has a **source**, a **destination**, an **amount** from −100 % to +100 % (the host parameter *Route 1* … *Route 12*), and optionally a second source, **via**, that scales the amount (for example an LFO into pitch *via* the mod wheel: the wheel sets the vibrato depth). A route adds source × amount × via to its destination; a negative *via* inverts the amount.
 
 **Sources**
 
@@ -81,7 +81,7 @@ Each of a part's twelve routes has a **source**, a **destination**, an **amount*
 
 Each mod slot has an **Engine** (Off, Envelope, LFO, Random / S&H, Function Generator) and a **Scope**:
 
-- *Per voice*: every voice has its own copy of the engine. A voice starting from silence starts its copies afresh, and each new note on a voice retriggers them (an envelope restarts its attack from where it is; an LFO restarts its cycle) What counts as a new note follows the part's *Voice mode*:
+- *Per voice*: every voice has its own copy of the engine. A voice starting from silence starts its copies afresh, and each new note on a voice retriggers them (an envelope restarts its attack from where it is; an LFO restarts its cycle). What counts as a new note follows the part's *Voice mode*:
   - *Poly*: every note. A key played again while its voice still sounds retriggers that voice.
   - *Mono*: every note, whether or not it overlaps the one before, including the return to a key still held when you let go of the top one.
   - *Legato*: only a note played after every key was up. An overlapping note, or the return to a held key, glides on without retriggering, so the envelope carries on through the phrase. Its *Note Bend*, *Pressure* and *Slide* still switch to the new note's (on an MPE controller, its own channel's).
@@ -99,7 +99,7 @@ If a mod engine ever produces an invalid value, it restarts and its outputs read
 
 Every voice ends with an **Amp** and a **pan**, after the Shaper.
 
-Modulation is time-aligned with the sound it shapes. The engines take a moment to produce a note's sound (see [Latency](latency.md)), so EG13 holds back each change until the sound it acts on gets there. The Filter and Shaper get their changes as the Source's sound reaches them. The Amp, pan and Part Level get theirs as the voice's finished sound arrives. An envelope on the Amp or the Filter therefore starts exactly with the note's first sound, and even a very short note is heard in full.
+Modulation is time-aligned with the sound it shapes. The engines take a moment to produce a note's sound (see [Latency](latency.md)), so EG13 holds back each change until the sound it acts on gets there. The Filter and Shaper get their changes as the Source's sound reaches them. The Amp, pan and Part Level get theirs as the voice's finished sound arrives. An envelope on the Amp or the Filter therefore starts exactly with the note's first sound, and a short note keeps its attack.
 
 - If no route goes to *Amp*, the Amp simply follows the key: it opens over 5 ms when the note starts and closes over 5 ms when you let go. That cuts a sound that would otherwise ring on after the key (a struck Resonator, a Macro Oscillator drum): route an envelope to the Amp to shape the release.
 - If any route goes to *Amp*, the Amp's level is the sum of those routes (0 to 100 %). The init patch routes Mod 1's envelope to the Amp, scaled by velocity.
@@ -141,6 +141,6 @@ EG13 keeps room for chords and evens out its Sources (gain staging):
 EG13 follows the host's tempo and song position. While the transport plays, tempo-synced engines (the LFO and Random / S&H with Sync on) and the Transport Phase source line up with the song; when it starts, or when you jump to another place in the song, they jump into line. While the transport is stopped they keep running at the last tempo the host gave (120 BPM until the host gives one), so a synced LFO never stops.
 
 - A synced LFO lines up with the song to within about one step of its own clock (62.5 kHz, a few hundredths of a millisecond), not always to the exact sample: at most sample rates the two clocks' steps don't fall on the same instants.
-- Small differences between EG13's count and the host's position (less than a 64th note) are followed smoothly, without a restart. A bigger difference counts as a jump.
+- Small differences between EG13's count and the host's position (less than a 64th note) are corrected in one step without restarting the engines, so a synced LFO's phase can step by up to that much. A bigger difference counts as a jump.
 - EG13 counts the song position in samples, so the timing of tempo-synced modulation is the same whatever buffer size the host uses (as long as the host reports its position consistently). What a route does with it can still differ by a tiny amount at buffers shorter than 16 samples (see [Smoothing](smoothing.md)).
 - A host tempo above 1000 BPM plays as 1000 BPM, and one below 1 BPM as 1 BPM. A tempo of zero or below, or a tempo or song position that is not a number, is ignored: the last good value stays.

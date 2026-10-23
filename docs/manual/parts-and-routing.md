@@ -46,7 +46,7 @@ Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second outpu
 
 ## Default patches
 
-- **EG13:** both parts play the Macro Oscillator through the **State Variable Filter** (low-pass at 70 %, about 2.5 kHz) and Shaper *Off*, with modulation (see [Modulation](modulation.md)):
+- **EG13:** both parts play the Macro Oscillator through the **State Variable Filter** (low-pass at 70 %, about 2.5 kHz, resonance Q 0.5) and Shaper *Off*, with modulation (see [Modulation](modulation.md)):
   - Mod 1: Envelope (ADSR), per voice, routed to the **Amp**, scaled by velocity, 100 %.
   - Mod 2: Envelope (ADSR), per voice, routed to the **Filter's cutoff**, +30 % (it opens the filter fully at the envelope's peak).
   - Mod 3: LFO at about 5 Hz, per voice, routed to **pitch** through the **mod wheel**, ±0.5 semitone (vibrato).
