@@ -14,12 +14,14 @@ constexpr float kVoiceHeadroom = 0.25118864f;  // -12 dB (Voice Gain option 0, p
 }  // namespace
 
 Synth::Synth(PluginKind kind) : kind_(kind) {
+  for (auto& learn : learn_) learn.store(-1, std::memory_order_relaxed);
   for (auto& part : parts_) part = std::make_unique<Part>();
   seedParts();
   loadParams(defaultSnapshot());
 }
 
 Synth::Synth(PluginKind kind, SourceFactory factory) : kind_(kind) {
+  for (auto& learn : learn_) learn.store(-1, std::memory_order_relaxed);
   for (auto& part : parts_) part = std::make_unique<Part>(factory);
   seedParts();
   loadParams(defaultSnapshot());
@@ -96,20 +98,20 @@ void Synth::noteOn(int channel, int key, float velocity) {
     if (mode == PartMode::Single && p != 0) continue;
     if (!part.acceptsChannel(channel) || !part.acceptsKey(key)) continue;
     if (mode == PartMode::Split && ((p == 0) != (key < split))) continue;
-    part.noteOn(key, velocity);
+    part.noteOn(key, velocity, channel);
     mask = uint8_t(mask | (1u << p));
   }
   routed_[channel][key] = uint8_t(routed_[channel][key] | mask);
 }
 
-void Synth::noteOff(int channel, int key) {
+void Synth::noteOff(int channel, int key, float releaseVelocity) {
   if (key < 0 || key > 127) return;
   const int first = channel < 0 ? 0 : clampChannel(channel);
   const int last = channel < 0 ? 15 : first;
   for (int ch = first; ch <= last; ++ch) {
     const uint8_t mask = routed_[ch][key];
     for (int p = 0; p < kNumParts; ++p) {
-      if (mask & (1u << p)) parts_[size_t(p)]->noteOff(key);
+      if (mask & (1u << p)) parts_[size_t(p)]->noteOff(key, releaseVelocity);
     }
     routed_[ch][key] = 0;
   }
@@ -117,11 +119,68 @@ void Synth::noteOff(int channel, int key) {
 
 void Synth::pitchBend(int channel, float value) {
   for (auto& part : parts_) {
-    if (part->acceptsChannel(channel)) part->pitchBend(value);
+    const PartSettings& s = part->settings();
+    if (s.mpe != 0 && channel != s.mpeMaster) {
+      if (part->isMemberChannel(channel)) {
+        part->memberExpression(channel, Expression::Bend, std::clamp(value, -1.0f, 1.0f) * float(s.mpeBendRange));
+      }
+    } else if (part->acceptsChannel(channel)) {
+      part->pitchBend(value);
+    }
+  }
+}
+
+void Synth::channelPressure(int channel, float value) {
+  for (auto& part : parts_) {
+    if (part->isMemberChannel(channel)) {
+      part->memberExpression(channel, Expression::Pressure, value);
+    } else if (part->acceptsChannel(channel)) {
+      part->setController(PartController::ChannelPressure, value);
+    }
+  }
+}
+
+void Synth::polyPressure(int channel, int key, float value) {
+  for (auto& part : parts_) {
+    if (part->acceptsChannel(channel)) part->noteExpression(channel, key, Expression::Pressure, value);
+  }
+}
+
+void Synth::noteExpression(int channel, int key, Expression expression, float value) {
+  for (auto& part : parts_) {
+    if (part->acceptsChannel(channel)) part->noteExpression(channel, key, expression, value);
   }
 }
 
 void Synth::controlChange(int channel, int cc, int value) {
+  const float v = float(std::clamp(value, 0, 127)) / 127.0f;
+  for (int p = 0; p < kNumParts; ++p) {
+    Part& part = *parts_[size_t(p)];
+    if (!part.acceptsChannel(channel)) continue;
+    int learning = learn_[size_t(p)].load(std::memory_order_acquire);
+    if (learning >= 0 && learning < 4 && cc != 64 && cc != 120 && cc != 123 &&
+        learn_[size_t(p)].compare_exchange_strong(learning, -1, std::memory_order_acq_rel)) {
+      const size_t index = partParamIndex(p, PartParam(uint32_t(PartParam::CcA) + uint32_t(learning)));
+      setParam(paramSpec(index).id, double(cc));
+      queueHostUpdate({paramSpec(index).id, float(cc)});
+      engineChanged_.store(true, std::memory_order_release);
+    }
+    const bool member = part.isMemberChannel(channel);
+    if (cc == 74) {
+      if (member) {
+        part.memberExpression(channel, Expression::Slide, v);
+      } else {
+        part.setController(PartController::Slide, v);
+      }
+    }
+    if (member) continue;  // other controllers on a member channel are not per note: ignored
+    if (cc == 1) part.setController(PartController::ModWheel, v);
+    for (int k = 0; k < 4; ++k) {
+      if (cc == int(load(partParamIndex(p, PartParam(uint32_t(PartParam::CcA) + uint32_t(k)))))) {
+        part.setController(PartController(int(PartController::CcA) + k), v);
+      }
+    }
+  }
   if (cc == 64) {
     for (auto& part : parts_) {
       if (part->acceptsChannel(channel)) part->sustain(value >= 64);
@@ -466,6 +525,20 @@ PartSettings Synth::readPartSettings(int part) const {
   s.filterEngine = slotEngineFromSelector(SlotKind::Filter, load(filterEngineParamIndex(part)));
   s.shaperEngine = slotEngineFromSelector(SlotKind::Shaper, load(shaperEngineParamIndex(part)));
   s.inputSource = int(v(PartParam::InputSource));
+  // MPE zones (provisional ruling 11): the lower zone's master is channel 1, the upper zone's 16;
+  // a zone has 15 member channels, or 7 each when the other part uses the other zone.
+  s.mpe = int(v(PartParam::MpeMode));
+  s.mpeBendRange = int(v(PartParam::MpeBendRange));
+  const int other = int(load(partParamIndex(1 - part, PartParam::MpeMode)));
+  if (s.mpe == 1) {
+    s.mpeMaster = 0;
+    s.mpeFirst = 1;
+    s.mpeLast = other == 2 ? 7 : 15;
+  } else if (s.mpe == 2) {
+    s.mpeMaster = 15;
+    s.mpeFirst = other == 1 ? 8 : 0;
+    s.mpeLast = 14;
+  }
   for (int slot = 0; slot < kNumModSlots; ++slot) {
     s.modEngine[slot] = slotEngineFromSelector(modSlotKind(slot), load(modEngineParamIndex(part, slot)));
     s.modPerPart[slot] = load(modScopeParamIndex(part, slot)) >= 0.5f;

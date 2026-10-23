@@ -1656,3 +1656,142 @@ TEST_CASE("Loads and route edits racing the audio thread: the newest edit wins, 
   REQUIRE(synth.appliedValue(amountIndex) == float(kLoads) / 16384.0f);
   synth.setActive(false);
 }
+
+TEST_CASE("The mod wheel brings in the init patch's vibrato") {
+  // Per-cycle frequency range of a sine note over half a second, with the wheel at `wheel`.
+  auto spread = [](int wheel) {
+    Synth synth(PluginKind::Instrument, sine);
+    synth.prepare(kRate, kBlock);
+    synth.controlChange(0, 1, wheel);
+    synth.noteOn(0, 69, 1.0f);
+    Stereo out(48000);
+    run(synth, out, 0, 48000);
+    double lowest = 1e9, highest = 0.0, last = -1.0;
+    for (size_t i = 24000; i < out.l.size(); ++i) {
+      if (out.l[i - 1] < 0.0f && out.l[i] >= 0.0f) {
+        const double t = double(i - 1) + double(-out.l[i - 1]) / double(out.l[i] - out.l[i - 1]);
+        if (last >= 0.0) {
+          lowest = std::min(lowest, kRate / (t - last));
+          highest = std::max(highest, kRate / (t - last));
+        }
+        last = t;
+      }
+    }
+    return highest / lowest;
+  };
+  REQUIRE(spread(0) < 1.002);
+  const double full = spread(127);  // +-0.5 semitone: a whole semitone from lowest to highest
+  REQUIRE(full > 1.04);
+  REQUIRE(full < 1.08);
+}
+
+TEST_CASE("MPE member messages reach only their own voice; the master channel reaches the part") {
+  Synth synth(PluginKind::Instrument, sine);
+  test::m3Patch(synth);
+  synth.setParam(partId(0, PartParam::MpeMode), 1);  // lower zone: master 1, members 2..16
+  for (int p = 0; p < 3; ++p) synth.setParam(paramSpec(sourceParamIndex(0, p)).id, 0.0);  // routes add to 0
+  synth.setRoute(0, 0, Route{kSrcChannelPressure, uint16_t(kDestSourceP + 1), kSrcNone});
+  synth.setParam(paramSpec(routeAmountParamIndex(0, 0)).id, 1.0);
+  synth.prepare(kRate, kBlock);
+  Stereo out(kBlock);
+  run(synth, out, 0, kBlock);
+  synth.noteOn(1, 60, 1.0f);  // MIDI channel 2
+  synth.noteOn(2, 64, 1.0f);  // MIDI channel 3
+  synth.pitchBend(1, 0.5f);   // member: that note only, x 48 semitones
+  synth.channelPressure(0, 0.6f);  // master: the whole part
+  run(synth, out, 0, kBlock);
+  const Part& a = synth.part(0);
+  REQUIRE(a.lastControl(0).pitch == 24.0f);
+  REQUIRE(a.lastControl(1).pitch == 0.0f);
+  REQUIRE(a.lastControl(0).params.source.p[1] == 0.6f);
+  REQUIRE(a.lastControl(1).params.source.p[1] == 0.6f);
+  synth.channelPressure(2, 0.3f);  // member: that note's Pressure, not the part's
+  run(synth, out, 0, kBlock);
+  REQUIRE(a.lastControl(1).params.source.p[1] == 0.6f);
+  synth.noteOn(5, 72, 1.0f);  // channel 6: another member
+  REQUIRE(synth.activeVoiceCount(0) == 3);
+}
+
+TEST_CASE("Both parts in MPE split the member channels") {
+  Synth synth(PluginKind::Instrument, sine);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Multi));
+  synth.setParam(partId(0, PartParam::MpeMode), 1);  // lower zone: channels 2..8
+  synth.setParam(partId(1, PartParam::MpeMode), 2);  // upper zone: channels 9..15
+  synth.prepare(kRate, kBlock);
+  Stereo out(kBlock);
+  run(synth, out, 0, kBlock);
+  synth.noteOn(2, 60, 1.0f);  // channel 3: Part A
+  synth.noteOn(9, 62, 1.0f);  // channel 10: Part B
+  synth.noteOn(7, 64, 1.0f);  // channel 8: Part A
+  synth.noteOn(8, 65, 1.0f);  // channel 9: Part B
+  run(synth, out, 0, kBlock);
+  REQUIRE(synth.activeVoiceCount(0) == 2);
+  REQUIRE(synth.activeVoiceCount(1) == 2);
+  synth.setParam(partId(1, PartParam::MpeMode), 0);  // Part B off: Part A's zone grows to 2..16
+  run(synth, out, 0, kBlock);
+  REQUIRE(synth.part(0).isMemberChannel(14));
+}
+
+TEST_CASE("CC A-D read their controller numbers and can learn a new one") {
+  Synth synth(PluginKind::Instrument, sine);
+  test::m3Patch(synth);
+  synth.setParam(partId(0, PartParam::CcA), 20);
+  for (int p = 0; p < 3; ++p) synth.setParam(paramSpec(sourceParamIndex(0, p)).id, 0.0);  // routes add to 0
+  synth.setRoute(0, 0, Route{kSrcCcA, uint16_t(kDestSourceP + 0), kSrcNone});
+  synth.setRoute(0, 1, Route{kSrcCcB, uint16_t(kDestSourceP + 1), kSrcNone});
+  synth.setRoute(0, 2, Route{kSrcSlide, uint16_t(kDestSourceP + 2), kSrcNone});
+  for (int r = 0; r < 3; ++r) synth.setParam(paramSpec(routeAmountParamIndex(0, r)).id, 1.0);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.noteOn(0, 60, 1.0f);
+  synth.controlChange(0, 20, 127);
+  synth.controlChange(0, 74, 127);  // not MPE: the part's Slide
+  Stereo out(kBlock);
+  run(synth, out, 0, kBlock);
+  REQUIRE(synth.part(0).lastControl(0).params.source.p[0] == 1.0f);
+  REQUIRE(synth.part(0).lastControl(0).params.source.p[2] == 1.0f);
+  HostUpdate updates[kMaxHostUpdates];
+  synth.takeHostUpdates(updates, int(kMaxHostUpdates));
+  synth.takeEngineChanged();
+  synth.learnCc(0, 1);  // CC B learns the next controller
+  synth.controlChange(0, 64, 127);  // sustain is never learnt
+  synth.controlChange(0, 33, 127);
+  REQUIRE(synth.param(partId(0, PartParam::CcB)) == 33.0);
+  REQUIRE(synth.takeHostUpdates(updates, int(kMaxHostUpdates)) == 1);
+  REQUIRE(updates[0].id == partId(0, PartParam::CcB));
+  REQUIRE(updates[0].value == 33.0f);
+  REQUIRE(synth.takeEngineChanged());
+  synth.controlChange(0, 34, 127);  // the learn was used up
+  REQUIRE(synth.param(partId(0, PartParam::CcB)) == 33.0);
+  run(synth, out, 0, kBlock);
+  REQUIRE(synth.part(0).lastControl(0).params.source.p[1] == 1.0f);
+  synth.setActive(false);
+}
+
+TEST_CASE("Polyphonic pressure, note expressions and release velocity reach their notes") {
+  Synth synth(PluginKind::Instrument, sine);
+  test::m3Patch(synth);
+  for (int p = 0; p < 3; ++p) synth.setParam(paramSpec(sourceParamIndex(0, p)).id, 0.0);  // routes add to 0
+  synth.setRoute(0, 0, Route{kSrcPressure, uint16_t(kDestSourceP + 0), kSrcNone});
+  synth.setRoute(0, 1, Route{kSrcReleaseVelocity, uint16_t(kDestSourceP + 1), kSrcNone});
+  synth.setParam(paramSpec(routeAmountParamIndex(0, 0)).id, 1.0);
+  synth.setParam(paramSpec(routeAmountParamIndex(0, 1)).id, 1.0);
+  synth.prepare(kRate, kBlock);
+  synth.noteOn(0, 60, 1.0f);
+  synth.noteOn(0, 64, 1.0f);
+  synth.polyPressure(0, 64, 0.5f);
+  synth.noteExpression(0, 60, Expression::Bend, 3.0f);
+  Stereo out(kBlock);
+  run(synth, out, 0, kBlock);
+  const Part& a = synth.part(0);
+  REQUIRE(a.lastControl(0).params.source.p[0] == 0.0f);
+  REQUIRE(a.lastControl(1).params.source.p[0] == 0.5f);
+  REQUIRE(a.lastControl(0).pitch == 3.0f);
+  synth.noteOff(0, 64, 0.25f);
+  run(synth, out, 0, kBlock);
+  REQUIRE(a.lastControl(1).params.source.p[1] == 0.25f);
+  synth.noteOn(0, 67, 1.0f);  // voice 2, the first free one (voice 1 is still releasing)
+  synth.noteOn(0, 67, 0.0f);  // a note-on at velocity 0: a note-off without release velocity
+  run(synth, out, 0, kBlock);
+  REQUIRE(a.lastControl(2).params.source.p[1] == kDefaultReleaseVelocity);
+}

@@ -125,6 +125,16 @@ EG13 keeps room for chords and evens out its Sources (gain staging):
 
 **Reset to default** in the host sets a mod slot's P to the same value whatever engine is in the slot (a plugin can give each parameter only one default). The values suit every engine: P1 and P2 go to 0 (each engine's first option, or its shortest attack), P3 to P9 to 50 % except P6 to 100 %, and P10 to P16 to 0. That gives the Envelope's and Function Generator's ADSR (1 ms attack, about half-second decay and release, full sustain), the LFO cycling at 2 Hz, and Random / S&H at the module's centre settings with a bipolar range. Exceptions: in the instrument, Mod 3's P3 resets to about 5 Hz (the init patch's vibrato), and in EG13 FX, Part A Mod 1's P3 to about 0.25 Hz. Scope resets to per voice (EG13 FX's Part A Mod 1: per part). A route amount resets to its init patch value (0 for routes the init patch does not use).
 
+## MIDI, MPE and expression
+
+- **Mod wheel** (CC1), **pitch bend**, **channel pressure** and the four **CC** sources come from the part's MIDI channel. Set *CC A* to *CC D* in the host to the controller numbers you want (defaults: 2 Breath, 4 Foot, 11 Expression, 16). EG13's own interface will also let you learn them by moving a control.
+- **Polyphonic aftertouch** is each note's *Pressure*. **Release velocity** (how fast you let go) is each note's *Release Velocity*; a note-off without one (a note-on with velocity 0) counts as 64.
+- **MPE**: set the part's *MPE* to *Lower zone* (master channel 1, notes on channels 2 to 16) or *Upper zone* (master channel 16, notes on channels 1 to 15). If Part A uses one zone and Part B the other, the lower zone gets channels 2 to 8 and the upper zone 9 to 15. With MPE on, the part's *MIDI Channel* setting is not used.
+  - On a note's own channel, pitch bend bends that note (by the *MPE Bend Range*, default ±48 semitones; it also feeds the *Note Bend* source), pressure is that note's *Pressure*, and CC74 is its *Slide*. Values sent before the note (as MPE controllers do) apply to it from the start. Other controllers on a note's channel are ignored, except that sustain and all-notes-off there act on the whole part.
+  - On the master channel, pitch bend bends the whole part (by its *Bend Range*), and pressure and controllers are part-wide.
+  - EG13 does not read the MPE Configuration Message: the zones are set by the *MPE* settings alone. If the same key is played on two channels at once, both share one voice.
+- Without MPE, CC74 is a part-wide *Slide*. In CLAP hosts, per-note *Tuning* bends a note, per-note *Pressure* is its Pressure and per-note *Brightness* its Slide (other per-note expressions are not used yet).
+
 ## Tempo
 
 EG13 follows the host's tempo and song position. While the transport plays, tempo-synced engines (the LFO and Random / S&H with Sync on) and the Transport Phase source line up with the song; when it starts, or when you jump to another place in the song, they jump into line. While the transport is stopped they keep running at the last tempo the host gave (120 BPM until the host gives one), so a synced LFO never stops.

@@ -112,10 +112,22 @@ class Synth {
   void reset();
 
   void noteOn(int channel, int key, float velocity);
-  void noteOff(int channel, int key);  // channel < 0: every channel
+  // channel < 0: every channel. releaseVelocity: 0..1, the Release Velocity source.
+  void noteOff(int channel, int key, float releaseVelocity = kDefaultReleaseVelocity);
+  // -1..1. An MPE part takes its master channel's bend part-wide and a member channel's as that
+  // channel's notes' bend, times the MPE Bend Range (provisional ruling 11).
   void pitchBend(int channel, float value);
+  // CC1 mod wheel, CC64 sustain, CC74 slide (per note on an MPE member channel), the part's CC A-D
+  // numbers, CC120/123 all notes off; a pending learnCc() takes this CC.
   void controlChange(int channel, int cc, int value);
+  void channelPressure(int channel, float value);       // 0..1; per note on MPE member channels
+  void polyPressure(int channel, int key, float value);  // 0..1: that note's Pressure
+  // A note expression (CLAP): the voices playing key on channel (negative: any channel).
+  void noteExpression(int channel, int key, Expression expression, float value);
   void allNotesOff();
+  // Main thread: the next controller message on a channel the part hears sets CC A..D (slot
+  // 0..3) to its number; -1 cancels. For EG13's interface (M6).
+  void learnCc(int part, int slot) { learn_[size_t(part)].store(slot, std::memory_order_release); }
 
   // Audio thread while active, main thread while inactive. Never from both at once.
   bool setParam(uint32_t id, double value);
@@ -164,6 +176,7 @@ class Synth {
 
   int latencySamples() const { return latency_; }
   int activeVoiceCount(int part) const { return parts_[size_t(part)]->activeVoiceCount(); }
+  const Part& part(int index) const { return *parts_[size_t(index)]; }  // tests
 
  private:
   float load(size_t index) const { return values_[index].load(std::memory_order_relaxed); }
@@ -220,6 +233,7 @@ class Synth {
   PatchData editPatch_;
   std::atomic<int> editState_{kIdle};
   BeatClock clock_;
+  std::array<std::atomic<int>, kNumParts> learn_{};  // CC A..D slot waiting for a learn, or -1
   size_t feedDelay_ = 0;            // min(maxBlock, kFeedBlock)
   size_t feedPos_ = 0;
 };
