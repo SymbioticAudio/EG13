@@ -3,13 +3,17 @@
 #include <cmath>
 
 #include "engine/audio_input_engine.h"
+#include "engine/beads_engine.h"
 #include "engine/braids_engine.h"
 #include "engine/bypass_engine.h"
+#include "engine/clouds_engine.h"
 #include "engine/elements_engine.h"
 #include "engine/marbles_engine.h"
 #include "engine/peaks_engine.h"
 #include "engine/plaits_engine.h"
 #include "engine/rings_engine.h"
+#include "engine/reverb_engine.h"
+#include "engine/rings_fx_engine.h"
 #include "engine/ripples_engine.h"
 #include "engine/shelves_engine.h"
 #include "engine/sst_filter_engine.h"
@@ -77,6 +81,24 @@ const EngineInfo& shaperEngineInfo(int engine) {
   }
   return BypassEngine::staticInfo();
 }
+
+int partFxEngineFromSelector(double value) { return fromSelector(value, kNumPartFxEngines); }
+
+const EngineInfo& partFxEngineInfo(int engine) {
+  switch (PartFxEngine(engine)) {
+    case PartFxEngine::Granular: return CloudsEngine::staticInfo();
+    case PartFxEngine::GranularDelay: return BeadsEngine::staticInfo();
+    case PartFxEngine::Resonator: return RingsFxEngine::staticInfo();
+    case PartFxEngine::Reverb: return ReverbEngine::staticInfo();
+    case PartFxEngine::Off: break;
+  }
+  return BypassEngine::staticInfo();
+}
+
+// Unity for every engine until Task 14 measures them.
+float partFxTrimDb(int) { return 0.0f; }
+
+float partFxTrim(int engine) { return std::pow(10.0f, partFxTrimDb(engine) / 20.0f); }
 
 int modEngineFromSelector(double value) { return fromSelector(value, kNumModEngines); }
 

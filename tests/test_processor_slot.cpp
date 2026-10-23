@@ -430,3 +430,42 @@ TEST_CASE("Every Filter type has zero latency at every host rate") {
     REQUIRE(slot.latencySamples() == 0);
   }
 }
+
+TEST_CASE("A Part FX ProcessorSlot pads every engine to the slot latency") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  for (double rate : {44100.0, 48000.0, 96000.0}) {
+    // Each engine alone, in whole-block mode as the real slot runs it.
+    int slowest = -1;
+    int maxLatency = 0;
+    for (int e = 0; e < kNumPartFxEngines; ++e) {
+      SourceSpec spec = makePartFx(e);
+      NativeRateWrapper w(std::move(spec.engine), spec.nativeRate, spec.nativeBlock);
+      w.setWholeBlocks(spec.wholeBlocks);
+      w.setQuality(q);
+      w.prepare(rate, 16);
+      const int own = w.inputPathLatencySamples();
+      WARN("latency " << (q == ConverterQuality::Live ? "Live" : "Studio") << " " << rate << " Hz "
+                      << partFxEngineInfo(e).displayName << ": " << own << " samples, "
+                      << 1000.0 * own / rate << " ms");
+      if (own > maxLatency) {
+        maxLatency = own;
+        slowest = e;
+      }
+    }
+    ProcessorSlot slot(makeAllPartFx());
+    slot.prepare(rate, 16, q);
+    const int latency = slot.latencySamples();
+    WARN("padded slot latency " << (q == ConverterQuality::Live ? "Live" : "Studio") << " " << rate << " Hz: "
+                                << latency << " samples, " << 1000.0 * latency / rate << " ms; set by "
+                                << partFxEngineInfo(slowest).displayName);
+    REQUIRE(latency == maxLatency);
+    REQUIRE(latency > 0);
+    // Off pads to the slot latency exactly (an impulse lands at latency).
+    std::vector<float> impulse(9600, 0.0f);
+    impulse[1000] = 0.5f;
+    ParamValues off;
+    slot.setEngine(int(PartFxEngine::Off));
+    slot.reset();
+    REQUIRE(test::peakIndex(run(slot, impulse, impulse, off).l) == 1000 + latency);
+  }
+}

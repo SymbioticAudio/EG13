@@ -27,6 +27,7 @@ ProcessorSlot::ProcessorSlot(std::vector<SourceSpec> engines) {
   if (engines.empty()) engines.push_back(makeOff());  // a slot needs at least one engine
   for (auto& e : engines) {
     engines_.push_back(std::make_unique<NativeRateWrapper>(std::move(e.engine), e.nativeRate, e.nativeBlock));
+    engines_.back()->setWholeBlocks(e.wholeBlocks);
   }
 }
 

@@ -12,6 +12,8 @@ struct SourceSpec {
   std::unique_ptr<VoiceEngine> engine;
   double nativeRate;
   int nativeBlock;
+  // Part FX engines: the slot's wrapper runs them in whole native blocks (setWholeBlocks).
+  bool wholeBlocks = false;
 };
 
 using SourceFactory = SourceSpec (*)();
