@@ -460,12 +460,54 @@ TEST_CASE("A Part FX ProcessorSlot pads every engine to the slot latency") {
                                 << partFxEngineInfo(slowest).displayName);
     REQUIRE(latency == maxLatency);
     REQUIRE(latency > 0);
-    // Off pads to the slot latency exactly (an impulse lands at latency).
+    // Every engine, through the real slot, lands an impulse at exactly the slot latency. The
+    // engines run dry (P1 = Blend / Dry-Wet / Mix / Amount at 0, the other P's at their defaults),
+    // so the impulse passes through the engine's own converters and whole-block FIFO unchanged
+    // and gives a clean onset. Off has no P's.
     std::vector<float> impulse(9600, 0.0f);
     impulse[1000] = 0.5f;
-    ParamValues off;
-    slot.setEngine(int(PartFxEngine::Off));
-    slot.reset();
-    REQUIRE(test::peakIndex(run(slot, impulse, impulse, off).l) == 1000 + latency);
+    for (int e = 0; e < kNumPartFxEngines; ++e) {
+      ParamValues dry = test::defaultParams(partFxEngineInfo(e));
+      dry.p[0] = 0.0f;
+      slot.setEngine(e);
+      slot.reset();
+      INFO(partFxEngineInfo(e).displayName << " at " << rate << " Hz, slot latency " << latency);
+      REQUIRE(test::peakIndex(run(slot, impulse, impulse, dry).l) == 1000 + latency);
+    }
   }
+}
+
+TEST_CASE("A Part FX ProcessorSlot runs a host-rate-bypassed engine in whole native blocks") {
+  // The Resonator at 48 kHz is bypassed by its wrapper; only the slot's whole-block setting
+  // (SourceSpec::wholeBlocks, ruling G8) makes its output independent of the host slicing.
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  std::vector<float> noise(4800);
+  unsigned state = 12345u;
+  for (auto& x : noise) {
+    state = state * 1664525u + 1013904223u;
+    x = (float(state >> 8) / float(1u << 24) - 0.5f) * 0.5f;
+  }
+  auto render = [&](size_t chunk) {
+    ProcessorSlot slot(makeAllPartFx());
+    slot.prepare(48000.0, 16, q);
+    slot.setEngine(int(PartFxEngine::Resonator));
+    slot.reset();
+    ParamValues p = test::defaultParams(partFxEngineInfo(int(PartFxEngine::Resonator)));
+    p.p[0] = 1.0f;
+    std::vector<float> out(noise.size());
+    for (size_t done = 0; done < noise.size(); done += chunk) {
+      const int n = int(std::min(chunk, noise.size() - done));
+      const float* in[2] = {noise.data() + done, noise.data() + done};
+      float l[16], r[16];
+      float* o[2] = {l, r};
+      const SideSignals sides{};
+      slot.process(in, &sides, o, p, n);
+      std::copy(l, l + n, out.begin() + long(done));
+    }
+    return out;
+  };
+  const auto whole = render(16);
+  REQUIRE(*std::max_element(whole.begin(), whole.end()) > 0.0f);
+  REQUIRE(render(7) == whole);
+  REQUIRE(render(1) == whole);
 }
