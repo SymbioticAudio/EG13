@@ -310,12 +310,11 @@ ModPartInputs Part::partInputs(const PartParams& params, int offset) const {
   p.slide = slide_;
   for (int i = 0; i < 4; ++i) p.cc[i] = cc_[i];
   const ModTiming& t = params.timing;
-  const double bars = t.barPhase + double(offset) * t.beatsPerSample / std::max(1e-9, t.beatsPerBar);
-  p.transportPhase = float(bars - std::floor(bars));
   p.noteBendRange = float(settings_.mpeBendRange);
   p.gate = partGate_;
   p.retrigger = partRetrigger_;
-  p.beat = t.beat + double(offset) * t.beatsPerSample;
+  p.beat = t.beatAt(offset);
+  p.transportPhase = float(BeatClock::barPhaseAt(p.beat, t.barStart, t.beatsPerBar));
   p.beatsPerSample = t.beatsPerSample;
   p.beatJump = pendingJump_;
   p.lastVoice = lastVoice_;

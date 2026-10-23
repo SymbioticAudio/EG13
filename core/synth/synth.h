@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "engine/engine_registry.h"
+#include "mod/beat_clock.h"
 #include "mod/mod_routes.h"
 #include "part/part.h"
 #include "synth/param_table.h"
@@ -136,6 +137,9 @@ class Synth {
   const PatchData& appliedPatch() const { return patch_; }  // tests: the audio thread's copy
   void setRoute(int part, int route, const Route& value);
   void setEnvelopeShape(int part, int slot, const EnvelopeShape& shape);
+  // Audio thread, at the start of each host block: the host's transport, for tempo sync and the
+  // Transport Phase source. Without it the beat clock free-runs at 120 BPM.
+  void setTransport(const Transport& transport) { clock_.setTransport(transport); }
   int engine(int part) const { return engine(SlotKind::Source, part); }  // main thread
   int engine(SlotKind kind, int part) const;                               // main thread
   // Main thread. Engine-aware: Source, Filter and Shaper P values follow the part's selected engines.
@@ -211,6 +215,7 @@ class Synth {
   PatchData pendingPatch_;
   PatchData editPatch_;
   std::atomic<int> editState_{kIdle};
+  BeatClock clock_;
   size_t feedDelay_ = 0;            // min(maxBlock, kFeedBlock)
   size_t feedPos_ = 0;
 };

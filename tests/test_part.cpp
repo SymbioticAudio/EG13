@@ -759,7 +759,7 @@ TEST_CASE("A modulated part does not allocate") {
       if (b % 40 == 30) part.allNotesOff();
       if (b == 100) part.memberExpression(1, Expression::Bend, 1.0f);
       if (b == 150) part.setController(PartController::ModWheel, 0.7f);
-      params.timing.beat += 0.1;
+      params.timing.origin += 0.1;
       part.process(VoiceInputs{}, out, params, 1 + b % kBlock);
     }
     part.reset();

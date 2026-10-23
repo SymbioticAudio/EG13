@@ -124,3 +124,12 @@ EG13 keeps room for chords and evens out its Sources (gain staging):
 - Master: **Voice Gain** (*−12 dB* / *0 dB*) and **Soft Clip** (*Off* / *On*), see Levels.
 
 **Reset to default** in the host sets a mod slot's P to the same value whatever engine is in the slot (a plugin can give each parameter only one default). The values suit every engine: P1 and P2 go to 0 (each engine's first option, or its shortest attack), P3 to P9 to 50 % except P6 to 100 %, and P10 to P16 to 0. That gives the Envelope's and Function Generator's ADSR (1 ms attack, about half-second decay and release, full sustain), the LFO cycling at 2 Hz, and Random / S&H at the module's centre settings with a bipolar range. Exceptions: in the instrument, Mod 3's P3 resets to about 5 Hz (the init patch's vibrato), and in EG13 FX, Part A Mod 1's P3 to about 0.25 Hz. Scope resets to per voice (EG13 FX's Part A Mod 1: per part). A route amount resets to its init patch value (0 for routes the init patch does not use).
+
+## Tempo
+
+EG13 follows the host's tempo and song position. While the transport plays, tempo-synced engines (the LFO and Random / S&H with Sync on) and the Transport Phase source line up with the song; when it starts, or when you jump to another place in the song, they jump into line. While the transport is stopped they keep running at the last tempo the host gave (120 BPM until the host gives one), so a synced LFO never stops.
+
+- A synced LFO lines up with the song to within about one step of its own clock (62.5 kHz, a few hundredths of a millisecond), not always to the exact sample: at most sample rates the two clocks' steps don't fall on the same instants.
+- Small differences between EG13's count and the host's position (less than a 64th note) are followed smoothly, without a restart. A bigger difference counts as a jump.
+- EG13 counts the song position in samples, so tempo-synced modulation plays the same whatever buffer size the host uses.
+- A host tempo above 1000 BPM plays as 1000 BPM, and one below 1 BPM as 1 BPM. A tempo or position that is zero, negative (tempo) or not a number is ignored: the last good value stays.

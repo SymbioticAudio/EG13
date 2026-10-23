@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "engine/pot_smoother.h"
+#include "mod/beat_clock.h"
 #include "mod/part_modulation.h"
 #include "util/smoothed_value.h"
 #include "voice/mono_note_stack.h"
@@ -50,13 +51,17 @@ enum class Expression { Bend, Pressure, Slide };  // Bend in semitones; Pressure
 // Part-wide controllers the matrix reads.
 enum class PartController { ModWheel, Slide, ChannelPressure, CcA, CcB, CcC, CcD };
 
-// Where the part is in musical time at the start of a process() call (the Synth's beat clock).
+// Where the part is in musical time during a process() call (the Synth's beat clock). The beat
+// at sample i of the call is beatAt(i): counted in whole samples from the clock's origin, so each
+// tick's beat is the same whatever the host's block sizes (BeatClock).
 struct ModTiming {
-  double beat = 0.0;
+  double origin = 0.0;   // the clock's origin beat
+  int64_t elapsed = 0;   // samples from the origin to the start of the call
   double beatsPerSample = 2.0 / 48000.0;  // 120 BPM at 48 kHz
   bool jump = false;  // the transport started or jumped
-  double barPhase = 0.0;
+  double barStart = 0.0;  // the beat where a bar starts
   double beatsPerBar = 4.0;
+  double beatAt(int offset) const { return origin + double(elapsed + offset) * beatsPerSample; }
 };
 
 // Everything one process() call of a modulated part reads besides audio.

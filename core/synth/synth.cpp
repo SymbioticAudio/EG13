@@ -4,19 +4,26 @@
 #include <cmath>
 #include <thread>
 
+#include "util/soft_clip.h"
+
 namespace eg13 {
 
 namespace {
 constexpr double kGainSmoothingSeconds = 0.01;
+constexpr float kVoiceHeadroom = 0.25118864f;  // -12 dB (Voice Gain option 0, provisional ruling 24)
 }  // namespace
 
 Synth::Synth(PluginKind kind) : kind_(kind) {
   for (auto& part : parts_) part = std::make_unique<Part>();
+  // Each part its own random seeds (Random / S&H, the Random source), before prepare().
+  for (int p = 0; p < kNumParts; ++p) parts_[size_t(p)]->setSeedBase(uint32_t(p + 1) * 1000u);
   loadParams(defaultSnapshot());
 }
 
 Synth::Synth(PluginKind kind, SourceFactory factory) : kind_(kind) {
   for (auto& part : parts_) part = std::make_unique<Part>(factory);
+  // Each part its own random seeds (Random / S&H, the Random source), before prepare().
+  for (int p = 0; p < kNumParts; ++p) parts_[size_t(p)]->setSeedBase(uint32_t(p + 1) * 1000u);
   loadParams(defaultSnapshot());
 }
 
@@ -42,6 +49,7 @@ void Synth::prepare(double sampleRate, int maxBlock) {
   masterGain_.prepare(sampleRate, kGainSmoothingSeconds);
   dryGain_.prepare(sampleRate, kGainSmoothingSeconds);
   partBMute_.prepare(sampleRate, kGainSmoothingSeconds);
+  clock_.prepare(sampleRate);
   reset();
 }
 
@@ -65,6 +73,7 @@ void Synth::reset() {
   masterGain_.reset(load(masterParamIndex(MasterParam::Level)));
   dryGain_.reset(load(masterParamIndex(MasterParam::Dry)));
   partBMute_.reset(PartMode(int(load(masterParamIndex(MasterParam::Mode)))) == PartMode::Single ? 0.0f : 1.0f);
+  clock_.reset();
 }
 
 int Synth::clampChannel(int channel) { return std::clamp(channel, 0, 15); }
@@ -479,6 +488,7 @@ void Synth::process(const float* const* in, float* const* mainOut, float* const*
     float* outSlice[2] = {mainOut[0] + done, mainOut[1] + done};
     float* busSlice[2] = {bus2Out ? bus2Out[0] + done : nullptr, bus2Out ? bus2Out[1] + done : nullptr};
     processChunk(in ? inSlice : nullptr, outSlice, bus2Out ? busSlice : nullptr, count);
+    clock_.advance(count);
     done += count;
   }
 }
@@ -486,12 +496,30 @@ void Synth::process(const float* const* in, float* const* mainOut, float* const*
 void Synth::processChunk(const float* const* in, float* const* mainOut, float* const* bus2Out, int n) {
   bool toBus2[kNumParts];
   bool heard[kNumParts];
+  ModTiming timing;
+  timing.origin = clock_.origin();
+  timing.elapsed = clock_.elapsed();
+  timing.beatsPerSample = clock_.beatsPerSample();
+  timing.jump = clock_.jumped();
+  timing.barStart = clock_.barStart();
+  timing.beatsPerBar = clock_.beatsPerBar();
+  const float voiceGain = load(masterParamIndex(MasterParam::VoiceGain)) >= 0.5f ? 1.0f : kVoiceHeadroom;
   for (int p = 0; p < kNumParts; ++p) {  // A before B: A -> B has no delay
     Part& part = *parts_[size_t(p)];
-    SlotParams params;
-    for (int i = 0; i < int(kSourceParamCount); ++i) params.source.p[i] = load(sourceParamIndex(p, i));
-    for (int i = 0; i < int(kFilterParamCount); ++i) params.filter.p[i] = load(filterParamIndex(p, i));
-    for (int i = 0; i < int(kShaperParamCount); ++i) params.shaper.p[i] = load(shaperParamIndex(p, i));
+    PartParams params;
+    for (int i = 0; i < int(kSourceParamCount); ++i) params.slots.source.p[i] = load(sourceParamIndex(p, i));
+    for (int i = 0; i < int(kFilterParamCount); ++i) params.slots.filter.p[i] = load(filterParamIndex(p, i));
+    for (int i = 0; i < int(kShaperParamCount); ++i) params.slots.shaper.p[i] = load(shaperParamIndex(p, i));
+    for (int slot = 0; slot < kNumModSlots; ++slot) {
+      for (int i = 0; i < int(kModSlotParamCount); ++i) params.mod.slot[slot].p[i] = load(modParamIndex(p, slot, i));
+      params.mod.shapes[slot] = patch_.shapes[size_t(p)][size_t(slot)];
+    }
+    for (int r = 0; r < kNumRoutes; ++r) {
+      params.mod.routes.route[r] = patch_.routes[size_t(p)][size_t(r)];
+      params.mod.routes.amount[r] = load(routeAmountParamIndex(p, r));
+    }
+    params.timing = timing;
+    params.voiceGain = voiceGain;
     feedOther(p, n);
     const bool hasInput = part.settings().inputSource >= 1 || in != nullptr;
     if (hasInput) routeInput(p, in, n);
@@ -516,6 +544,7 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
   }
   feedPos_ = (feedPos_ + size_t(n)) % ringSize;
 
+  const bool softClipOn = load(masterParamIndex(MasterParam::SoftClip)) >= 0.5f;
   for (int i = 0; i < n; ++i) {
     float main[2] = {0.0f, 0.0f};
     float bus[2] = {0.0f, 0.0f};
@@ -544,8 +573,11 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
       dryPos_ = (dryPos_ + 1) % size_t(latency_);
     }
     for (int ch = 0; ch < 2; ++ch) {
-      mainOut[ch][i] = main[ch] * gain + delayed[ch] * dry;
-      if (bus2Out != nullptr) bus2Out[ch][i] = bus[ch] * gain;
+      const float m = main[ch] * gain + delayed[ch] * dry;
+      const float b = bus[ch] * gain;
+      // The master soft clipper (owner decision 2), on both outputs after Dry.
+      mainOut[ch][i] = softClipOn ? softClip(m) : m;
+      if (bus2Out != nullptr) bus2Out[ch][i] = softClipOn ? softClip(b) : b;
     }
   }
 }

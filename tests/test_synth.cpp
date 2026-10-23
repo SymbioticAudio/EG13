@@ -1,8 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <string>
@@ -12,10 +14,12 @@
 #include "alloc_counter.h"
 #include "engine/engine_registry.h"
 #include "engine/ripples_engine.h"
+#include "engine/tides_engine.h"
 #include "engine/warps_engine.h"
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 #include "synth/synth.h"
+#include "synth_helpers.h"
 #include "test_engines.h"
 #include "test_helpers.h"
 
@@ -184,6 +188,7 @@ TEST_CASE("Note-off follows the note-on routing after settings change") {
 
 TEST_CASE("Bus 2 carries parts routed to it, and falls back to main when not connected") {
   Synth synth(PluginKind::Instrument, sine);
+  test::m3Patch(synth);
   synth.setParam(partId(0, PartParam::Output), 1);
   synth.prepare(kRate, kBlock);
   synth.noteOn(0, 60, 1.0f);
@@ -334,6 +339,10 @@ TEST_CASE("An Always-on part sounds with no MIDI") {
 TEST_CASE("Event timing is independent of block slicing") {
   auto renderWith = [](int chunk) {
     Synth synth(PluginKind::Instrument);
+    // The init patch plays (Mod 1's envelope on the Amp, Mod 3's LFO) with the Filter Off: a
+    // host-rate Filter ramps a modulated cutoff across each call, so its output depends on the
+    // host's block sizes (Task 15 report, concern 1).
+    filtersOff(synth);
     synth.prepare(44100.0, 4096);
     Stereo out(9000);
     run(synth, out, 0, 1001, nullptr, nullptr, chunk);
@@ -545,6 +554,7 @@ TEST_CASE("EG13 FX with the Filter Off passes audio at unity through Part A") {
 
 TEST_CASE("FX: processed input is aligned with Dry") {
   Synth synth(PluginKind::Effect);
+  test::m3Patch(synth);  // wet + Dry reach full scale: no soft clipping here
   filtersOff(synth);
   synth.setParam(masterId(MasterParam::Dry), 1.0);
   synth.prepare(44100.0, kBlock);
@@ -1221,4 +1231,348 @@ TEST_CASE("A route amount's text follows the route's destination") {
   synth.formatParam(routeAmountParamIndex(0, 7), 0.25, buf, sizeof(buf));
   REQUIRE(std::string(buf) == "+6.00 st");
   REQUIRE(synth.takeEngineChanged());  // the host is told to refresh the text
+}
+
+TEST_CASE("The instrument init patch: an envelope on the Amp, scaled by velocity, with a release") {
+  // A steady 0.5 source (it ignores the gate), so only the Amp shapes the level.
+  auto steady = [] { return SourceSpec{std::make_unique<test::ConstantEngine>(), 0.0, 16}; };
+  auto play = [&steady](float velocity) {
+    Synth synth(PluginKind::Instrument, steady);
+    synth.setParam(masterId(MasterParam::SoftClip), 0.0);
+    synth.prepare(kRate, kBlock);
+    synth.noteOn(0, 57, velocity);
+    Stereo out(52800);
+    run(synth, out, 0, 24000);
+    synth.noteOff(0, 57);
+    run(synth, out, 24000, 52800);
+    return out;
+  };
+  const Stereo loud = play(1.0f);
+  const Stereo soft = play(0.5f);
+  const double held = test::rms(loud.l, 4800, 24000);
+  // 0.5 through the State Variable Filter's low-pass (opened by Mod 2), the Amp at velocity x
+  // full sustain, -12 dB Voice Gain, 80 % master level.
+  REQUIRE(std::fabs(held - 0.5 * 0.25119 * 0.8) < 0.002);
+  REQUIRE(std::fabs(test::rms(soft.l, 4800, 24000) / held - 0.5) < 0.01);
+  // Mod 1's release (0.5 s), not the gate's 5 ms: still sounding 0.1 s after the key.
+  REQUIRE(test::rms(loud.l, 28800, 29280) > 0.25 * held);
+  REQUIRE(test::rms(loud.l, 52320, 52800) < 0.01 * held);  // 0.6 s after the key
+}
+
+TEST_CASE("Voice Gain plays each voice 12 dB lower") {
+  auto level = [](double voiceGain) {
+    Synth synth(PluginKind::Instrument, sine);
+    test::m3Patch(synth);
+    synth.setParam(masterId(MasterParam::VoiceGain), voiceGain);
+    synth.prepare(kRate, kBlock);
+    synth.noteOn(0, 60, 1.0f);
+    Stereo out(9600);
+    run(synth, out, 0, 9600);
+    return test::rms(out.l, 4800, 9600);
+  };
+  REQUIRE(std::fabs(level(0.0) / level(1.0) - 0.25119) < 1e-3);
+}
+
+TEST_CASE("Soft Clip keeps both outputs within full scale") {
+  auto peak = [](bool softClip, bool bus2) {
+    Synth synth(PluginKind::Instrument, sine);
+    test::m3Patch(synth);  // 0 dB voices: an 8-note chord of 0.5 sines peaks near 3
+    synth.setParam(masterId(MasterParam::Level), 1.0);
+    synth.setParam(masterId(MasterParam::SoftClip), softClip ? 1.0 : 0.0);
+    if (bus2) synth.setParam(partId(0, PartParam::Output), 1);
+    synth.prepare(kRate, kBlock);
+    for (int key = 60; key < 68; ++key) synth.noteOn(0, key, 1.0f);
+    Stereo out(9600), busOut(9600);
+    run(synth, out, 0, 9600, nullptr, &busOut);
+    const Stereo& o = bus2 ? busOut : out;
+    float p = 0.0f;
+    for (size_t i = 0; i < o.l.size(); ++i) p = std::max(p, std::max(std::fabs(o.l[i]), std::fabs(o.r[i])));
+    return p;
+  };
+  REQUIRE(peak(false, false) > 1.5f);
+  REQUIRE(peak(true, false) <= 1.0f);
+  REQUIRE(peak(true, false) > 0.9f);
+  REQUIRE(peak(true, true) <= 1.0f);
+}
+
+TEST_CASE("Synth processing with every mod slot and route in use does not allocate") {
+  Synth synth(PluginKind::Instrument);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  for (int part = 0; part < kNumParts; ++part) {
+    for (int slot = 0; slot < kNumModSlots; ++slot) {
+      synth.setParam(paramSpec(modEngineParamIndex(part, slot)).id, double(1 + slot));
+    }
+    for (int r = 0; r < kNumRoutes; ++r) {
+      synth.setRoute(part, r, Route{modOutputSource(r % kNumModSlots, 0), uint16_t(r < 4 ? kDestSourceP + r : kDestPan), kSrcNone});
+      synth.setParam(paramSpec(routeAmountParamIndex(part, r)).id, 0.2);
+    }
+  }
+  synth.prepare(44100.0, kBlock);
+  synth.setActive(true);
+  Stereo out(kBlock);
+  run(synth, out, 0, kBlock);
+  test::ScopedAllocationCounter counter;
+  for (int block = 0; block < 200; ++block) {
+    if (block % 50 == 0) for (int key : {48, 55, 60, 64, 67}) synth.noteOn(0, key, 0.8f);
+    if (block % 50 == 40) synth.allNotesOff();
+    if (block == 120) synth.setParam(paramSpec(modEngineParamIndex(0, 1)).id, 3.0);
+    if (block == 150) synth.setParam(masterId(MasterParam::VoiceGain), 1.0);
+    run(synth, out, 0, kBlock);
+  }
+  const size_t allocations = counter.count();
+  REQUIRE(allocations == 0);
+  synth.setActive(false);
+}
+
+namespace {
+
+SourceSpec steadySource() { return {std::make_unique<test::ConstantEngine>(), 0.0, 16}; }
+uint32_t modEngineId(int part, int slot) { return paramSpec(modEngineParamIndex(part, slot)).id; }
+uint32_t modScopeId(int part, int slot) { return paramSpec(modScopeParamIndex(part, slot)).id; }
+uint32_t modId(int part, int slot, int p) { return paramSpec(modParamIndex(part, slot, p)).id; }
+uint32_t routeAmountId(int part, int r) { return paramSpec(routeAmountParamIndex(part, r)).id; }
+
+// Mod 4 of Part A: an LFO per part (Sync on or off) into Part Level, -50 %.
+void lfoOnPartLevel(Synth& synth, bool sync) {
+  synth.setParam(modEngineId(0, 3), double(ModEngineKind::Lfo));
+  synth.setParam(modScopeId(0, 3), 1.0);
+  synth.setParam(modId(0, 3, 1), sync ? 1.0 : 0.0);  // Sync
+  // Synced: one cycle per beat (the ratio table's centre); free: 9 Hz.
+  synth.setParam(modId(0, 3, 2), sync ? 0.5 : double(TidesEngine::frequencyFor(9.0, TidesEngine::Medium)));
+  synth.setRoute(0, 3, Route{modOutputSource(3, 0), kDestPartLevel, kSrcNone});
+  synth.setParam(routeAmountId(0, 3), -0.5);
+}
+
+// Renders `total` samples in host blocks of `block`; before each block, `host(done)` may send
+// events (the transport, notes).
+Stereo renderHost(Synth& synth, size_t total, int block, const std::function<void(size_t)>& host) {
+  Stereo out(total);
+  for (size_t done = 0; done < total;) {
+    const int n = int(std::min<size_t>(size_t(block), total - done));
+    if (host) host(done);
+    float* o[2] = {out.l.data() + done, out.r.data() + done};
+    synth.process(nullptr, o, nullptr, n);
+    done += size_t(n);
+  }
+  return out;
+}
+
+Transport playingAt(double beats, double tempo) {
+  Transport t;
+  t.playing = true;
+  t.hasTempo = true;
+  t.tempo = tempo;
+  t.hasBeats = true;
+  t.beats = beats;
+  t.hasTimeSignature = true;
+  return t;
+}
+
+}  // namespace
+
+TEST_CASE("A Part Level routed from an LFO plays the same at any host block size") {
+  // Preflight ruling G5, through the Synth (applySettings before every host block).
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  CAPTURE(rate);
+  const size_t total = size_t(rate / 2.0);
+  auto render = [&](int block) {
+    Synth synth(PluginKind::Instrument, sine);
+    lfoOnPartLevel(synth, false);
+    synth.prepare(rate, 512);
+    synth.noteOn(0, 60, 1.0f);
+    return renderHost(synth, total, block, nullptr);
+  };
+  const Stereo a = render(512);
+  // The LFO moves the level: the loudest and quietest 10 ms differ by more than 3 dB.
+  double low = 1.0, high = 0.0;
+  for (size_t at = total / 2; at + size_t(rate / 100.0) < total; at += size_t(rate / 100.0)) {
+    const double level = test::rms(a.l, at, at + size_t(rate / 100.0));
+    low = std::min(low, level);
+    high = std::max(high, level);
+  }
+  REQUIRE(high > 1.41 * low);
+  for (int block : {1, 7, 100}) {
+    INFO("block " << block);
+    const Stereo b = render(block);
+    REQUIRE(a.l == b.l);
+    REQUIRE(a.r == b.r);
+  }
+}
+
+TEST_CASE("A tempo-synced LFO plays the same at any host block size") {
+  // The beat is counted from absolute samples, so every tick's beat is bit-identical whatever the
+  // host's block sizes: free-running with the transport stopped, and following a playing host
+  // that reports its position every block.
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  const bool playing = GENERATE(false, true);
+  CAPTURE(rate, playing);
+  const size_t total = size_t(rate / 2.0);
+  const double tempo = 137.0;
+  auto render = [&](int block) {
+    Synth synth(PluginKind::Instrument, sine);
+    lfoOnPartLevel(synth, true);
+    synth.prepare(rate, 512);
+    synth.noteOn(0, 60, 1.0f);
+    return renderHost(synth, total, block, [&](size_t done) {
+      Transport t = playingAt(5.25 + double(done) * tempo / 60.0 / rate, tempo);
+      t.playing = playing;
+      synth.setTransport(t);
+    });
+  };
+  const Stereo a = render(512);
+  for (int block : {1, 7, 100}) {
+    INFO("block " << block);
+    const Stereo b = render(block);
+    REQUIRE(a.l == b.l);
+    REQUIRE(a.r == b.r);
+  }
+}
+
+TEST_CASE("Transport Phase free-runs at the last tempo while stopped and locks when the transport starts") {
+  // Transport Phase into the Amp of a steady 0.5 source: the output is 0.5 x the bar phase, one
+  // voice latency later.
+  Synth synth(PluginKind::Instrument, steadySource);
+  test::m3Patch(synth);
+  synth.setParam(masterId(MasterParam::Level), 1.0);
+  synth.setRoute(0, 0, Route{kSrcTransportPhase, kDestAmp, kSrcNone});
+  synth.setParam(routeAmountId(0, 0), 1.0);
+  synth.prepare(kRate, kBlock);
+  const size_t latency = size_t(synth.latencySamples());
+  synth.noteOn(0, 60, 1.0f);
+  Transport stopped;
+  Transport t = playingAt(10.0, 120.0);  // 2.5 bars of 4/4: halfway through a bar
+  const size_t start = 48000;            // the transport starts after 1 s
+  const Stereo out = renderHost(synth, 96000, 64, [&](size_t done) {
+    if (done < 24000) return;  // no transport yet: 120 BPM
+    if (done < start) {
+      stopped.hasTempo = true;  // stopped, at 60 BPM: a bar every 4 s
+      stopped.tempo = 60.0;
+      synth.setTransport(stopped);
+    } else {
+      t.beats = 10.0 + double(done - start) * 2.0 / kRate;
+      synth.setTransport(t);
+    }
+  });
+  auto phaseAt = [&](size_t i) { return double(out.l[i + latency]) / 0.5; };
+  // 120 BPM from the start: 0.5 s is a quarter of a bar.
+  REQUIRE(std::fabs(phaseAt(12000) - 0.125) < 0.005);
+  REQUIRE(std::fabs(phaseAt(24000) - 0.25) < 0.005);
+  // Stopped at 60 BPM: it keeps running, a quarter as fast per second as a 4/4 bar at 120 BPM.
+  REQUIRE(std::fabs(phaseAt(36000) - (0.25 + 0.0625)) < 0.005);
+  REQUIRE(std::fabs(phaseAt(start - 64) - (0.375 - 64.0 / kRate / 4.0)) < 0.005);
+  // The transport plays from beat 10: it jumps into line with the song.
+  REQUIRE(std::fabs(phaseAt(start + 32) - (0.5 + 32.0 / kRate / 2.0)) < 0.005);
+  REQUIRE(std::fabs(phaseAt(start + 24000) - 0.75) < 0.005);
+}
+
+TEST_CASE("A synced LFO started from a stopped transport lines up with the song") {
+  // Owner decision 4: stopped, a synced LFO free-runs at the last tempo; when the transport
+  // starts it locks to the song. After the start it plays as one that played from the song
+  // position all along, to within about one sample of the LFO's own rate.
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  CAPTURE(rate);
+  const double tempo = 100.0;
+  const size_t start = size_t(rate * 0.3) / 64 * 64;  // a host block boundary
+  const size_t length = size_t(rate * 0.5);
+  auto render = [&](size_t stoppedFor) {
+    Synth synth(PluginKind::Instrument, steadySource);
+    test::m3Patch(synth);
+    synth.setParam(partId(0, PartParam::Trigger), 1);  // Always on: a steady voice, no notes
+    lfoOnPartLevel(synth, true);
+    synth.prepare(rate, 512);
+    return renderHost(synth, stoppedFor + length, 64, [&](size_t done) {
+      Transport t = playingAt(8.0 + (double(done) - double(stoppedFor)) * tempo / 60.0 / rate, 90.0);
+      if (done < stoppedFor) {
+        t.playing = false;  // stopped: 90 BPM, a different tempo and phase from the song's
+      } else {
+        t.tempo = tempo;
+      }
+      synth.setTransport(t);
+    });
+  };
+  const Stereo fromStop = render(start);
+  const Stereo fromStart = render(0);
+  // The two differ before the start, and match after it once the level has settled.
+  double before = 0.0, after = 0.0;
+  for (size_t i = start / 2; i < start; ++i) before = std::max(before, double(std::fabs(fromStop.l[i] - fromStart.l[i])));
+  for (size_t i = size_t(rate * 0.1); i < length; ++i) {
+    after = std::max(after, double(std::fabs(fromStop.l[start + i] - fromStart.l[i])));
+  }
+  CAPTURE(before, after);
+  REQUIRE(before > 0.02);  // not already in line before the start
+  REQUIRE(after < 1e-3);
+}
+
+TEST_CASE("An Always-on part's envelope on the Amp follows the keys, the first key triggering") {
+  // The instrument init patch (Mod 1's envelope on the Amp) with Trigger Always on, a steady 0.5
+  // source and a percussive envelope (no sustain).
+  Synth synth(PluginKind::Instrument, steadySource);
+  synth.setParam(partId(0, PartParam::Trigger), 1);
+  synth.setParam(modId(0, 0, 3), 0.1);  // Decay
+  synth.setParam(modId(0, 0, 5), 0.0);  // Sustain
+  synth.prepare(kRate, kBlock);
+  Stereo out(48000);
+  run(synth, out, 0, 4800);
+  REQUIRE(synth.activeVoiceCount(0) == 1);  // the voice is on, its Amp closed
+  REQUIRE(test::rms(out.l, 2400, 4800) < 1e-4);
+  synth.noteOn(0, 60, 1.0f);  // the first key triggers the envelope
+  run(synth, out, 4800, 14400);
+  const double struck = test::rms(out.l, 4800, 6000);
+  REQUIRE(struck > 0.01);
+  REQUIRE(test::rms(out.l, 12000, 14400) < 0.01 * struck);  // decayed
+  synth.noteOn(0, 64, 1.0f);  // a second key while the first is held: no retrigger
+  run(synth, out, 14400, 24000);
+  REQUIRE(test::rms(out.l, 14400, 24000) < 0.01 * struck);
+  synth.noteOff(0, 60);
+  synth.noteOff(0, 64);
+  run(synth, out, 24000, 33600);
+  synth.noteOn(0, 67, 1.0f);  // after every key was up: the next key triggers again
+  run(synth, out, 33600, 48000);
+  REQUIRE(test::rms(out.l, 33600, 34800) > 0.5 * struck);
+}
+
+TEST_CASE("The instrument plays the Modal Synth and Resonator at their trimmed level less 12 dB") {
+  // Their +12 dB Source trims are matched by the default -12 dB Voice Gain (rulings 24 and 25).
+  for (const SourceEngine engine : {SourceEngine::Modal, SourceEngine::Resonator}) {
+    auto level = [engine](double voiceGain) {
+      Synth synth(PluginKind::Instrument);
+      synth.setParam(paramSpec(sourceEngineParamIndex(0)).id, double(int(engine)));
+      synth.setParam(masterId(MasterParam::SoftClip), 0.0);
+      if (voiceGain >= 0.0) synth.setParam(masterId(MasterParam::VoiceGain), voiceGain);
+      synth.prepare(kRate, kBlock);
+      synth.noteOn(0, 48, 1.0f);
+      Stereo out(9600);
+      run(synth, out, 0, 9600);
+      return test::rms(out.l, 0, 9600);
+    };
+    INFO("engine " << int(engine));
+    const double byDefault = level(-1.0);
+    REQUIRE(byDefault > 0.0);
+    REQUIRE(byDefault == level(0.0));  // the instrument's default: -12 dB
+    REQUIRE(std::fabs(byDefault / level(1.0) - 0.25119) < 1e-3);
+  }
+}
+
+TEST_CASE("Each part has its own random seeds") {
+  // Both parts play the same patch, with Mod 4 a Random / S&H (per part) into Part Level, and
+  // the per-note Random into pan; Part B goes to Bus 2. The same seeds would make them identical.
+  Synth synth(PluginKind::Instrument, sine);
+  test::m3Patch(synth);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.setParam(partId(1, PartParam::Output), 1);
+  for (int part = 0; part < kNumParts; ++part) {
+    synth.setParam(modEngineId(part, 3), double(ModEngineKind::Random));
+    synth.setRoute(part, 0, Route{modOutputSource(3, 3), kDestPartLevel, kSrcNone});  // X1
+    synth.setParam(routeAmountId(part, 0), -0.5);
+    synth.setRoute(part, 1, Route{kSrcRandom, kDestPan, kSrcNone});
+    synth.setParam(routeAmountId(part, 1), 0.5);
+  }
+  synth.prepare(kRate, kBlock);
+  synth.noteOn(0, 60, 1.0f);
+  Stereo a(96000), b(96000);
+  run(synth, a, 0, 96000, nullptr, &b);
+  REQUIRE(test::rms(a.r, 4800, 96000) > 0.01);  // Random pans each part right of centre
+  REQUIRE(test::rms(b.r, 4800, 96000) > 0.01);
+  REQUIRE(a.l != b.l);
+  REQUIRE(a.r != b.r);
 }
