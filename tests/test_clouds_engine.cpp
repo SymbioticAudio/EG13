@@ -345,9 +345,25 @@ TEST_CASE("Maximum feedback and reverb stay bounded for 60 s") {
   const Stereo out = run(engine, in, 256, params, [](size_t) {});
   REQUIRE(allFinite(out.l));
   REQUIRE(allFinite(out.r));
-  REQUIRE(maxAbs(out.l, 0, n) <= 1.0);
-  REQUIRE(maxAbs(out.r, 0, n) <= 1.0);
   REQUIRE(anyNonZero(out.l, n - rate));
+  // Clouds' int16 output can never leave +-1, so "bounded" is checked as no runaway: the last
+  // 10 s neither sit at full scale nor grow louder than 10-20 s (the same Freeze phases).
+  auto fullScale = [&](const std::vector<float>& x) {
+    size_t count = 0;
+    for (size_t i = n - 10 * rate; i < n; ++i)
+      if (std::fabs(x[i]) >= 0.999f) ++count;
+    return double(count) / double(10 * rate);
+  };
+  const double clippedL = fullScale(out.l), clippedR = fullScale(out.r);
+  const double early = 0.5 * (test::rms(out.l, 10 * rate, 20 * rate) + test::rms(out.r, 10 * rate, 20 * rate));
+  const double late = 0.5 * (test::rms(out.l, n - 10 * rate, n) + test::rms(out.r, n - 10 * rate, n));
+  const double growthDb = 20.0 * std::log10(late / early);
+  INFO("full scale L " << clippedL << " R " << clippedR << ", RMS 10-20 s " << early << ", last 10 s " << late
+                       << " (" << growthDb << " dB)");
+  // Measured (mac, 2026-10-23): no full-scale samples, -0.7 dB.
+  REQUIRE(clippedL < 0.01);
+  REQUIRE(clippedR < 0.01);
+  REQUIRE(growthDb < 3.0);
 }
 
 TEST_CASE("Granular Mode and Quality changes fade") {
