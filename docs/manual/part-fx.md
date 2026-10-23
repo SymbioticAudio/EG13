@@ -1,0 +1,52 @@
+# Part FX
+
+Each part has one **Part FX** slot after its voices. It holds an effect that processes the part's sound before level, pan and the Mono switch. The slot has a *Type* selector and 16 controls, P1 to P16, like the Source slot. Types are stepped parameters with a fixed range of 0 to 31; a value with no engine selects **Off**.
+
+Engines: **Off**, **Granular**, **Granular Delay**, **Resonator** and **Reverb**. Each one is described in its own section below.
+
+## The Part FX slot
+
+- **Off** passes the part's sound unchanged. While Part FX is Off, the *Input* setting (below) is ignored, so Off never lets the Input leak into the part.
+- P1 is the dry/wet **Mix** of every engine, so "Part FX P1" always means dry/wet. The other controls are named by the engine and show "(unused)" and "-" beyond the engine's own controls.
+- **Reset to default in the host** sets each P to one value whatever the *Type*: P1 to P4 50 %, P5 75 %, P6 50 %, P7 to P12 0 %, P13 to P16 50 %. Each engine's own defaults are these values, so resetting never changes an effect from its defaults.
+- Stepped choices inside an engine (Mode, Quality, Model and so on) are controls too: P's read in 16 fixed steps. Steps past the last option read as the last option, and new options are only ever added at the end. Switches such as Freeze are on at 50 % or more.
+- The controls can be modulated: the modulation matrix can target any Part FX P (see [Modulation](modulation.md)).
+- The effect keeps running while no voice sounds, so frozen buffers, tails and an Always-on part's Input keep playing.
+- Changing *Type* keeps the old effect running for the slot's delay and then crossfades to the new one over 10 ms. The new effect starts empty and the old effect's tail is cut.
+- Defaults: both parts start with Part FX **Off** in the instrument. In EG13 FX, Part A starts with **Granular** and Part B with **Off**. The *Input* setting starts at *Part mix* everywhere.
+
+## Input
+
+Each part has a *Part FX Input* setting:
+
+- **Part mix:** the sum of the part's voices goes through the effect.
+- **Input:** only the part's Input (as its Input source routes it: External, Other part or Both) goes through the effect. The part's voices skip the effect and are still heard. They are delayed by the effect's delay so they stay in time with it.
+- **Part mix + Input:** both go through the effect.
+
+With nothing on the Input (no sidechain, or Other part in Single mode) the effect receives silence in *Input* mode, and the voices are still heard.
+
+## Notes and triggers
+
+Every note the part plays is also sent to the Part FX: a voice trigger, not a legato glide, and on an Always-on part every key press. Engines use it as follows:
+
+- **Granular:** each note starts a grain trigger.
+- **Granular Delay:** with *Seed* set to *Notes*, each note is a seed.
+- **Resonator:** each note strums it at that note's pitch.
+
+The note and the controls take effect after the voices' delay, on a 16-sample grid, so they line up with the sound they act on.
+
+## Granular
+
+Based on Clouds. To be written when the engine arrives (M5 Task 4).
+
+## Granular Delay
+
+Based on Beads. To be written when the engine arrives (M5 Task 5).
+
+## Resonator
+
+Based on Rings. To be written when the engine arrives (M5 Task 7).
+
+## Reverb
+
+Uses the reverb of Elements on its own. To be written when the engine arrives (M5 Task 3).

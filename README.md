@@ -30,6 +30,10 @@ CLAP and AU v2 (macOS 14+, universal), plus VST3 and Standalone.
 - **LFO** — based on Tides 2
 - **Random / S&H** — based on Marbles
 - **Function Generator** — based on Peaks
+- **Granular** (Part FX) — based on Clouds
+- **Granular Delay** (Part FX) — based on Beads
+- **Resonator** (Part FX) — based on Rings
+- **Reverb** (Part FX) — the reverb of Elements
 
 ## Building (macOS)
 

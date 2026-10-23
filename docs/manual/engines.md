@@ -13,6 +13,8 @@ Defaults: in the instrument, every part starts with Filter *Type* **State Variab
 
 A slot's *Type* resets to *Off*, except the Filter's in the instrument (*State Variable Filter*) and in EG13 FX's Part A (*Analog Filter*). A new project's *Off* slots hold these reset values; *Off* ignores them.
 
+The Part FX slot and its engines are described in [Part FX](part-fx.md).
+
 ## Sources
 
 ### Macro Oscillator (based on Plaits)
