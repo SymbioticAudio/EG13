@@ -1,6 +1,6 @@
 # EG13 manual
 
-EG13 is a two-part synthesizer (and, as EG13 FX, an audio effect) built from the open-source Eurorack firmware by Émilie Gillet. Each part plays up to eight voices. Each voice runs a **Source**, then a **Filter**, then a **Shaper**.
+EG13 is a two-part synthesizer (and, as EG13 FX, an audio effect) built from the open-source Eurorack firmware by Émilie Gillet. Each part plays up to eight voices. Each voice runs a **Source**, then a **Filter**, then a **Shaper**, then an **Amp**; each part has four **mod slots** and a **modulation matrix**.
 
 This manual describes how EG13 behaves, including the choices it makes where the original modules leave things open.
 

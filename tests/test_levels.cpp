@@ -9,6 +9,7 @@
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 #include "synth/synth.h"
+#include "synth_helpers.h"
 #include "test_helpers.h"
 #include "voice/processor_factory.h"
 #include "voice/processor_slot.h"
@@ -160,5 +161,56 @@ TEST_CASE("The instrument's init cutoff suits every filter", "[levels]") {
                 double(level.peak));
     REQUIRE(level.gainDb > -6.0);
     REQUIRE(level.gainDb < 3.0);
+  }
+}
+
+namespace {
+
+// Peak of Part A's output for `notes` held for one second at velocity 1 (C3 upward in thirds),
+// at the given Source engine, after the first 0.1 s. m3: no modulation, Voice Gain 0 dB, Soft
+// Clip off (the trims alone); otherwise the instrument's init patch.
+float sourcePeak(int engine, int notes, bool m3, bool softClip) {
+  Synth synth(PluginKind::Instrument);
+  if (m3) test::m3Patch(synth);
+  synth.setParam(paramSpec(sourceEngineParamIndex(0)).id, double(engine));
+  synth.setParam(paramSpec(masterParamIndex(MasterParam::Level)).id, 1.0);
+  synth.setParam(paramSpec(masterParamIndex(MasterParam::SoftClip)).id, softClip ? 1.0 : 0.0);
+  synth.prepare(kRate, 128);
+  std::vector<float> in(128), l(128), r(128);
+  const float* input[2] = {in.data(), in.data()};
+  float* out[2] = {l.data(), r.data()};
+  for (int k = 0; k < notes; ++k) synth.noteOn(0, 48 + 4 * k, 1.0f);
+  float peak = 0.0f;
+  for (int b = 0; b < int(kRate) / 128; ++b) {
+    for (int i = 0; i < 128; ++i) in[size_t(i)] = 0.5f * float(std::sin(6.283185307179586 * 220.0 * double(b * 128 + i) / kRate));
+    synth.process(input, out, nullptr, 128);
+    if (b * 128 < int(kRate) / 10) continue;
+    for (int i = 0; i < 128; ++i) peak = std::max(peak, std::max(std::fabs(l[size_t(i)]), std::fabs(r[size_t(i)])));
+  }
+  return peak;
+}
+
+}  // namespace
+
+TEST_CASE("Source trims bring every Source near the Macro Oscillator's level", "[levels]") {
+  const float macro = sourcePeak(int(SourceEngine::Macro), 1, true, false);
+  std::printf("One held C3 at velocity 1, defaults, after the trims (Voice Gain 0 dB, Soft Clip off):\n");
+  for (int e = 0; e < kNumSourceEngines; ++e) {
+    const float peak = sourcePeak(e, 1, true, false);
+    const double db = 20.0 * std::log10(double(peak) / double(macro));
+    std::printf("  %-20s trim %+5.1f dB  peak %.3f (%+5.1f dB against the Macro Oscillator)\n",
+                sourceEngineInfo(e).displayName, double(sourceTrimDb(e)), double(peak), db);
+    if (e != int(SourceEngine::AudioInput)) REQUIRE(std::fabs(db) < 1.5);  // the Input sets its own level
+  }
+}
+
+TEST_CASE("Eight-note chords with the init patch stay within full scale", "[levels]") {
+  std::printf("Eight-note chord, init patch (Voice Gain -12 dB), master 100%%: peak before / after Soft Clip\n");
+  for (int e = 0; e < kNumSourceEngines; ++e) {
+    const float raw = sourcePeak(e, 8, false, false);
+    const float clipped = sourcePeak(e, 8, false, true);
+    std::printf("  %-20s %.3f / %.3f\n", sourceEngineInfo(e).displayName, double(raw), double(clipped));
+    REQUIRE(clipped <= 1.0f);
+    REQUIRE(std::isfinite(raw));
   }
 }

@@ -13,3 +13,5 @@ Two engines set these figures: the Modal Synth's 32 kHz engine and the Ring Mod 
 
 - **EG13** aligns note onsets. Sound that the Input excites through the Modal Synth or Resonator therefore arrives up to about 6 ms after the Dry signal.
 - **EG13 FX** aligns the processed Input exactly with Dry.
+
+Modulation adds no latency: a key reaches the modulation engines within a quarter of a millisecond, and their outputs reach the sound every 16 samples.

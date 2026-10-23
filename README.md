@@ -7,7 +7,7 @@ the open-source Eurorack firmware by Émilie Gillet
 EG13 is not affiliated with or endorsed by Mutable Instruments. "Mutable Instruments" is a
 registered trademark; EG13 uses its own names for each engine.
 
-**Status:** M3 (filter and shaper): two parts × 8 voices, each Source → Filter → Shaper. Sources: Macro Oscillator, Digital Oscillator, Modal Synth, Resonator, Audio Input. Filters: Analog Filter, Classic Filters (205 types), State Variable Filter. Shapers: Ring Mod / Vocoder (every algorithm and a frequency shifter; the carrier is an internal oscillator, the voice, the Source's AUX, the input or the other part, and the modulator the voice, the Source's AUX, the input or the other part) and EQ. Filters and shapers run a second, right-channel instance only while their input is stereo. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design.
+**Status:** M4 (modulation): two parts × 8 voices, each Source → Filter → Shaper → Amp → pan, with four mod slots per part (Envelope, LFO, Random / S&H, Function Generator; per voice or per part) and a 12-route modulation matrix (velocity, release velocity, keytrack, gate, random, MPE pressure / slide / per-note bend, mod wheel, pitch bend, channel pressure, four CCs, transport phase and the mod slots' outputs into any engine control, pitch, Amp, pan, part level and other mod slots). MPE (lower or upper zone per part), tempo sync, gain staging (−12 dB per voice, Source trims) and a master soft clipper. Sources: Macro Oscillator, Digital Oscillator, Modal Synth, Resonator, Audio Input. Filters: Analog Filter, Classic Filters (205 types), State Variable Filter. Shapers: Ring Mod / Vocoder and EQ. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design and `docs/manual/` for how EG13 behaves.
 Pre-1.0: saved projects and presets may not load in later versions until the parameter layout is frozen.
 
 ## Formats
@@ -26,6 +26,10 @@ CLAP and AU v2 (macOS 14+, universal), plus VST3 and Standalone.
 - **State Variable Filter** — the SVF from the Eurorack DSP library
 - **Ring Mod / Vocoder** — based on Warps
 - **EQ** — the VCV model of Shelves
+- **Envelope** — based on Stages
+- **LFO** — based on Tides 2
+- **Random / S&H** — based on Marbles
+- **Function Generator** — based on Peaks
 
 ## Building (macOS)
 
@@ -55,6 +59,15 @@ CPU, Apple M1 (base), 48 kHz, 128-sample blocks, 2 × 8 voices (one run each; re
 - Heaviest stereo chain: Modal Synth -> Analog Filter -> Vocoder: 88.18% of one core over 5 s (for information; not held to the budget)
 - Heaviest mono-source chain with 1 side input in use (Modulator Input): 50.30% of one core over 5 s
 - Heaviest mono-source chain with 2 side inputs in use (Carrier Source AUX, Modulator Input): 51.54% of one core over 5 s
+
+Modulation, Apple M1 (base), 48 kHz, 128-sample blocks, 2 × 8 voices (two runs, 7.12 and 7.45 points):
+
+- Heaviest mono-source chain, no modulation: 48.13% of one core over 5 s
+- Same with 4 per-voice LFO slots (Frequency outputs) and 12 routes per part: 55.25% of one core
+- Modulation at full load: 7.12% of one core (budget 10%)
+- EG13 init patch: 15.38% of one core; EG13 FX init patch: 7.46% (for information)
+
+The 50 % budget applies to the voice chain with a mono Source and no modulation; modulation has its own budget of 10 % of a core with every mod slot of every voice in use.
 
 The 50 % budget is met by the heaviest chain with a mono Source while the Ring Mod / Vocoder's Carrier and Modulator are the internal oscillator or the voice. With one or two side inputs carrying a signal (Source AUX, Input or Other part), the same chain is just over it, and stereo chains of the heaviest engines can use much more. Engines that run at their own sample rate convert a side input only while it carries a signal, and their right channel only while it differs from the left; the result is the same as converting everything.
 
