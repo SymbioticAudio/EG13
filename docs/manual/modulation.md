@@ -112,7 +112,7 @@ Modulation is time-aligned with the sound it shapes. The engines take a moment t
 EG13 keeps room for chords and evens out its Sources (gain staging):
 
 - **Voice Gain** (a master setting): each voice plays 12 dB lower (*−12 dB*, the instrument's default), so a chord of eight loud voices does not overload the mix. *0 dB* plays each voice at full level: EG13 FX starts there (it usually plays one voice).
-- **Source trims**: each Source is turned up or down at its output, before the Filter, so one held note at the engine's default settings comes out about as loud on every Source: the Digital Oscillator 3 dB down, the Modal Synth and the Resonator 12 dB up, the Macro Oscillator and Audio Input unchanged. This also means the Filter and the Shaper see similar levels from every Source.
+- **Source trims**: each Source is turned up or down at its output, before the Filter, so one held note at the engine's default settings comes out about as loud on every Source: the Digital Oscillator 3 dB down, the Modal Synth and the Resonator 12 dB up, the Macro Oscillator and Audio Input unchanged. This also means the Filter and the Shaper see similar levels from every Source. Switching the Source while a note is held plays the new Source at its own trim from its first sample.
 - **Audio Input chords**: every Audio Input voice carries the same Input, so EG13 divides each one by the number of sounding keys (held keys, sustain and Always on count). A chord plays the Input at one voice's level instead of several times louder. The division glides over a few milliseconds when you add or release a key, and a note you have released keeps its level as it fades out, so a released chord does not swell.
 - **Soft Clip** (a master setting, on by default): the main and Bus 2 outputs pass unchanged below −3 dBFS; above that they bend smoothly towards full scale and never go over it. A NaN is silenced. Switch it off to hear EG13's output exactly (the host may then clip it).
 
@@ -127,14 +127,14 @@ EG13 keeps room for chords and evens out its Sources (gain staging):
 
 ## MIDI, MPE and expression
 
-- **Mod wheel** (CC1), **pitch bend**, **channel pressure** and the four **CC** sources come from the part's MIDI channel. Set *CC A* to *CC D* in the host to the controller numbers you want (defaults: 2 Breath, 4 Foot, 11 Expression, 16). EG13's own interface will also let you learn them by moving a control; learning waits for a controller that is not on an MPE note channel and not sustain, bank select, data entry, RPN/NRPN or a channel-mode message (CC 120 and up).
+- **Mod wheel** (CC1), **pitch bend**, **channel pressure** and the four **CC** sources come from the part's MIDI channel. Set *CC A* to *CC D* in the host to the controller numbers you want (defaults: 2 Breath, 4 Foot, 11 Expression, 16). EG13's own interface will also let you learn them by moving a control; learning waits for a controller that is not on an MPE note channel and not sustain, bank select, data entry, data increment or decrement, RPN/NRPN or a channel-mode message (CC 120 and up).
 - **Polyphonic aftertouch** is each note's *Pressure*. **Release velocity** (how fast you let go) is each note's *Release Velocity*; a note-off without one (a note-on with velocity 0) counts as 64.
 - **MPE**: set the part's *MPE* to *Lower zone* (master channel 1, notes on channels 2 to 16) or *Upper zone* (master channel 16, notes on channels 1 to 15). If Part A uses one zone and Part B the other, the lower zone gets channels 2 to 8 and the upper zone 9 to 15. With MPE on, the part's *MIDI Channel* setting is not used.
   - On a note's own channel, pitch bend bends that note (by the *MPE Bend Range*, default ±48 semitones; it also feeds the *Note Bend* source), pressure is that note's *Pressure*, and CC74 is its *Slide*. Values sent before the note (as MPE controllers do) apply to it from the start. Other controllers on a note's channel are ignored, except that sustain and all-notes-off there act on the whole part.
   - On the master channel, pitch bend bends the whole part (by its *Bend Range*), and pressure and controllers are part-wide.
   - In Single mode Part B's MPE setting is ignored, so Part A keeps its whole zone. If both parts choose the same zone, Part A gets it and Part B hears none of its channels.
   - EG13 does not read the MPE Configuration Message: the zones are set by the *MPE* settings alone. If the same key is played on two channels at once, both share one voice.
-- Without MPE, CC74 is a part-wide *Slide*. In CLAP hosts, per-note *Tuning* bends a note, per-note *Pressure* is its Pressure and per-note *Brightness* its Slide (other per-note expressions are not used yet).
+- Without MPE, CC74 is a part-wide *Slide*. In CLAP hosts, per-note *Tuning* bends a note, per-note *Pressure* is its Pressure and per-note *Brightness* its Slide (other per-note expressions are not used yet). An expression the host sends without a key (to every note) reaches every note on its channel, or every note if it names no channel.
 
 ## Tempo
 

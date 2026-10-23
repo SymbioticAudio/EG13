@@ -241,7 +241,8 @@ void Part::memberExpression(int channel, Expression expression, float value) {
 
 void Part::noteExpression(int channel, int key, Expression expression, float value) {
   for (int v = 0; v < kVoices; ++v) {
-    if (voices_[size_t(v)]->active() && voiceKey_[v] == key && (channel < 0 || voiceChannel_[v] == channel)) {
+    if (voices_[size_t(v)]->active() && (key < 0 || voiceKey_[v] == key) &&
+        (channel < 0 || voiceChannel_[v] == channel)) {
       setExpression(expression, value, &voiceBend_[v], &voicePressure_[v], &voiceSlide_[v]);
     }
   }
@@ -382,9 +383,13 @@ void Part::process(const VoiceInputs& in, float* const* out, const PartParams& p
     if (tickPos_ == 0) startTick(params, done);
     const int count = std::min(Voice::kControlBlock - tickPos_, n - done);
     for (int v = 0; v < kVoices; ++v) {
-      // A voice that started since the tick began gets controls for the rest of the tick.
+      // A voice that started since the tick began gets controls for the rest of the tick. A
+      // pending transport jump is not passed on here: the next tick's start delivers it to every
+      // voice, this one included, so it arrives once.
       if (voices_[size_t(v)]->active() && !controlValid_[v]) {
-        controlVoice(v, params, partInputs(params, done), Voice::kControlBlock - tickPos_);
+        ModPartInputs part = partInputs(params, done);
+        part.beatJump = false;
+        controlVoice(v, params, part, Voice::kControlBlock - tickPos_);
       }
     }
     const float* input[2] = {in.input ? in.input[0] + done : nullptr, in.input ? in.input[1] + done : nullptr};

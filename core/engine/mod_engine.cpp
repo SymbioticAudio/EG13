@@ -28,12 +28,17 @@ NativeModEngine::NativeModEngine(double nativeRate, int nativeBlock)
     : nativeRate_(nativeRate), nativeBlock_(std::clamp(nativeBlock, 1, kMaxNativeBlock)) {}
 
 void NativeModEngine::prepare(double hostRate) {
-  // Rates in mHz: exact for every common rate, and below 2^31 up to 2 MHz, so in process()
-  // hostPhase_ * rateNum_ (< (2^31 + n) * 2^31 <= 2^63 for any int n) fits in 64 bits.
+  // Rates in mHz: exact for every common rate, and at most 2^31 up to 2 MHz. In process(),
+  // hostPhase_ < rateDen_ when the product is taken, so hostPhase_ * rateNum_ < rateDen_ *
+  // rateNum_ <= 2^62 fits in 64 bits. A rate that rounds to 0 mHz (or is out of range) counts as
+  // invalid: the grid then runs 1:1.
   constexpr double kMaxRate = 2.0e6;
-  const bool valid = hostRate > 0.0 && hostRate <= kMaxRate && nativeRate_ > 0.0 && nativeRate_ <= kMaxRate;
-  rateNum_ = valid ? int64_t(std::llround(nativeRate_ * 1000.0)) : 1;
-  rateDen_ = valid ? int64_t(std::llround(hostRate * 1000.0)) : 1;
+  const bool inRange = hostRate > 0.0 && hostRate <= kMaxRate && nativeRate_ > 0.0 && nativeRate_ <= kMaxRate;
+  const int64_t num = inRange ? int64_t(std::llround(nativeRate_ * 1000.0)) : 0;
+  const int64_t den = inRange ? int64_t(std::llround(hostRate * 1000.0)) : 0;
+  const bool valid = num >= 1 && den >= 1;
+  rateNum_ = valid ? num : 1;
+  rateDen_ = valid ? den : 1;
   const int64_t divisor = std::gcd(rateNum_, rateDen_);
   rateNum_ /= divisor;
   rateDen_ /= divisor;

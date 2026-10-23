@@ -880,6 +880,44 @@ TEST_CASE("Mono retriggers per-voice mod engines on every note; Poly retriggers 
   }
 }
 
+TEST_CASE("Poly: a voice from silence restarts its per-voice mod engines, a retrigger does not") {
+  // Ruling 7: reset when the voice starts from silence, retrigger when it is already sounding.
+  Part part(sine, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  PartSettings s = withMod(0, test::kTestStep);
+  s.voiceMode = VoiceMode::Poly;
+  s.voiceCount = 1;  // every note on voice 0
+  part.applySettings(s);
+  const PartParams params;
+  part.noteOn(60, 1.0f);
+  runModulated(part, 64, params);
+  part.noteOn(60, 1.0f);  // the same key on its sounding voice
+  runModulated(part, 64, params);
+  REQUIRE(std::fabs(part.modulation().outputs(0, 0)[2] - 0.2f) < 1e-6f);  // retriggered...
+  REQUIRE(std::fabs(part.modulation().outputs(0, 0)[0] - 0.08f) < 1e-6f);  // ...not reset (8 ticks)
+  part.noteOff(60);
+  runModulated(part, 9600, params);  // 0.2 s: the release ends and the voice is freed
+  REQUIRE(part.activeVoiceCount() == 0);
+  part.noteOn(60, 1.0f);
+  runModulated(part, 64, params);
+  REQUIRE(part.modulation().outputs(0, 0)[2] == 0.1f);                     // one trigger since...
+  REQUIRE(std::fabs(part.modulation().outputs(0, 0)[0] - 0.04f) < 1e-6f);  // ...a reset (4 ticks)
+}
+
+TEST_CASE("A voice that starts mid-tick sees a transport jump once") {
+  Part part(sine, test::testModEngines);
+  part.prepare(kRate, kBlock);
+  part.applySettings(withMod(0, test::kTestStep));
+  PartParams params;
+  runModulated(part, 8, params);  // the tick is half done
+  part.noteOn(60, 1.0f);          // starts mid-tick...
+  params.timing.jump = true;      // ...in the call that carries a jump
+  runModulated(part, 8, params);
+  params.timing.jump = false;
+  runModulated(part, 32, params);
+  REQUIRE(part.modulation().outputs(0, 0)[5] == 1.0f);
+}
+
 TEST_CASE("Legato glides without retriggering, and retriggers after every key was up") {
   Part part(sine, test::testModEngines);
   part.prepare(kRate, kBlock);

@@ -146,34 +146,52 @@ TEST_CASE("Function Generator's Random matches Peaks' noise LFO") {
 }
 
 TEST_CASE("Function Generator's Tap LFO follows the notes' tempo") {
+  // Each tap restarts the cycle (Lfo::Process), so counting cycles alone cannot see the tempo:
+  // where in the tap interval the wave crosses zero can. At the tapped tempo that point is the
+  // same fraction of the interval at every tempo.
   for (const double rate : {44100.0, 48000.0, 96000.0}) {
-    INFO("host rate " << rate);
-    PeaksEngine e;
-    e.prepare(rate);
-    e.reset();
-    ParamValues p = defaults();
-    p.p[0] = modOptionValue(PeaksEngine::TapLfo);
-    p.p[10] = modOptionValue(1);  // triangle
-    float out[kMaxModOutputs];
-    float previous = 0.0f;
-    int rising = 0;
-    const double tap = rate / 2.0;  // a tap every half second (120 BPM)
-    const int ticks = int(rate * 8.0 / 16.0);  // 8 s
-    for (int t = 0; t < ticks; ++t) {
-      const double start = double(t) * 16.0;
-      // The latest tap that has begun by the end of this tick; the gate is high from the tick
-      // that holds it for about 2 ms, with the retrigger on that first tick.
-      const double tapTime = std::floor((start + 15.0) / tap) * tap;
-      const double tapTick = std::floor(tapTime / 16.0) * 16.0;
-      ModContext ctx;
-      ctx.retrigger = start == tapTick;
-      ctx.gate = start - tapTick < 0.0021 * rate;
-      e.process(ctx, p, 16, out);
-      if (start >= 2.0 * rate && previous < 0.0f && out[0] >= 0.0f) ++rising;  // after 2 s
-      previous = out[0];
+    double fraction[2] = {};
+    int index = 0;
+    for (const double seconds : {0.5, 0.3}) {  // 120 and 200 BPM
+      INFO("host rate " << rate << ", a tap every " << seconds << " s");
+      PeaksEngine e;
+      e.prepare(rate);
+      e.reset();
+      ParamValues p = defaults();
+      p.p[0] = modOptionValue(PeaksEngine::TapLfo);
+      p.p[10] = modOptionValue(1);  // triangle
+      float out[kMaxModOutputs];
+      float previous = 0.0f;
+      int rising = 0;
+      double first = -1.0, lowest = 1.0, highest = 0.0;
+      const double tap = rate * seconds;
+      const int ticks = int(rate * 8.0 / 16.0);  // 8 s
+      for (int t = 0; t < ticks; ++t) {
+        const double start = double(t) * 16.0;
+        // The latest tap that has begun by the end of this tick; the gate is high from the tick
+        // that holds it for about 2 ms, with the retrigger on that first tick.
+        const double tapTime = std::floor((start + 15.0) / tap) * tap;
+        const double tapTick = std::floor(tapTime / 16.0) * 16.0;
+        ModContext ctx;
+        ctx.retrigger = start == tapTick;
+        ctx.gate = start - tapTick < 0.0021 * rate;
+        e.process(ctx, p, 16, out);
+        if (start >= 2.0 * rate && previous < 0.0f && out[0] >= 0.0f) {  // after the taps are learnt
+          ++rising;
+          const double f = (start - tapTick) / tap;
+          if (first < 0.0) first = f;
+          lowest = std::min(lowest, f);
+          highest = std::max(highest, f);
+        }
+        previous = out[0];
+      }
+      const int taps = int(6.0 / seconds);
+      REQUIRE(rising >= taps - 1);  // one cycle per tap
+      REQUIRE(rising <= taps + 1);
+      REQUIRE(highest - lowest < 0.01);  // always at the same point of the interval
+      fraction[index++] = first;
     }
-    REQUIRE(rising >= 11);  // 6 s at 2 Hz after the taps have been learnt
-    REQUIRE(rising <= 13);
+    REQUIRE(std::fabs(fraction[0] - fraction[1]) < 0.01);  // the cycle scales with the tempo
   }
 }
 

@@ -98,7 +98,9 @@ class NativeModEngine : public ModEngine {
   static constexpr int kMaxNativeBlock = 8;
 
   NativeModEngine(double nativeRate, int nativeBlock);
-  void prepare(double hostRate) override;
+  // Sets the host rate and restarts the native-time grid (as reset() does, but the engine's own
+  // state and the held outputs are kept).
+  void prepare(double hostRate) final;
   void reset() final;
   void process(const ModContext& ctx, const ParamValues& p, int n, float* out) final;
 

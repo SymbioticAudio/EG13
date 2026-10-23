@@ -152,9 +152,10 @@ void Synth::noteExpression(int channel, int key, Expression expression, float va
   }
 }
 
-// Controllers a learn never takes: sustain, bank select, data entry, (N)RPN and channel mode.
+// Controllers a learn never takes: sustain, bank select, data entry, data increment and
+// decrement, (N)RPN and channel mode.
 static bool learnable(int cc) {
-  return cc != 0 && cc != 32 && cc != 6 && cc != 38 && cc != 64 && !(cc >= 98 && cc <= 101) && cc < 120;
+  return cc != 0 && cc != 32 && cc != 6 && cc != 38 && cc != 64 && !(cc >= 96 && cc <= 101) && cc < 120;
 }
 
 void Synth::controlChange(int channel, int cc, int value) {

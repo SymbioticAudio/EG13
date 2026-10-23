@@ -123,7 +123,7 @@ class Synth {
   void controlChange(int channel, int cc, int value);
   void channelPressure(int channel, float value);       // 0..1; per note on MPE member channels
   void polyPressure(int channel, int key, float value);  // 0..1: that note's Pressure
-  // A note expression (CLAP): the voices playing key on channel (negative: any channel).
+  // A note expression (CLAP): the voices playing key on channel (negative: any key, any channel).
   void noteExpression(int channel, int key, Expression expression, float value);
   void allNotesOff();
   // Main thread: the next controller message on a channel the part hears sets CC A..D (slot
@@ -158,7 +158,8 @@ class Synth {
   void setTransport(const Transport& transport) { clock_.setTransport(transport); }
   int engine(int part) const { return engine(SlotKind::Source, part); }  // main thread
   int engine(SlotKind kind, int part) const;                               // main thread
-  // Main thread. Engine-aware: Source, Filter and Shaper P values follow the part's selected engines.
+  // Main thread. Engine-aware: Source, Filter, Shaper and mod slot P values follow the part's
+  // selected engines.
   const char* paramName(size_t index) const;
   void formatParam(size_t index, double value, char* buf, size_t size) const;
 

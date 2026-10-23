@@ -69,7 +69,7 @@ void handleEvent(Plugin* plugin, const clap_event_header_t* hdr) {
     case CLAP_EVENT_NOTE_EXPRESSION: {
       // Provisional ruling 12: tuning, pressure and brightness; the others are not used yet.
       const auto* ev = reinterpret_cast<const clap_event_note_expression_t*>(hdr);
-      if (ev->key < 0 || ev->key > 127) break;
+      if (ev->key > 127) break;  // key -1 (a wildcard): every note, as Part::noteExpression reads it
       if (ev->expression_id == CLAP_NOTE_EXPRESSION_TUNING) {
         plugin->synth.noteExpression(ev->channel, ev->key, Expression::Bend, float(ev->value));
       } else if (ev->expression_id == CLAP_NOTE_EXPRESSION_PRESSURE) {

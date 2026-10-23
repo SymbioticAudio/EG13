@@ -66,6 +66,17 @@ TEST_CASE("The sampler keeps native time at every host rate") {
   }
 }
 
+TEST_CASE("A host rate that rounds to 0 mHz runs the grid 1:1 instead of dividing by zero") {
+  for (double hostRate : {0.0004, -1.0, 3.0e6}) {
+    INFO(hostRate);
+    test::CountingModEngine e(31250.0, 8);
+    e.prepare(hostRate);
+    e.reset();
+    const ModContext ctx;
+    REQUIRE(tick(e, ctx, 16) == 15.0f);
+  }
+}
+
 TEST_CASE("The sampler does not drift over an hour") {
   // An independent reference: the native samples due after h host samples are exactly
   // floor(h * native / host), computed here in integers.

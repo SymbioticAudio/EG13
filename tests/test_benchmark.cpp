@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -256,9 +257,11 @@ TEST_CASE("CPU: the init patches", "[.benchmark]") {
     const int blocks = int(kRate) * 5 / kBlock;
     const auto start = std::chrono::steady_clock::now();
     double sum = 0.0;
+    float peak = 0.0f;
     for (int b = 0; b < blocks; ++b) {
       synth.process(input, out, nullptr, kBlock);
       sum += double(l[0]) + double(r[kBlock - 1]);
+      peak = std::max({peak, std::fabs(l[0]), std::fabs(r[kBlock - 1])});
     }
     const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     synth.setActive(false);
@@ -267,6 +270,7 @@ TEST_CASE("CPU: the init patches", "[.benchmark]") {
                 kind == PluginKind::Effect ? "EG13 FX" : "EG13", load);
     REQUIRE(std::isfinite(sum));
     REQUIRE(std::isfinite(double(l[0])));
+    REQUIRE(peak > 1e-3f);  // the init patch really plays: an idle synth would measure less
     REQUIRE(load < 100.0);
   }
 }

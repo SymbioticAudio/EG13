@@ -1340,6 +1340,37 @@ TEST_CASE("Synth processing with every mod slot and route in use does not alloca
   synth.setActive(false);
 }
 
+TEST_CASE("Switching mod engines and scopes while notes play does not allocate") {
+  Synth synth(PluginKind::Instrument);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.prepare(48000.0, kBlock);
+  synth.setActive(true);
+  Stereo out(kBlock);
+  run(synth, out, 0, kBlock);
+  for (int key : {48, 55, 60, 64, 67}) synth.noteOn(0, key, 0.8f);
+  run(synth, out, 0, kBlock);
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int block = 0; block < 200; ++block) {
+      if (block % 5 == 0) {
+        const int step = block / 5;
+        for (int part = 0; part < kNumParts; ++part) {
+          for (int slot = 0; slot < kNumModSlots; ++slot) {
+            synth.setParam(paramSpec(modEngineParamIndex(part, slot)).id, double((step + slot) % kNumModEngines));
+            synth.setParam(paramSpec(modScopeParamIndex(part, slot)).id, double((step + part + slot) % 2));
+          }
+        }
+      }
+      if (block == 100) synth.noteOn(0, 72, 0.5f);
+      run(synth, out, 0, kBlock);
+    }
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
+  synth.setActive(false);
+}
+
 namespace {
 
 SourceSpec steadySource() { return {std::make_unique<test::ConstantEngine>(), 0.0, 16}; }
@@ -1755,6 +1786,10 @@ TEST_CASE("CC A-D read their controller numbers and can learn a new one") {
   synth.takeEngineChanged();
   synth.learnCc(0, 1);  // CC B learns the next controller
   synth.controlChange(0, 64, 127);  // sustain is never learnt
+  synth.controlChange(0, 96, 127);  // nor data increment and decrement (RPN/NRPN)
+  synth.controlChange(0, 97, 127);
+  REQUIRE(synth.param(partId(0, PartParam::CcB)) != 96.0);
+  REQUIRE(synth.param(partId(0, PartParam::CcB)) != 97.0);
   synth.controlChange(0, 33, 127);
   REQUIRE(synth.param(partId(0, PartParam::CcB)) == 33.0);
   REQUIRE(synth.takeHostUpdates(updates, int(kMaxHostUpdates)) == 1);
@@ -1794,6 +1829,28 @@ TEST_CASE("Polyphonic pressure, note expressions and release velocity reach thei
   synth.noteOn(0, 67, 0.0f);  // a note-on at velocity 0: a note-off without release velocity
   run(synth, out, 0, kBlock);
   REQUIRE(a.lastControl(2).params.source.p[1] == kDefaultReleaseVelocity);
+}
+
+TEST_CASE("A note expression with key -1 reaches every note (a CLAP wildcard)") {
+  Synth synth(PluginKind::Instrument, sine);
+  test::m3Patch(synth);
+  synth.setParam(paramSpec(sourceParamIndex(0, 0)).id, 0.0);  // the route adds to 0
+  synth.setRoute(0, 0, Route{kSrcPressure, uint16_t(kDestSourceP + 0), kSrcNone});
+  synth.setParam(paramSpec(routeAmountParamIndex(0, 0)).id, 1.0);
+  synth.prepare(kRate, kBlock);
+  synth.noteOn(0, 60, 1.0f);
+  synth.noteOn(0, 64, 1.0f);
+  synth.noteExpression(-1, -1, Expression::Pressure, 0.5f);  // any channel, any key
+  Stereo out(kBlock);
+  run(synth, out, 0, kBlock);
+  const Part& a = synth.part(0);
+  REQUIRE(a.lastControl(0).params.source.p[0] == 0.5f);
+  REQUIRE(a.lastControl(1).params.source.p[0] == 0.5f);
+  synth.noteExpression(0, -1, Expression::Pressure, 0.25f);  // any key on channel 1
+  synth.noteExpression(3, -1, Expression::Pressure, 1.0f);   // no note on channel 4
+  run(synth, out, 0, kBlock);
+  REQUIRE(a.lastControl(0).params.source.p[0] == 0.25f);
+  REQUIRE(a.lastControl(1).params.source.p[0] == 0.25f);
 }
 
 TEST_CASE("A controller with no learn pending leaves CC A alone") {

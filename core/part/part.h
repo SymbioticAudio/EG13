@@ -107,7 +107,8 @@ class Part {
   // An MPE member channel's bend (semitones), pressure or slide: every voice on that channel,
   // and the next notes on it.
   void memberExpression(int channel, Expression expression, float value);
-  // One note's expression: the voices playing `key` (on `channel`; negative: any channel).
+  // One note's expression: the voices playing `key` (negative: any key) on `channel` (negative:
+  // any channel).
   void noteExpression(int channel, int key, Expression expression, float value);
 
   // Modulated (M4): the part's mod slots and matrix on a fixed 16-sample grid, then each voice's

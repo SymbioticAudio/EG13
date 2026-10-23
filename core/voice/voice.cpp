@@ -6,6 +6,7 @@
 #include <cmath>
 #include <utility>
 
+#include "engine/engine_registry.h"
 #include "voice/processor_factory.h"
 
 namespace eg13 {
@@ -141,6 +142,13 @@ void Voice::setEngine(int engine) {
   if (engine == current_) return;
   // Hard cut: the old engine is left as is (it is reset when selected again or by
   // reset()), and a held note restarts after latencySamples() of silence.
+  // The Source gain (trim x chord scaling) snaps to the new engine's trim, in flight too, so the
+  // new Source never plays a moment at the old one's trim (the Part's next tick confirms it).
+  const float trim = sourceTrim(engine) / sourceTrim(current_);
+  sourceGain_ *= trim;
+  sourceGainFrom_ *= trim;
+  control_.sourceGain *= trim;
+  std::fill(sourceGainLine_.begin(), sourceGainLine_.end(), sourceGain_);
   current_ = engine;
   source().reset();
   retrigger_ &= ~kSourceStage;

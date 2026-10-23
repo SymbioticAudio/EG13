@@ -44,7 +44,8 @@ void formatRate(float v, char* buf, size_t size) {
   std::snprintf(buf, size, "%+d%%", int(std::lround((2.0f * clamp01(v) - 1.0f) * 100.0f)));
 }
 void formatLength(float v, char* buf, size_t size) {
-  std::snprintf(buf, size, "%d steps", MarblesEngine::lengthSteps(v));
+  const int steps = MarblesEngine::lengthSteps(v);
+  std::snprintf(buf, size, steps == 1 ? "%d step" : "%d steps", steps);
 }
 
 // Defaults are the mod slots' shared host defaults (param_table.cpp, kModHostDefaults): VCV's
@@ -167,7 +168,9 @@ void MarblesEngine::renderBlock(const ParamValues& p, const uint8_t*, const doub
   y.length = 1;
   y.ratio.p = 1;  // VCV's default Y divider (y_divider_index 8, Marbles.cpp:278, 517-531)
   y.ratio.q = 4;
-  bool xyReset = sync && beatJump;
+  // As the firmware does (marbles.cc:377-381): T's reset, including one its ramp extractor raised
+  // itself, also resets X and Y.
+  bool xyReset = sync && (beatJump || tReset);
   s.xy.Process(marbles::CLOCK_SOURCE_INTERNAL_T1_T2_T3, x, y, &xyReset, clock, ramps, s.voltages, kNativeBlock);
 
   // Volts to EG13's range by X Range (x_y_generator.cc:134-145): 0..2 V, 0..5 V, -5..+5 V.

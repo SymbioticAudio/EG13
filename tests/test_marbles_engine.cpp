@@ -26,7 +26,7 @@ ParamValues busy() {
   ParamValues p = defaults();
   p.p[0] = modOptionValue(1);   // T Model: Clusters
   p.p[1] = modOptionValue(1);   // T Deja Vu on
-  p.p[2] = 0.7f;                // T Rate: +40 % (24 semitones)
+  p.p[2] = 0.75f;               // T Rate: +50 % (30 semitones)
   p.p[3] = 0.6f;                // T Bias
   p.p[4] = 0.7f;                // Deja Vu
   p.p[5] = modOptionValue(1);   // X Range: Positive
@@ -58,7 +58,7 @@ class Reference {
   void block(float out[7]) {
     t_.set_model(marbles::T_GENERATOR_MODEL_CLUSTERS);
     t_.set_range(marbles::T_GENERATOR_RANGE_4X);
-    t_.set_rate(60.0f * 0.4f);
+    t_.set_rate(60.0f * 0.5f);
     t_.set_bias(0.6f);
     t_.set_jitter(0.2f);
     t_.set_deja_vu(0.7f);
@@ -142,7 +142,9 @@ TEST_CASE("Random / S&H describes itself") {
   info.engine.params[13].format(modOptionValue(3), buf, sizeof(buf));
   REQUIRE(std::string(buf) == "Pelog");
   info.engine.params[11].format(0.0f, buf, sizeof(buf));
-  REQUIRE(std::string(buf) == "1 steps");
+  REQUIRE(std::string(buf) == "1 step");
+  info.engine.params[11].format(0.4f, buf, sizeof(buf));
+  REQUIRE(std::string(buf) == "4 steps");
   REQUIRE(MarblesEngine::lengthSteps(1.0f) == 16);
   REQUIRE(MarblesEngine::lengthSteps(0.4f) == 4);
 }
@@ -230,6 +232,57 @@ TEST_CASE("A synced Random / S&H follows the beat") {
     REQUIRE(edges >= 13);
     REQUIRE(edges <= 15);
   }
+}
+
+namespace {
+// A synced Random / S&H at 120 BPM with its loops locked (Deja Vu at 50 %, both sections on) and 4
+// steps long. The transport starts at tick 0 and, if jumpAt > 0, jumps back to beat 0 at that
+// tick. Returns the values X1 changes to from tick `from` on.
+std::vector<float> lockedX1(int jumpAt, int from, int ticks) {
+  MarblesEngine e;
+  e.setSeed(5);
+  e.prepare(48000.0);
+  e.reset();
+  ParamValues p = defaults();
+  p.p[1] = modOptionValue(1);   // T Deja Vu on
+  p.p[11] = 0.4f;               // Length 4
+  p.p[14] = modOptionValue(1);  // X Deja Vu on
+  p.p[15] = modOptionValue(1);  // Sync on
+  const double bps = 2.0 / 48000.0;
+  std::vector<float> values;
+  float out[kMaxModOutputs];
+  float previous = 0.0f;  // the outputs start at 0
+  for (int t = 0; t < ticks; ++t) {
+    const int sinceStart = jumpAt > 0 && t >= jumpAt ? t - jumpAt : t;
+    ModContext ctx;
+    ctx.beat = double(sinceStart) * 16.0 * bps;
+    ctx.beatsPerSample = bps;
+    ctx.beatJump = t == 0 || t == jumpAt;
+    e.process(ctx, p, 16, out);
+    if (t >= from && out[3] != previous) values.push_back(out[3]);
+    previous = out[3];
+  }
+  return values;
+}
+}  // namespace
+
+TEST_CASE("A transport jump restarts a synced Random / S&H's pattern") {
+  // 1500 ticks per beat at 48 kHz and 120 BPM. The loop is 8 beats long; the jump comes 18 beats
+  // in, mid-loop.
+  const int jumpAt = 27000;
+  const int window = 24000;  // 16 beats
+  const std::vector<float> fromStart = lockedX1(0, 0, window);
+  const std::vector<float> jumped = lockedX1(jumpAt, jumpAt, jumpAt + window);
+  const std::vector<float> carriedOn = lockedX1(-1, jumpAt, jumpAt + window);
+  REQUIRE(fromStart.size() >= 8);
+  REQUIRE(jumped.size() >= 8);
+  REQUIRE(carriedOn.size() >= 8);
+  const std::vector<float> loop(fromStart.begin(), fromStart.begin() + 4);
+  REQUIRE(std::vector<float>(fromStart.begin() + 4, fromStart.begin() + 8) == loop);  // a 4-step loop
+  // After the jump the loop plays again from its first step, as it did when the transport started;
+  // without the jump it carries on from where it was.
+  REQUIRE(std::vector<float>(jumped.begin(), jumped.begin() + 4) == loop);
+  REQUIRE(std::vector<float>(carriedOn.begin(), carriedOn.begin() + 4) != loop);
 }
 
 TEST_CASE("Random / S&H survives NaN and does not allocate") {

@@ -397,6 +397,30 @@ TEST_CASE("Switching engines restarts a held note on the new engine") {
   REQUIRE_FALSE(voice.active());  // not held: the switch ends the note
 }
 
+TEST_CASE("A Source switch on a held note plays the new Source at its own trim at once") {
+  // Five steady sources (index = SourceEngine): the Resonator is trimmed +12 dB, the Macro 0 dB.
+  std::vector<SourceSpec> sources;
+  for (int e = 0; e < kNumSourceEngines; ++e) sources.push_back(constant());
+  Voice voice(std::move(sources));
+  voice.prepare(48000.0, 256);
+  voice.setEngine(int(SourceEngine::Resonator));
+  voice.trigger(60, 1.0f);
+  VoiceControl c;
+  c.ampRouted = true;
+  c.amp = 1.0f;
+  c.sourceGain = sourceTrim(int(SourceEngine::Resonator));
+  const Rendered before = renderTicks(voice, c, 8);
+  REQUIRE(std::fabs(before.l.back() - 0.5f * c.sourceGain) < 1e-5f);
+  // As the Part does: the switch before a block, the new trim with the next tick.
+  voice.setEngine(int(SourceEngine::Macro));
+  c.sourceGain = sourceTrim(int(SourceEngine::Macro));
+  const Rendered after = renderTicks(voice, c, 8);
+  for (size_t i = 0; i < after.l.size(); ++i) {
+    INFO("sample " << i);
+    REQUIRE(std::fabs(after.l[i]) <= 0.5f + 1e-5f);  // never at the Resonator's +12 dB
+  }
+}
+
 TEST_CASE("setEngine clamps to the available engines") {
   Voice voice(makePlaitsSource());
   voice.prepare(48000.0, 256);
