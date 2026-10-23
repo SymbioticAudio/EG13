@@ -93,7 +93,22 @@ The module's automatic input level, its wavetable synth mode, its assignable CV 
 
 ## Resonator
 
-Based on Rings. To be written when the engine arrives (M5 Task 7).
+Based on Rings, the same resonator as the Resonator Source (see [Engines](engines.md)), with its Exciter fixed to *Input*: the sound going through the effect (the part's mix, or its Input, as the *Input* setting says) excites the resonator, which rings at the pitch of the part's notes. The left and right channels are added into one before they reach the resonator. It runs at the module's own rate of 48 kHz, so at a 48 kHz host nothing is lost and it adds only its 24-sample block (half a millisecond) of delay.
+
+- **Mix** (P1): the dry sound against the resonator. 0 % is the dry sound only, 100 % the resonator only, 50 % (the default) an equal mix of the two. The mix is a straight crossfade and moves smoothly, without a click.
+- **Structure** (P2), **Brightness** (P3), **Damping** (P4) and **Position** (P6): as on the Resonator Source, and what they do depends on the Model. Brightness and Damping set how bright the sound is and how fast it dies away; Position is where the resonator is excited and listened to.
+- **Spread** (P5): how far apart the resonator's two outputs are placed. 100 % is full stereo, 0 % puts the same sound in both channels. It is EG13's own control, not on the module. It defaults to 75 %.
+- **Model** (P10): *Modal*, *Sympathetic*, *String*, *FM Voice*, *Sympathetic Q* or *String + Reverb*, in 16 fixed steps (see above). Changing it switches at once.
+- **Polyphony** (P11): 1, 2 or 4 strings, in 16 fixed steps. With more than one, each note rings on its own string until later notes take it over.
+- **Tune** (P13): transposes the resonator from -12 to +12 semitones; 50 % (the default) is no change. It glides briefly.
+- P7 to P9, P12 and P14 to P16 are unused.
+
+How it is played:
+
+- **Notes tune it.** The resonator rings at the note of the part's most recently started voice, plus Transpose, the part's pitch bend and *Tune*. Before any note has been played, and on an *Always-on* part while no key is held, it rings at the part's Base note; on an *Always-on* part it follows the held key.
+- **Each note strums it.** Every note the part plays (on an *Always-on* part, every key press) strikes the resonator at full level, whatever the note's velocity, and with Polyphony above 1 moves on to the next string. With the Exciter on *Input* the strum does not make a sound by itself: the resonator rings from the sound going in, so with nothing on the effect's input a new note only sets the pitch. A glide to a legato note retunes the resonator without a strum.
+
+The module's internal exciter (the strike on a note), its Exciter *Internal* and *Both* settings and its FM input are left out here: use the Resonator Source for those.
 
 ## Reverb
 

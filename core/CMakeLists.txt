@@ -3,6 +3,7 @@ add_library(eg13_core STATIC
   engine/braids_engine.cpp
   engine/elements_engine.cpp
   engine/rings_engine.cpp
+  engine/rings_fx_engine.cpp
   engine/reverb_engine.cpp
   engine/clouds_engine.cpp
   engine/beads_engine.cpp
