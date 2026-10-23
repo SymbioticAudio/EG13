@@ -13,7 +13,8 @@ constexpr int kSchemaVersion = 5;
 enum class LoadResult { Ok, OkWithWarnings, Invalid };
 
 // Saves and loads a synth's state as JSON. Keeps data it does not understand
-// (unknown parameters and top-level keys) and writes it back on save.
+// (unknown parameters and top-level keys, and a newer version's extra routes, route numbers,
+// envelope segments and parts) and writes it back on save.
 // Main thread only; one store per plugin instance.
 class StateStore {
  public:
@@ -24,6 +25,10 @@ class StateStore {
  private:
   std::string extraTopLevel_ = "{}";
   std::string extraParams_ = "{}";
+  // "routes" and "envelopeShapes" as loaded (empty if absent): what this version cannot hold (a
+  // newer version's extra routes, numbers, segments and parts) is written back on save.
+  std::string loadedRoutes_;
+  std::string loadedShapes_;
 };
 
 }  // namespace eg13::state

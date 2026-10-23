@@ -134,7 +134,10 @@ class Synth {
   // Main thread. The patch data as the main thread last set it (applied to the audio at the next
   // block when active).
   PatchData patch() const { return mainPatch_; }
-  const PatchData& appliedPatch() const { return patch_; }  // tests: the audio thread's copy
+  // Audio thread, or any thread while inactive (tests): the audio thread's copies of the patch
+  // data and of one parameter's value, as applied at the last block.
+  const PatchData& appliedPatch() const { return patch_; }
+  float appliedValue(size_t index) const { return load(index); }
   void setRoute(int part, int route, const Route& value);
   void setEnvelopeShape(int part, int slot, const EnvelopeShape& shape);
   // Audio thread, at the start of each host block: the host's transport, for tempo sync and the

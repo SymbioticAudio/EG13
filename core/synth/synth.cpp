@@ -292,7 +292,16 @@ void Synth::publishPatch() {
   editState_.store(kReady, std::memory_order_release);
 }
 
+// A waiting route edit is claimed before the load is looked at, and applied after it. While the
+// edit is claimed (kApplying), loadParams spins in its cancel loop and cannot publish, so a load
+// found waiting here was published before the claim; that load did not cancel this edit, so the
+// edit is the newer of the two and goes on top of it. A load published after the claim waits for
+// the next block whole (its patch with its values). Checking the load first would let an edit
+// published after the check carry a newer load's routes one block before that load's values, and
+// the load would then overwrite the edit at the next block.
 void Synth::applyPending() {  // audio thread, or main thread while inactive
+  int edit = kReady;
+  const bool haveEdit = editState_.compare_exchange_strong(edit, kApplying, std::memory_order_acq_rel);
   int expected = kReady;
   if (pendingState_.compare_exchange_strong(expected, kApplying, std::memory_order_acq_rel)) {
     store(pendingValues_);
@@ -303,9 +312,7 @@ void Synth::applyPending() {  // audio thread, or main thread while inactive
     adoptEngines(pendingValues_);
     pendingState_.store(kIdle, std::memory_order_release);
   }
-  // Then a route edit: it is newer than any load still waiting (a load drops older edits).
-  int edit = kReady;
-  if (editState_.compare_exchange_strong(edit, kApplying, std::memory_order_acq_rel)) {
+  if (haveEdit) {  // newer than the load just applied, if any
     patch_ = editPatch_;
     editState_.store(kIdle, std::memory_order_release);
   }

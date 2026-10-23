@@ -3,11 +3,13 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <functional>
 #include <limits>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -1575,4 +1577,64 @@ TEST_CASE("Each part has its own random seeds") {
   REQUIRE(test::rms(b.r, 4800, 96000) > 0.01);
   REQUIRE(a.l != b.l);
   REQUIRE(a.r != b.r);
+}
+
+TEST_CASE("Loads and route edits racing the audio thread: the newest edit wins, a load's patch comes with its values") {
+  // Load k carries Route{Velocity, k} in Part B route 1 and k / 16384 in that route's amount;
+  // the route edit made right after it sets Part A route 1 to Route{Gate, k}. On the audio
+  // thread, after every block: Part B's route and amount name the same load, Part A's route is
+  // that load's edit or not yet applied (0), and (load, edit) never goes backwards.
+  constexpr int kLoads = 16000;
+  Synth synth(PluginKind::Instrument);
+  const size_t amountIndex = routeAmountParamIndex(1, 0);
+  const ParamSnapshot defaults = synth.defaultSnapshot();
+  {
+    ParamSnapshot values = defaults;
+    values[amountIndex] = 0.0f;
+    const PatchData empty;
+    synth.loadParams(values, nullptr, &empty);  // load 0, while inactive
+  }
+  synth.setActive(true);
+  std::atomic<bool> done{false};
+  std::atomic<int> mismatched{0}, backwards{0}, foreign{0};
+  std::atomic<long> blocks{0};
+  std::thread audio([&] {
+    int lastLoad = 0, lastEdit = 0;
+    for (;;) {
+      const bool finished = done.load(std::memory_order_acquire);
+      synth.beginBlock();
+      const PatchData& patch = synth.appliedPatch();
+      const int load = patch.routes[1][0].destination;
+      const int value = int(std::lround(double(synth.appliedValue(amountIndex)) * 16384.0));
+      const int edit = patch.routes[0][0].destination;
+      if (load != value) mismatched.fetch_add(1, std::memory_order_relaxed);
+      if (edit != 0 && edit != load) foreign.fetch_add(1, std::memory_order_relaxed);
+      const int editFlag = edit != 0 ? 1 : 0;
+      if (load < lastLoad || (load == lastLoad && editFlag < lastEdit)) backwards.fetch_add(1, std::memory_order_relaxed);
+      lastLoad = load;
+      lastEdit = editFlag;
+      blocks.fetch_add(1, std::memory_order_relaxed);
+      if (finished) break;
+    }
+  });
+  for (int k = 1; k <= kLoads; ++k) {
+    PatchData patch;
+    patch.routes[1][0] = Route{kSrcVelocity, uint16_t(k), kSrcNone};
+    ParamSnapshot values = defaults;
+    values[amountIndex] = float(k) / 16384.0f;
+    synth.loadParams(values, nullptr, &patch);
+    synth.setRoute(0, 0, Route{kSrcGate, uint16_t(k), kSrcNone});
+  }
+  done.store(true, std::memory_order_release);
+  audio.join();
+  synth.beginBlock();  // whatever was still waiting
+  INFO("blocks run: " << blocks.load());
+  REQUIRE(blocks.load() > 0);
+  REQUIRE(mismatched.load() == 0);
+  REQUIRE(foreign.load() == 0);
+  REQUIRE(backwards.load() == 0);
+  REQUIRE(synth.appliedPatch().routes[0][0] == Route{kSrcGate, uint16_t(kLoads), kSrcNone});
+  REQUIRE(synth.appliedPatch().routes[1][0] == Route{kSrcVelocity, uint16_t(kLoads), kSrcNone});
+  REQUIRE(synth.appliedValue(amountIndex) == float(kLoads) / 16384.0f);
+  synth.setActive(false);
 }

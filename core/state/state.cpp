@@ -1,9 +1,11 @@
 #include "state/state.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <string>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -102,79 +104,126 @@ bool readSection(const nlohmann::json& root, const Section& section, EngineStash
   return clean;
 }
 
-// "routes": {part: [[source, destination, via], ... up to 12]}. Codes are kept as saved (unknown
-// ones too: a newer version's routes come back unchanged on resave); entries that are not three
-// integers 0..65535 are dropped. False if anything had to be dropped.
-bool readRoutes(const nlohmann::json& root, PatchData& patch) {
-  const auto found = root.find("routes");
+// One route entry: [source, destination, via], integers 0..65535. A newer version's entry may
+// carry more numbers after these three: they are not read here (see hasExtras).
+bool parseRoute(const nlohmann::json& entry, Route* out) {
+  if (!entry.is_array() || entry.size() < 3) return false;
+  uint16_t code[3] = {};
+  for (size_t k = 0; k < 3; ++k) {
+    if (!entry[k].is_number_integer()) return false;
+    const long long v = entry[k].get<long long>();
+    if (v < 0 || v > 65535) return false;
+    code[k] = uint16_t(v);
+  }
+  *out = {code[0], code[1], code[2]};
+  return true;
+}
+
+// One envelope shape: {"count": n, "types": [6], "loops": [6]}, sanitized. A newer version's
+// shape may have more segments or keys: only the first six segments are read.
+bool parseShape(const nlohmann::json& e, EnvelopeShape* out) {
+  if (!e.is_object()) return false;
+  constexpr size_t kSegments = size_t(EnvelopeShape::kMaxSegments);
+  const auto count = e.find("count");
+  const auto types = e.find("types");
+  const auto loops = e.find("loops");
+  if (count == e.end() || !count->is_number_integer() || types == e.end() || !types->is_array() ||
+      types->size() < kSegments || loops == e.end() || !loops->is_array() || loops->size() < kSegments) {
+    return false;
+  }
+  for (size_t i = 0; i < kSegments; ++i) {
+    if (!(*types)[i].is_number_integer() || !(*loops)[i].is_number_integer()) return false;
+  }
+  EnvelopeShape shape;
+  shape.count = uint8_t(std::clamp(count->get<long long>(), 0LL, 255LL));
+  for (size_t i = 0; i < kSegments; ++i) {
+    shape.type[i] = uint8_t(std::clamp((*types)[i].get<long long>(), 0LL, 255LL));
+    shape.loop[i] = uint8_t(std::clamp((*loops)[i].get<long long>(), 0LL, 255LL));
+  }
+  *out = sanitized(shape);
+  return true;
+}
+
+// Whether a parsed entry holds more than this version reads (a newer version's data).
+bool hasExtras(const nlohmann::json& entry, const Route*) { return entry.size() > 3; }
+bool hasExtras(const nlohmann::json& entry, const EnvelopeShape*) {
+  const size_t kSegments = size_t(EnvelopeShape::kMaxSegments);
+  return entry.size() > 3 || entry["types"].size() > kSegments || entry["loops"].size() > kSegments;
+}
+
+// "routes": {part: [[source, destination, via], ... 12]} and "envelopeShapes": {part: [{"count":
+// n, "types": [6], "loops": [6]}, ... 4]}. Codes are kept as saved (unknown ones too: they are
+// ignored, and come back unchanged on resave); out-of-range shape values are sanitized. Entries
+// that cannot be read are dropped (the default: no route, an ADSR). A part named twice ("0" and
+// "00") is read once, from the first key in key order. More than this version holds (parts,
+// entries, numbers in an entry, segments; a newer version's data) is read as far as it goes and
+// written back on save (mergeExtras). False if anything was dropped, or if a document of this
+// version or older holds more than it should.
+template <typename T, size_t N>
+bool readPatchSection(const nlohmann::json& root, const char* key, bool newer,
+                      std::array<std::array<T, N>, kNumParts>& out, bool (*parse)(const nlohmann::json&, T*)) {
+  const auto found = root.find(key);
   if (found == root.end()) return true;
   if (!found->is_object()) return false;
   bool clean = true;
+  bool seen[kNumParts] = {};
   for (auto partIt = found->begin(); partIt != found->end(); ++partIt) {
     uint32_t part = 0;
-    if (!parseId(partIt.key(), &part) || part >= uint32_t(kNumParts) || !partIt.value().is_array() ||
-        partIt.value().size() > size_t(kNumRoutes)) {
+    const auto& list = partIt.value();
+    if (!parseId(partIt.key(), &part)) {
       clean = false;
       continue;
     }
-    const auto& list = partIt.value();
-    for (size_t r = 0; r < list.size(); ++r) {
-      const auto& entry = list[r];
-      bool valid = entry.is_array() && entry.size() == 3;
-      for (size_t k = 0; valid && k < 3; ++k) {
-        valid = entry[k].is_number_integer() && entry[k].get<long long>() >= 0 && entry[k].get<long long>() <= 65535;
-      }
-      if (!valid) {
+    if (part >= uint32_t(kNumParts)) {  // a part this version does not have: kept for the resave
+      if (!newer) clean = false;
+      continue;
+    }
+    if (seen[part] || !list.is_array()) {
+      clean = false;
+      continue;
+    }
+    seen[part] = true;
+    if (list.size() > N && !newer) clean = false;
+    for (size_t i = 0; i < std::min(list.size(), N); ++i) {
+      if (!parse(list[i], &out[part][i])) {
         clean = false;
-        continue;
+      } else if (!newer && hasExtras(list[i], static_cast<const T*>(nullptr))) {
+        clean = false;
       }
-      patch.routes[part][r] = {uint16_t(entry[0].get<long long>()), uint16_t(entry[1].get<long long>()),
-                               uint16_t(entry[2].get<long long>())};
     }
   }
   return clean;
 }
 
-// "envelopeShapes": {part: [{"count": n, "types": [6], "loops": [6]}, ... 4 slots]}. A malformed
-// shape keeps the default (ADSR); values out of range are sanitized.
-bool readShapes(const nlohmann::json& root, PatchData& patch) {
-  const auto found = root.find("envelopeShapes");
-  if (found == root.end()) return true;
-  if (!found->is_object()) return false;
-  bool clean = true;
-  for (auto partIt = found->begin(); partIt != found->end(); ++partIt) {
+// The "routes" or "envelopeShapes" this version writes, merged with what it loaded: parts this
+// version does not have are kept whole; in each of its parts, entries past this version's count
+// are appended, and an entry it read is written back as loaded while it still reads the same, so
+// an edit replaces it. Entries that could not be read were dropped at load and stay dropped.
+template <typename T, size_t N>
+void mergeExtras(nlohmann::json& ours, const std::string& loadedDump, const std::array<std::array<T, N>, kNumParts>& now,
+                 bool (*parse)(const nlohmann::json&, T*)) {
+  if (loadedDump.empty()) return;
+  const nlohmann::json loaded = nlohmann::json::parse(loadedDump, nullptr, false);
+  if (!loaded.is_object()) return;
+  for (auto it = loaded.begin(); it != loaded.end(); ++it) {
     uint32_t part = 0;
-    if (!parseId(partIt.key(), &part) || part >= uint32_t(kNumParts) || !partIt.value().is_array() ||
-        partIt.value().size() > size_t(kNumModSlots)) {
-      clean = false;
+    if (!parseId(it.key(), &part)) continue;
+    if (part >= uint32_t(kNumParts)) {
+      ours[it.key()] = it.value();
       continue;
     }
-    const auto& list = partIt.value();
-    for (size_t slot = 0; slot < list.size(); ++slot) {
-      const auto& e = list[slot];
-      const auto count = e.is_object() ? e.find("count") : e.end();
-      const auto types = e.is_object() ? e.find("types") : e.end();
-      const auto loops = e.is_object() ? e.find("loops") : e.end();
-      bool valid = e.is_object() && count != e.end() && count->is_number_integer() && types != e.end() &&
-                   types->is_array() && types->size() == size_t(EnvelopeShape::kMaxSegments) && loops != e.end() &&
-                   loops->is_array() && loops->size() == size_t(EnvelopeShape::kMaxSegments);
-      for (size_t i = 0; valid && i < size_t(EnvelopeShape::kMaxSegments); ++i) {
-        valid = (*types)[i].is_number_integer() && (*loops)[i].is_number_integer();
-      }
-      if (!valid) {
-        clean = false;
+    if (it.key() != std::to_string(part) || !it.value().is_array()) continue;  // read as `part`, or dropped
+    nlohmann::json& list = ours[it.key()];
+    const auto& saved = it.value();
+    for (size_t i = 0; i < saved.size(); ++i) {
+      if (i >= N) {
+        list.push_back(saved[i]);
         continue;
       }
-      EnvelopeShape shape;
-      shape.count = uint8_t(std::clamp(count->get<long long>(), 0LL, 255LL));
-      for (size_t i = 0; i < size_t(EnvelopeShape::kMaxSegments); ++i) {
-        shape.type[i] = uint8_t(std::clamp((*types)[i].get<long long>(), 0LL, 255LL));
-        shape.loop[i] = uint8_t(std::clamp((*loops)[i].get<long long>(), 0LL, 255LL));
-      }
-      patch.shapes[part][slot] = sanitized(shape);
+      T read{};
+      if (parse(saved[i], &read) && read == now[part][i]) list[i] = saved[i];
     }
   }
-  return clean;
 }
 
 }  // namespace
@@ -225,6 +274,8 @@ std::string StateStore::save(const Synth& synth) const {
     }
     shapes[std::to_string(part)] = std::move(slots);
   }
+  mergeExtras(routes, loadedRoutes_, patch.routes, &parseRoute);
+  mergeExtras(shapes, loadedShapes_, patch.shapes, &parseShape);
   root["routes"] = std::move(routes);
   root["envelopeShapes"] = std::move(shapes);
   return root.dump();
@@ -293,8 +344,15 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
     values[masterParamIndex(MasterParam::VoiceGain)] = 1.0f;
     values[masterParamIndex(MasterParam::SoftClip)] = 0.0f;
   }
-  if (!readRoutes(root, patch)) warnings = true;
-  if (!readShapes(root, patch)) warnings = true;
+  const bool newer = schema > kSchemaVersion;
+  if (!readPatchSection(root, "routes", newer, patch.routes, &parseRoute)) warnings = true;
+  if (!readPatchSection(root, "envelopeShapes", newer, patch.shapes, &parseShape)) warnings = true;
+  // The patch data as loaded, for what this version cannot hold (see mergeExtras).
+  std::string routesDump, shapesDump;
+  const auto routesIt = root.find("routes");
+  const auto shapesIt = root.find("envelopeShapes");
+  if (routesIt != root.end() && routesIt->is_object()) routesDump = routesIt->dump();
+  if (shapesIt != root.end() && shapesIt->is_object()) shapesDump = shapesIt->dump();
 
   EngineStash stash = Synth::defaultStash();
   for (const Section& section : kSections) {
@@ -314,6 +372,8 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
   synth.loadParams(values, &stash, &patch);
   extraTopLevel_ = std::move(topDump);
   extraParams_ = std::move(paramsDump);
+  loadedRoutes_ = std::move(routesDump);
+  loadedShapes_ = std::move(shapesDump);
   return warnings ? LoadResult::OkWithWarnings : LoadResult::Ok;
 }
 

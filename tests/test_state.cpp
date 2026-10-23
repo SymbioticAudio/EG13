@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "engine/engine_registry.h"
 #include "params/param_ids.h"
 #include "state/state.h"
@@ -555,25 +557,29 @@ TEST_CASE("Saved state is schema 5 and carries routes and envelope shapes") {
   REQUIRE(b.appliedPatch().routes[1][7] == patch.routes[1][7]);  // inactive: applied at once
 }
 
-TEST_CASE("Schema 4 projects load with no modulation at their old level") {
-  for (PluginKind kind : {PluginKind::Instrument, PluginKind::Effect}) {
-    Synth s(kind);
-    state::StateStore store;
-    REQUIRE(store.load(s, R"({"schemaVersion":4,"params":{}})") == state::LoadResult::Ok);
-    for (int part = 0; part < kNumParts; ++part) {
-      for (int slot = 0; slot < kNumModSlots; ++slot) {
-        REQUIRE(s.engine(modSlotKind(slot), part) == int(ModEngineKind::Off));
-        REQUIRE(s.param(paramSpec(modScopeParamIndex(part, slot)).id) == 0.0);
-        // Off's P's, as Filter and Shaper Off in schema 3 projects: the stash holds Off's zeros.
-        for (int p = 0; p < int(kModSlotParamCount); ++p) REQUIRE(s.param(paramSpec(modParamIndex(part, slot, p)).id) == 0.0);
+TEST_CASE("Schema 1 to 4 projects load with no modulation at their old level") {
+  for (int schema = 1; schema <= 4; ++schema) {
+    for (PluginKind kind : {PluginKind::Instrument, PluginKind::Effect}) {
+      INFO("schema " << schema << (kind == PluginKind::Effect ? " EG13 FX" : " EG13"));
+      Synth s(kind);
+      state::StateStore store;
+      const std::string json = R"({"schemaVersion":)" + std::to_string(schema) + R"(,"params":{}})";
+      REQUIRE(store.load(s, json) == state::LoadResult::Ok);
+      for (int part = 0; part < kNumParts; ++part) {
+        for (int slot = 0; slot < kNumModSlots; ++slot) {
+          REQUIRE(s.engine(modSlotKind(slot), part) == int(ModEngineKind::Off));
+          REQUIRE(s.param(paramSpec(modScopeParamIndex(part, slot)).id) == 0.0);
+          // Off's P's, as Filter and Shaper Off in schema 3 projects: the stash holds Off's zeros.
+          for (int p = 0; p < int(kModSlotParamCount); ++p) REQUIRE(s.param(paramSpec(modParamIndex(part, slot, p)).id) == 0.0);
+        }
+        for (int r = 0; r < kNumRoutes; ++r) {
+          REQUIRE(s.patch().routes[size_t(part)][size_t(r)] == Route{});
+          REQUIRE(s.param(paramSpec(routeAmountParamIndex(part, r)).id) == 0.0);
+        }
       }
-      for (int r = 0; r < kNumRoutes; ++r) {
-        REQUIRE(s.patch().routes[size_t(part)][size_t(r)] == Route{});
-        REQUIRE(s.param(paramSpec(routeAmountParamIndex(part, r)).id) == 0.0);
-      }
+      REQUIRE(s.param(paramSpec(masterParamIndex(MasterParam::VoiceGain)).id) == 1.0);  // 0 dB
+      REQUIRE(s.param(paramSpec(masterParamIndex(MasterParam::SoftClip)).id) == 0.0);   // off
     }
-    REQUIRE(s.param(paramSpec(masterParamIndex(MasterParam::VoiceGain)).id) == 1.0);  // 0 dB
-    REQUIRE(s.param(paramSpec(masterParamIndex(MasterParam::SoftClip)).id) == 0.0);   // off
   }
 }
 
@@ -641,10 +647,11 @@ TEST_CASE("An EG13 FX project saved before modulation sounds as it did") {
     fx.process(in, out, nullptr, n);
   }
   fx.setActive(false);
-  for (size_t i = latency + 2205; i < l.size(); ++i) {
-    REQUIRE(std::fabs(ol[i] - 2.0f * l[i - latency]) < 1e-4f);  // wet + Dry (Dry 1.0)
-    REQUIRE(std::fabs(orr[i] - 2.0f * r[i - latency]) < 1e-4f);
+  float worst = 0.0f;
+  for (size_t i = latency + 2205; i < l.size(); ++i) {  // wet + Dry (Dry 1.0)
+    worst = std::max({worst, std::fabs(ol[i] - 2.0f * l[i - latency]), std::fabs(orr[i] - 2.0f * r[i - latency])});
   }
+  REQUIRE(worst < 1e-4f);
 }
 
 TEST_CASE("Malformed routes and envelope shapes are dropped with a warning") {
@@ -666,7 +673,7 @@ TEST_CASE("Malformed routes and envelope shapes are dropped with a warning") {
   REQUIRE(patch.shapes[0][1] == EnvelopeShape{});  // malformed: the default
 }
 
-TEST_CASE("Routes and envelope shapes: wrong types, negative, float and oversized input") {
+TEST_CASE("Routes and envelope shapes: wrong types, negative, float and non-object input") {
   struct Case {
     const char* json;
     state::LoadResult result;
@@ -674,11 +681,8 @@ TEST_CASE("Routes and envelope shapes: wrong types, negative, float and oversize
   for (const Case c : {
            Case{R"({"schemaVersion":5,"params":{},"routes":7})", state::LoadResult::OkWithWarnings},
            Case{R"({"schemaVersion":5,"params":{},"routes":[[1,2,0]]})", state::LoadResult::OkWithWarnings},
-           Case{R"({"schemaVersion":5,"params":{},"routes":{"0":[[-1,2,0],[1.5,2,0],[1,2,0,4],"x",null]}})",
+           Case{R"({"schemaVersion":5,"params":{},"routes":{"0":[[-1,2,0],[1.5,2,0],[1,2],"x",null,{}]}})",
                 state::LoadResult::OkWithWarnings},
-           Case{R"({"schemaVersion":5,"params":{},"routes":{"0":[[1,2,0],[1,2,0],[1,2,0],[1,2,0],[1,2,0],[1,2,0],)"
-                R"([1,2,0],[1,2,0],[1,2,0],[1,2,0],[1,2,0],[1,2,0],[1,2,0]]}})",
-                state::LoadResult::OkWithWarnings},  // 13 routes: the part is dropped
            Case{R"({"schemaVersion":5,"params":{},"routes":{"x":[[1,2,0]],"-1":[[1,2,0]],"99999999999":[]}})",
                 state::LoadResult::OkWithWarnings},
            Case{R"({"schemaVersion":5,"params":{},"envelopeShapes":[1]})", state::LoadResult::OkWithWarnings},
@@ -686,9 +690,8 @@ TEST_CASE("Routes and envelope shapes: wrong types, negative, float and oversize
                 R"("loops":[0,0,0,0,0,0]},{"count":2,"types":[0,0,0,0,0],"loops":[0,0,0,0,0,0]},)"
                 R"({"count":2,"types":[0,0,"a",0,0,0],"loops":[0,0,0,0,0,0]},{}]}})",
                 state::LoadResult::OkWithWarnings},
-           Case{R"({"schemaVersion":5,"params":{},"envelopeShapes":{"0":[{"count":2,"types":[0,0,0,0,0,0],)"
-                R"("loops":[0,0,0,0,0,0]},{},{},{},{}],"1":[7,null,"x"],"2":[{"count":2}],"0x":[]}})",
-                state::LoadResult::OkWithWarnings},  // 5 slots: the part is dropped
+           Case{R"({"schemaVersion":5,"params":{},"envelopeShapes":{"1":[7,null,"x"],"0":[{"count":2}],"0x":[]}})",
+                state::LoadResult::OkWithWarnings},
        }) {
     INFO(c.json);
     Synth s(PluginKind::Instrument);
@@ -743,4 +746,112 @@ TEST_CASE("Routes with codes from a newer version come back unchanged on resave"
   sumRoutes(set, source, DestinationKind::Voice, &sums);
   REQUIRE_FALSE(sums.touched[kDestAmp]);
   REQUIRE(sums.value[kDestAmp] == 0.0f);
+}
+
+TEST_CASE("A part named twice in routes or envelopeShapes is read once, with a warning") {
+  Synth s(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"routes":{"0":[[9,2,0]],"00":[[4,3,0]]},)"
+                        R"("envelopeShapes":{"0":[{"count":2,"types":[0,0,0,0,0,0],"loops":[0,0,0,0,0,0]}],)"
+                        R"("00":[{"count":3,"types":[0,0,0,0,0,0],"loops":[0,0,0,0,0,0]}]}})") ==
+          state::LoadResult::OkWithWarnings);
+  REQUIRE(s.patch().routes[0][0] == Route{kSrcModWheel, kDestAmp, kSrcNone});  // "0" comes first
+  REQUIRE(s.patch().shapes[0][0].count == 2);
+  // Each alone loads clean.
+  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"routes":{"00":[[4,3,0]]}})") == state::LoadResult::Ok);
+  REQUIRE(s.patch().routes[0][0] == Route{kSrcGate, kDestPan, kSrcNone});
+}
+
+TEST_CASE("A newer version's extra routes, route numbers, segments and parts come back on resave") {
+  // Schema 6: Part A has 13 routes (the last at [3,1,0]) and route 1 carries a fourth number;
+  // a part "2"; Part B's shape 1 has 7 segments and there is a 5th shape.
+  std::string routes = R"({"0":[[9,2,0,77])";
+  for (int r = 1; r < 12; ++r) routes += R"(,[1,4,0])";
+  routes += R"(,[3,1,0]],"2":[[5,5,5]]})";
+  const std::string shapes =
+      R"({"1":[{"count":7,"types":[1,0,0,0,0,0,2],"loops":[0,0,0,0,0,0,1],"curve":3},)"
+      R"({"count":2,"types":[0,0,0,0,0,0],"loops":[0,0,0,0,0,0]},)"
+      R"({"count":2,"types":[0,0,0,0,0,0],"loops":[0,0,0,0,0,0]},)"
+      R"({"count":2,"types":[0,0,0,0,0,0],"loops":[0,0,0,0,0,0]},{"count":9}],"7":[]})";
+  const std::string json =
+      R"({"schemaVersion":6,"params":{},"routes":)" + routes + R"(,"envelopeShapes":)" + shapes + "}";
+  Synth s(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);  // newer schema
+  REQUIRE(s.patch().routes[0][0] == Route{kSrcModWheel, kDestAmp, kSrcNone});  // its first three numbers
+  REQUIRE(s.patch().routes[0][11] == Route{kSrcVelocity, kDestPartLevel, kSrcNone});
+  REQUIRE(s.patch().shapes[1][0].count == 6);
+  REQUIRE(s.patch().shapes[1][0].type[0] == EnvelopeShape::Step);
+  REQUIRE(s.patch().shapes[1][3].count == 2);
+
+  const nlohmann::json saved = nlohmann::json::parse(store.save(s));
+  const nlohmann::json original = nlohmann::json::parse(json);
+  REQUIRE(saved["routes"]["0"].size() == 13);
+  REQUIRE(saved["routes"]["0"] == original["routes"]["0"]);  // the fourth number and the 13th route
+  REQUIRE(saved["routes"]["2"] == original["routes"]["2"]);
+  REQUIRE(saved["routes"]["1"].size() == 12);  // this version's own Part B
+  REQUIRE(saved["envelopeShapes"]["1"] == original["envelopeShapes"]["1"]);
+  REQUIRE(saved["envelopeShapes"]["7"] == original["envelopeShapes"]["7"]);
+
+  // An edit replaces the entry it changes; the rest stays as the newer version saved it.
+  s.setRoute(0, 0, Route{kSrcGate, kDestPan, kSrcNone});
+  EnvelopeShape shape;
+  shape.count = 3;
+  s.setEnvelopeShape(1, 0, shape);
+  const nlohmann::json edited = nlohmann::json::parse(store.save(s));
+  REQUIRE(edited["routes"]["0"][0] == nlohmann::json::array({kSrcGate, kDestPan, kSrcNone}));
+  REQUIRE(edited["routes"]["0"][12] == original["routes"]["0"][12]);
+  REQUIRE(edited["envelopeShapes"]["1"][0]["count"] == 3);
+  REQUIRE(edited["envelopeShapes"]["1"][0].find("curve") == edited["envelopeShapes"]["1"][0].end());
+  REQUIRE(edited["envelopeShapes"]["1"][4] == original["envelopeShapes"]["1"][4]);
+
+  // The resave is schema 5 with the newer data in it: it loads back the same (with a warning:
+  // more than schema 5 holds) and keeps that data again.
+  Synth again(PluginKind::Instrument);
+  state::StateStore store2;
+  REQUIRE(store2.load(again, edited.dump()) == state::LoadResult::OkWithWarnings);
+  REQUIRE(again.patch().routes == s.patch().routes);
+  REQUIRE(again.patch().shapes == s.patch().shapes);
+  REQUIRE(nlohmann::json::parse(store2.save(again)) == edited);
+
+  // A load without that data forgets it: the next save is this version's own.
+  Synth fresh(PluginKind::Instrument);
+  REQUIRE(store.load(fresh, R"({"schemaVersion":5,"params":{}})") == state::LoadResult::Ok);
+  const nlohmann::json own = nlohmann::json::parse(store.save(fresh));
+  REQUIRE(own["routes"].size() == size_t(kNumParts));
+  REQUIRE(own["routes"]["0"].size() == size_t(kNumRoutes));
+  REQUIRE(own["envelopeShapes"]["1"].size() == size_t(kNumModSlots));
+}
+
+TEST_CASE("A schema 5 document holding more than schema 5 does warns, reads what fits and keeps the rest") {
+  std::string routes = R"({"0":[[1,2,0])";
+  for (int r = 1; r < 13; ++r) routes += R"(,[4,3,0])";
+  routes += "]}";
+  for (const std::string& json :
+       {R"({"schemaVersion":5,"params":{},"routes":)" + routes + "}",
+        std::string(R"({"schemaVersion":5,"params":{},"routes":{"0":[[1,2,0,4]]}})"),
+        std::string(R"({"schemaVersion":5,"params":{},"routes":{"2":[[1,2,0]]}})"),
+        std::string(R"({"schemaVersion":5,"params":{},"envelopeShapes":{"0":[{"count":2,"types":[0,0,0,0,0,0,0],)"
+                    R"("loops":[0,0,0,0,0,0,0]}]}})"),
+        std::string(R"({"schemaVersion":5,"params":{},"envelopeShapes":{"0":[{"count":2,"types":[0,0,0,0,0,0],)"
+                    R"("loops":[0,0,0,0,0,0],"curve":1}]}})")}) {
+    INFO(json);
+    Synth s(PluginKind::Instrument);
+    state::StateStore store;
+    REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
+    const nlohmann::json original = nlohmann::json::parse(json);
+    const nlohmann::json saved = nlohmann::json::parse(store.save(s));
+    for (const char* key : {"routes", "envelopeShapes"}) {
+      if (original.find(key) == original.end()) continue;
+      for (auto it = original[key].begin(); it != original[key].end(); ++it) {  // each entry as loaded
+        for (size_t i = 0; i < it.value().size(); ++i) REQUIRE(saved[key][it.key()][i] == it.value()[i]);
+      }
+    }
+  }
+  Synth s(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"routes":)" + routes + "}") ==
+          state::LoadResult::OkWithWarnings);
+  REQUIRE(s.patch().routes[0][0] == Route{kSrcVelocity, kDestAmp, kSrcNone});
+  REQUIRE(s.patch().routes[0][11] == Route{kSrcGate, kDestPan, kSrcNone});
 }

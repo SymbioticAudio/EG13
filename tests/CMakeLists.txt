@@ -1,7 +1,7 @@
 file(GLOB EG13_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp)
 add_executable(eg13_tests ${EG13_TEST_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/alloc_counter.cpp)
 find_package(Threads REQUIRED)
-target_link_libraries(eg13_tests PRIVATE eg13_core eg13_eurorack eg13_r8brain eg13_vcv eg13_sst Catch2::Catch2WithMain Threads::Threads)
+target_link_libraries(eg13_tests PRIVATE eg13_core eg13_eurorack eg13_r8brain eg13_vcv eg13_sst Catch2::Catch2WithMain Threads::Threads eg13_nlohmann)
 target_compile_definitions(eg13_tests PRIVATE EG13_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 target_include_directories(eg13_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
