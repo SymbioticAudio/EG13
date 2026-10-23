@@ -51,13 +51,13 @@ Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second outpu
   - Mod 2: Envelope (ADSR), per voice, routed to the **Filter's cutoff**, +30 % (it opens the filter fully at the envelope's peak).
   - Mod 3: LFO at about 5 Hz, per voice, routed to **pitch** through the **mod wheel**, ±0.5 semitone (vibrato).
   - Mod 4: empty. Pitch bend moves the pitch ±2 semitones (the part's Bend Range).
-  - Voice Gain −12 dB, Soft Clip on.
+  - Voice Gain −12 dB, Soft Clip on, Latency Mode *Live* ([Latency](latency.md)).
 - **EG13 FX:**
   - Part A plays the Input through **Audio Input** → **Analog Filter** (fully open) → Shaper *Off*, with Trigger set to *Always on*, so it processes audio with no MIDI.
   - Part B starts with Filter *Off* and Shaper *Off*.
   - Dry is 0 and the master level is 100 %.
   - Part A's Mod 1 is an LFO at about 0.25 Hz, per part, routed to the Analog Filter's cutoff, +20 %: with the filter fully open it sweeps down to about 5 kHz and back every four seconds.
-  - Voice Gain 0 dB (EG13 FX usually plays a single voice), Soft Clip on.
+  - Voice Gain 0 dB (EG13 FX usually plays a single voice), Soft Clip on, Latency Mode *Studio* ([Latency](latency.md)).
 
 ## Saved projects
 

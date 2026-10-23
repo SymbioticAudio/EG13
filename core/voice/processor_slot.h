@@ -27,8 +27,9 @@ class ProcessorSlot {
  public:
   explicit ProcessorSlot(std::vector<SourceSpec> engines);  // index = engine id; empty -> Off only
 
-  // Main thread: prepares every engine (allocates) and pads it to latencySamples().
-  void prepare(double hostRate, int maxBlock);
+  // Main thread: prepares every engine (allocates) with converters of quality q and pads it to
+  // latencySamples(), the slowest engine's within that mode.
+  void prepare(double hostRate, int maxBlock, ConverterQuality q = ConverterQuality::Studio);
   // reset(): every engine; no fade; mono. restart(): the current engine only (a new note on an
   // idle voice, or after a NaN). Both: a waiting request takes effect at once, and until the
   // next process() a setEngine() switches at once too, since nothing has played to fade from.

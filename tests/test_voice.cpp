@@ -343,8 +343,9 @@ int peakOf(const std::vector<float>& x) {
 }  // namespace
 
 TEST_CASE("Every engine in a voice has the same note latency") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   Voice voice(impulseAndEcho());
-  voice.prepare(44100.0, 256);
+  voice.prepare(44100.0, 256, Voice::Alignment::Notes, q);
   REQUIRE(voice.engineCount() == 2);
   const int latency = voice.latencySamples();
   voice.setEngine(0);
@@ -356,8 +357,9 @@ TEST_CASE("Every engine in a voice has the same note latency") {
 }
 
 TEST_CASE("Input alignment lines up input-using engines with the rest") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   Voice voice(impulseAndEcho());
-  voice.prepare(44100.0, 256, Voice::Alignment::Input);
+  voice.prepare(44100.0, 256, Voice::Alignment::Input, q);
   const int latency = voice.latencySamples();
   voice.setEngine(1);  // echo: input path
   voice.trigger(60, 1.0f);
@@ -511,12 +513,13 @@ TEST_CASE("The voice chain runs Source, then Filter, then Shaper") {
 }
 
 TEST_CASE("Voice latency adds the Filter and Shaper slots") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   Voice voice(makeAllSources(), makeAllFilters(), makeAllShapers());
-  voice.prepare(48000.0, 256);
+  voice.prepare(48000.0, 256, Voice::Alignment::Notes, q);
   Voice sourceOnly(makeAllSources());
-  sourceOnly.prepare(48000.0, 256);
+  sourceOnly.prepare(48000.0, 256, Voice::Alignment::Notes, q);
   ProcessorSlot shapers(makeAllShapers());
-  shapers.prepare(48000.0, Voice::kControlBlock);
+  shapers.prepare(48000.0, Voice::kControlBlock, q);
   INFO("voice " << voice.latencySamples() << " source " << sourceOnly.latencySamples() << " shaper "
                 << shapers.latencySamples());
   REQUIRE(shapers.latencySamples() > 0);

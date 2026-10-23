@@ -32,8 +32,8 @@ void Part::setSeedBase(uint32_t base) {
   random_ = seed_;
 }
 
-void Part::prepare(double hostRate, int maxBlock, Voice::Alignment alignment) {
-  for (auto& voice : voices_) voice->prepare(hostRate, maxBlock, alignment);
+void Part::prepare(double hostRate, int maxBlock, Voice::Alignment alignment, ConverterQuality q) {
+  for (auto& voice : voices_) voice->prepare(hostRate, maxBlock, alignment, q);
   for (auto& buffer : mix_) buffer.assign(size_t(maxBlock), 0.0f);
   int sourceLatency = 0;
   for (auto& voice : voices_) sourceLatency = std::max(sourceLatency, voice->sourceLatencySamples());

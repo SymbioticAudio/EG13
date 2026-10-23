@@ -36,7 +36,9 @@ void Synth::prepare(double sampleRate, int maxBlock) {
   applyPending();
   // The instrument lines up note onsets; EG13 FX lines up the input path with Dry.
   const auto alignment = kind_ == PluginKind::Effect ? Voice::Alignment::Input : Voice::Alignment::Notes;
-  for (auto& part : parts_) part->prepare(sampleRate, maxBlock, alignment);
+  // Every converter of both parts runs in the Latency Mode the parameter holds now.
+  preparedQuality_ = requestedQuality();
+  for (auto& part : parts_) part->prepare(sampleRate, maxBlock, alignment, preparedQuality_);
   latency_ = parts_[0]->latencySamples();
   for (auto& line : dryDelay_) line.assign(size_t(latency_), 0.0f);
   for (auto& part : partOut_) {

@@ -88,8 +88,8 @@ class Part {
        ModEngineFactory mods = makeAllModEngines);  // per voice (tests)
 
   void setSeedBase(uint32_t base);  // main thread, before prepare(): the part's random seeds
-  void prepare(double hostRate, int maxBlock,
-               Voice::Alignment alignment = Voice::Alignment::Notes);  // main thread
+  void prepare(double hostRate, int maxBlock, Voice::Alignment alignment = Voice::Alignment::Notes,
+               ConverterQuality q = ConverterQuality::Studio);  // main thread
   void reset();
   void applySettings(const PartSettings& settings);  // once per block
   const PartSettings& settings() const { return settings_; }

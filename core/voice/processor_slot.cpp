@@ -30,9 +30,10 @@ ProcessorSlot::ProcessorSlot(std::vector<SourceSpec> engines) {
   }
 }
 
-void ProcessorSlot::prepare(double hostRate, int maxBlock) {
+void ProcessorSlot::prepare(double hostRate, int maxBlock, ConverterQuality q) {
   latency_ = 0;
   for (auto& e : engines_) {
+    e->setQuality(q);
     e->prepare(hostRate, maxBlock);
     latency_ = std::max(latency_, e->inputPathLatencySamples());
   }

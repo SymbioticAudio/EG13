@@ -254,6 +254,12 @@ const std::array<ParamSpec, kParamCount>& table() {
     // appended (max grows); 0 and 1 keep their meaning.
     t[masterParamIndex(MasterParam::SoftClip)] = {master(MasterParam::SoftClip), "Soft Clip", "Master", 0, 1,
                                                   1.0f, 1.0f, true, ParamFormat::OnOff};
+    // Latency Mode: ConverterQuality, 0 Live, 1 Studio (M5 plan rulings 4, 5: the instrument
+    // starts in Live, EG13 FX in Studio). Not automatable (the plugin); applies at the next
+    // activate. RULE: new options are appended (max grows); 0 and 1 keep their meaning.
+    t[masterParamIndex(MasterParam::LatencyMode)] = {master(MasterParam::LatencyMode), "Latency Mode", "Master", 0, 1,
+                                                     float(ConverterQuality::Live), float(ConverterQuality::Studio),
+                                                     true, ParamFormat::LatencyMode};
     return t;
   }();
   return specs;
@@ -403,6 +409,7 @@ void formatParam(size_t index, double value, char* buf, size_t size, const PartE
   static const char* const kScopes[2] = {"Per voice", "Per part"};
   static const char* const kMpeModes[3] = {"Off", "Lower zone", "Upper zone"};
   static const char* const kVoiceGains[2] = {"-12 dB", "0 dB"};
+  static const char* const kLatencyModes[2] = {"Live", "Studio"};  // ConverterQuality order
 
   const ParamSpec& s = paramSpec(index);
   const float v = clampParam(index, value);
@@ -455,6 +462,9 @@ void formatParam(size_t index, double value, char* buf, size_t size, const PartE
       break;
     case ParamFormat::VoiceGain:
       std::snprintf(buf, size, "%s", pick(kVoiceGains, 2, v));
+      break;
+    case ParamFormat::LatencyMode:
+      std::snprintf(buf, size, "%s", pick(kLatencyModes, 2, v));
       break;
     case ParamFormat::InputSource:
       std::snprintf(buf, size, "%s", pick(kInputSources, 3, v));

@@ -59,7 +59,7 @@ Voice::Voice(std::vector<SourceSpec> sources, std::vector<SourceSpec> filters, s
   assert(!sources_.empty() && "a voice needs at least one source engine");
 }
 
-void Voice::prepare(double hostRate, int maxBlock, Alignment alignment) {
+void Voice::prepare(double hostRate, int maxBlock, Alignment alignment, ConverterQuality q) {
   hostRate_ = hostRate;
   silenceLimit_ = int(hostRate * kSilenceSeconds);
   ampStep_ = float(1.0 / std::max(1.0, hostRate * kAmpRampSeconds));
@@ -69,13 +69,14 @@ void Voice::prepare(double hostRate, int maxBlock, Alignment alignment) {
   };
   sourceLatency_ = 0;
   for (auto& s : sources_) {
+    s->setQuality(q);
     s->prepare(hostRate, maxBlock);
     sourceLatency_ = std::max(sourceLatency_, path(*s));
   }
   for (auto& s : sources_) s->setExtraDelay(sourceLatency_ - path(*s));
   // The Filter and Shaper see one control block per call.
-  filter_.prepare(hostRate, kControlBlock);
-  shaper_.prepare(hostRate, kControlBlock);
+  filter_.prepare(hostRate, kControlBlock, q);
+  shaper_.prepare(hostRate, kControlBlock, q);
   // Source AUX goes to the Shaper straight from the Source: it is aligned with the voice only
   // while no Filter adds latency.
   assert(filter_.latencySamples() == 0 && "delay Source AUX by the Filter latency");

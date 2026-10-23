@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
@@ -576,11 +577,13 @@ double onsetAfterLatency(const std::vector<float>& x, size_t begin, double rate,
 // is bypassed and the reported latency is exactly the FIFO. Tolerance: 2 host samples (rounding
 // of the reported latency to whole samples and the resamplers' fractional delay).
 TEST_CASE("Ring Mod / Vocoder output onset after reset lands at the wrapper's latencySamples()") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   ParamValues p = with({0.0f, 0.0f, 0.5f, 0.5f}, kCarrierOsc, kModInput, false);  // the oscillator alone
   p.p[6] = 0.75f;
   double reference96 = 0.0;
   for (double rate : {96000.0, 44100.0, 48000.0}) {
     NativeRateWrapper wrapped(std::make_unique<WarpsEngine>(), kRate, kN);
+    wrapped.setQuality(q);
     wrapped.prepare(rate, 256);
     if (rate == kRate) REQUIRE(wrapped.latencySamples() == kN);
     wrapped.noteOn(81.0f, 1.0f);  // 1760 Hz: a steep first rise
@@ -597,10 +600,12 @@ TEST_CASE("Ring Mod / Vocoder output onset after reset lands at the wrapper's la
 }
 
 TEST_CASE("Ring Mod / Vocoder input onset lands at the wrapper's inputLatencySamples()") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   const ParamValues p = with({0.0f, 0.0f, 0.5f, 0.5f}, kCarrierVoice, kModVoice, false);  // the voice alone
   double reference96 = 0.0;
   for (double rate : {96000.0, 44100.0, 48000.0}) {
     NativeRateWrapper wrapped(std::make_unique<WarpsEngine>(), kRate, kN);
+    wrapped.setQuality(q);
     wrapped.prepare(rate, 256);
     if (rate == kRate) REQUIRE(wrapped.inputLatencySamples() == kN);
     const size_t start = size_t(rate * 0.02);

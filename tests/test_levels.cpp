@@ -85,20 +85,25 @@ TEST_CASE("Output levels of every Filter and Shaper at its defaults", "[levels]"
 }
 
 TEST_CASE("Reported latency per plugin and host rate", "[levels]") {
-  for (PluginKind kind : {PluginKind::Instrument, PluginKind::Effect}) {
-    for (double rate : {44100.0, 48000.0, 88200.0, 96000.0}) {
-      Synth synth(kind);
-      synth.prepare(rate, 512);
-      // The parts of the total: the Source path as the plugin aligns it, and the Shaper slot.
-      Voice sourceOnly(makeAllSources());
-      sourceOnly.prepare(rate, 512, kind == PluginKind::Effect ? Voice::Alignment::Input : Voice::Alignment::Notes);
-      ProcessorSlot shapers(makeAllShapers());
-      shapers.prepare(rate, Voice::kControlBlock);
-      std::printf("%-10s %6.0f Hz: %4d samples (%.2f ms) = Source %d + Shaper %d\n",
-                  kind == PluginKind::Effect ? "EG13 FX" : "EG13", rate, synth.latencySamples(),
-                  1000.0 * synth.latencySamples() / rate, sourceOnly.latencySamples(), shapers.latencySamples());
-      REQUIRE(synth.latencySamples() > 0);
-      REQUIRE(synth.latencySamples() == sourceOnly.latencySamples() + shapers.latencySamples());
+  for (ConverterQuality q : {ConverterQuality::Live, ConverterQuality::Studio}) {
+    for (PluginKind kind : {PluginKind::Instrument, PluginKind::Effect}) {
+      for (double rate : {44100.0, 48000.0, 88200.0, 96000.0}) {
+        Synth synth(kind);
+        synth.setParam(paramSpec(masterParamIndex(MasterParam::LatencyMode)).id, double(int(q)));
+        synth.prepare(rate, 512);
+        REQUIRE(synth.preparedQuality() == q);
+        // The parts of the total: the Source path as the plugin aligns it, and the Shaper slot.
+        Voice sourceOnly(makeAllSources());
+        sourceOnly.prepare(rate, 512, kind == PluginKind::Effect ? Voice::Alignment::Input : Voice::Alignment::Notes, q);
+        ProcessorSlot shapers(makeAllShapers());
+        shapers.prepare(rate, Voice::kControlBlock, q);
+        std::printf("%-6s %-10s %6.0f Hz: %4d samples (%.2f ms) = Source %d + Shaper %d\n",
+                    q == ConverterQuality::Live ? "Live" : "Studio", kind == PluginKind::Effect ? "EG13 FX" : "EG13",
+                    rate, synth.latencySamples(), 1000.0 * synth.latencySamples() / rate,
+                    sourceOnly.latencySamples(), shapers.latencySamples());
+        REQUIRE(synth.latencySamples() > 0);
+        REQUIRE(synth.latencySamples() == sourceOnly.latencySamples() + shapers.latencySamples());
+      }
     }
   }
 }

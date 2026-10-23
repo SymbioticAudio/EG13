@@ -14,6 +14,12 @@ struct ParamValues {
 
 using ParamFormatter = void (*)(float normalized, char* buf, size_t size);
 
+// The sample-rate converters' quality (the Master Latency Mode, owner decision 3, M5 plan).
+// Studio: full-fidelity converters (the reference). Live: the lowest-latency converters that meet
+// the quality floors (core/engine/native_rate_wrapper.cpp, converterSpec). Saved as the Latency
+// Mode value: never renumber; append only.
+enum class ConverterQuality : int { Live = 0, Studio = 1 };
+
 // Where a side input of a Filter/Shaper engine (the Ring Mod / Vocoder's CARRIER and MODULATOR)
 // takes its signal from. Voice: the engine uses its own input, the voice. None: the engine makes
 // the signal itself (Warps' internal oscillator). The Voice passes nullptr for both.
@@ -64,6 +70,9 @@ class VoiceEngine {
   // Sources with info().hasAux: write out[2] from now on. Main thread, before prepare(); off by
   // default so two-channel callers stay valid.
   virtual void setAuxEnabled(bool) {}
+  // The converter quality for any rate converters the engine holds itself (Granular Delay's inner
+  // wrappers). Main thread, before prepare(); engines without converters ignore it.
+  virtual void setConverterQuality(ConverterQuality) {}
   // Latency the engine itself adds (e.g. a fixed-block FIFO), in samples at its native rate.
   virtual int nativeLatency() const { return 0; }
 };

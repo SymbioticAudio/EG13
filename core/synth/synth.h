@@ -177,6 +177,14 @@ class Synth {
   void process(const float* const* in, float* const* mainOut, float* const* bus2Out, int n);
 
   int latencySamples() const { return latency_; }
+  // The Latency Mode the running audio was prepared with (prepare() reads the parameter), and the
+  // parameter's value as applied at the last block (any thread; while inactive, at once). A
+  // different requested mode takes effect at the next prepare(): the plugin asks the host to
+  // restart it.
+  ConverterQuality preparedQuality() const { return preparedQuality_; }
+  ConverterQuality requestedQuality() const {
+    return ConverterQuality(int(load(masterParamIndex(MasterParam::LatencyMode))));
+  }
   int activeVoiceCount(int part) const { return parts_[size_t(part)]->activeVoiceCount(); }
   const Part& part(int index) const { return *parts_[size_t(index)]; }  // tests
 
@@ -213,6 +221,7 @@ class Synth {
   SmoothedValue dryGain_;
   SmoothedValue partBMute_;
   int latency_ = 0;
+  ConverterQuality preparedQuality_ = ConverterQuality::Studio;
   std::vector<float> dryDelay_[2];
   size_t dryPos_ = 0;
   std::vector<float> partOut_[kNumParts][2];

@@ -27,13 +27,13 @@ std::string text(size_t index, double value) {
 
 }  // namespace
 
-TEST_CASE("The table has 286 parameters with unique IDs") {
+TEST_CASE("The table has 287 parameters with unique IDs") {
   REQUIRE(kSourceParamCount == 16);
   REQUIRE(kFilterParamCount == 4);
   REQUIRE(kShaperParamCount == 12);
   REQUIRE(kModSlotParamCount == 16);
   REQUIRE(kParamsPerPart == 140);
-  REQUIRE(kParamCount == 286);
+  REQUIRE(kParamCount == 287);
   std::set<uint32_t> ids;
   for (size_t i = 0; i < kParamCount; ++i) ids.insert(paramSpec(i).id);
   REQUIRE(ids.size() == kParamCount);

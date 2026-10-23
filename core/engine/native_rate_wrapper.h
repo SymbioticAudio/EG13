@@ -8,10 +8,26 @@
 #include "engine/voice_engine.h"
 
 namespace r8b {
-class CDSPResampler24;
+class CDSPResampler;
 }
 
 namespace eg13 {
+
+// The filter phase of a converter: EG13's own enum, mapped to r8brain's in the .cpp (the plugin
+// target does not see r8brain's headers).
+enum class ConverterPhase : int { Linear = 0, Minimum = 1 };
+
+// How a NativeRateWrapper builds its converters (r8b::CDSPResampler).
+struct ConverterSpec {
+  ConverterPhase phase;
+  double attenuationDb;          // stop-band attenuation (r8brain ReqAtten)
+  double transitionBandPercent;  // r8brain ReqTransBand; kTransitionBandPercent in every mode
+  int primeBlocks;  // native blocks of silence the input path holds in hand (+ withheld + 1)
+};
+
+// The converters of each Latency Mode. Studio is the converter EG13 shipped before the modes
+// (r8b::CDSPResampler24); Live is chosen by measurement (see the .cpp).
+ConverterSpec converterSpec(ConverterQuality q);
 
 // Runs an engine at its native sample rate and block size, converting its
 // output (and, for engines that read input, the host input) with r8brain.
@@ -36,6 +52,15 @@ class NativeRateWrapper final : public VoiceEngine {
 
   NativeRateWrapper(std::unique_ptr<VoiceEngine> inner, double nativeRate, int nativeBlock);
   ~NativeRateWrapper() override;
+
+  // Main thread. Takes effect at the next prepare(): every converter of the wrapper (and of the
+  // engine, through setConverterQuality) is built from converterSpec(q). Default: Studio.
+  void setQuality(ConverterQuality q);
+  ConverterQuality quality() const { return quality_; }
+  void setConverterQuality(ConverterQuality q) override { setQuality(q); }
+  // Tests (the Live candidate sweep): build the converters from `spec` at the next prepare().
+  void setSpecForTest(const ConverterSpec& spec) { spec_ = spec; }
+  const ConverterSpec& spec() const { return spec_; }
 
   // Main thread. Resets the extra delay: call setExtraDelay after every prepare.
   void prepare(double hostRate, int maxBlock) override;
@@ -94,12 +119,14 @@ class NativeRateWrapper final : public VoiceEngine {
   };
   // Sets up a path from `from` to `to` for converters fed at most maxChunk samples per call,
   // with chunks of `chunk` samples (0: varying) at run time.
-  static void setUpPath(Path& path, double from, double to, int latencyIn, int maxChunk, int chunk);
+  static void setUpPath(Path& path, const ConverterSpec& spec, double from, double to, int latencyIn,
+                        int maxChunk, int chunk);
   static int64_t converterPeriod(double from, double to);
-  static bool checkResume(double from, double to, int maxChunk, int chunk, const Path& setUp);
+  static bool checkResume(const ConverterSpec& spec, double from, double to, int maxChunk, int chunk,
+                          const Path& setUp);
   // Restarts converter r and pre-rolls it with the reference's last samples (channel 0's
   // history, or silence), so that from now on it runs in step with channel 0's converter.
-  static void resume(r8b::CDSPResampler24& r, const Path& path, bool silence, int maxChunk,
+  static void resume(r8b::CDSPResampler& r, const Path& path, bool silence, int maxChunk,
                      std::vector<double>& scratch);
   void pushInput(const float* const* in, int n);
   void renderNativeBlock(const ParamValues& p);
@@ -114,6 +141,8 @@ class NativeRateWrapper final : public VoiceEngine {
   void applyExtraDelay(float* const* out, int n);
 
   std::unique_ptr<VoiceEngine> inner_;
+  ConverterQuality quality_ = ConverterQuality::Studio;
+  ConverterSpec spec_;
   double nativeRate_;
   int nativeBlock_;
   bool bypass_ = true;
@@ -126,7 +155,7 @@ class NativeRateWrapper final : public VoiceEngine {
   int engineLatency_ = 0;  // the engine's nativeLatency() in host samples (part of both above)
 
   // Output path: native -> host.
-  std::unique_ptr<r8b::CDSPResampler24> resampler_[kMaxChannels];
+  std::unique_ptr<r8b::CDSPResampler> resampler_[kMaxChannels];
   std::vector<float> native_[kMaxChannels];
   std::vector<double> scratch_;
   std::vector<float> fifo_[kMaxChannels];
@@ -135,7 +164,7 @@ class NativeRateWrapper final : public VoiceEngine {
   size_t zeroPad_ = 0;  // host samples of silence owed after reset()
 
   // Input path: host -> native.
-  std::unique_ptr<r8b::CDSPResampler24> inputResampler_[kMaxChannels];
+  std::unique_ptr<r8b::CDSPResampler> inputResampler_[kMaxChannels];
   std::vector<double> inputScratch_;
   std::vector<float> inputFifo_[kMaxChannels];  // ring buffers
   size_t inputRead_ = 0;

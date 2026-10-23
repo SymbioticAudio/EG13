@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -81,17 +82,19 @@ float maxStep(const std::vector<float>& x) {
 }  // namespace
 
 TEST_CASE("The Filter slot has no latency at common host rates") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0, 96000.0}) {
     ProcessorSlot filters(makeAllFilters());
-    filters.prepare(rate, 16);
+    filters.prepare(rate, 16, q);
     REQUIRE(filters.latencySamples() == 0);
   }
 }
 
 TEST_CASE("Every Shaper engine is padded to one slot latency") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0, 96000.0}) {
     ProcessorSlot shapers(makeAllShapers());
-    shapers.prepare(rate, 16);
+    shapers.prepare(rate, 16, q);
     const int latency = shapers.latencySamples();
     INFO("Shaper slot latency at " << rate << " Hz: " << latency << " samples");
     REQUIRE(latency > 0);

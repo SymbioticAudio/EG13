@@ -52,8 +52,8 @@ enum class PartParam : uint32_t {
 constexpr size_t kPartParamCount = 21;
 
 // Value = parameter-ID index for part 0xFF, Slot::Part. Never renumber; append only.
-enum class MasterParam : uint32_t { Level = 0, Dry, Mode, SplitNote, VoiceGain, SoftClip };
-constexpr size_t kMasterParamCount = 6;
+enum class MasterParam : uint32_t { Level = 0, Dry, Mode, SplitNote, VoiceGain, SoftClip, LatencyMode };
+constexpr size_t kMasterParamCount = 7;
 
 enum class PartMode { Single = 0, Layer = 1, Split = 2, Multi = 3 };
 
@@ -129,6 +129,7 @@ enum class ParamFormat {
   MpeMode,      // M4
   CcNumber,     // M4
   VoiceGain,    // M4
+  LatencyMode,  // M5: ConverterQuality
 };
 
 struct ParamSpec {
