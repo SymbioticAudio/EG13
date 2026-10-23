@@ -68,7 +68,7 @@ Each of a part's twelve routes has a **source**, a **destination**, an **amount*
 - Per part: *Mod Wheel* (CC1), *Pitch Bend* (−100 % to +100 %), *Channel Pressure*, *CC A* to *CC D* (four controllers you choose with the part's CC A–D settings), *Transport Phase* (where the song is within the current bar, 0 to 100 %; it keeps running at the last tempo while the transport is stopped).
 - Each mod slot's outputs.
 
-**Destinations**: any control of the Source, Filter or Shaper (P1, P2, …), *Pitch*, *Amp*, *Pan*, *Part Level*, and any control of the part's mod slots. (Part FX controls arrive with the Part FX.)
+**Destinations**: any control of the Source, Filter or Shaper (P1, P2, …), *Pitch*, *Amp*, *Pan*, *Part Level*,, any control of the part's Part FX (P1 to P16), and any control of the part's mod slots.
 
 **How routes add up**: every control is a position from 0 to 100 %. The routes into it are added to where its knob is, and the result stops at 0 % and 100 %. So a cutoff at 70 % with +30 % from an envelope opens fully at the envelope's peak; two routes of +80 % into a control at 50 % stop at 100 %. A stepped control (a mode or a model) moves through its options the same way.
 
@@ -76,6 +76,7 @@ Each of a part's twelve routes has a **source**, a **destination**, an **amount*
 - **Pan** starts from the centre: −50 % is fully left, +50 % fully right.
 - **Amp**: see Amp and voices below.
 - **Part Level** adds to the part's Level setting.
+- **Part FX controls** add to the Part FX's P1 to P16 the same way. They are part-wide, so per-note sources (velocity, a per-note envelope or LFO) read the most recently played note.
 
 ## Mod slots: engine and scope
 

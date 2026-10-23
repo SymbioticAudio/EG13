@@ -31,6 +31,7 @@ DestinationKind destinationKind(uint16_t d) {
   if (d == kDestPartLevel) return DestinationKind::Part;
   if (d == kDestPitch || d == kDestAmp || d == kDestPan) return DestinationKind::Voice;
   if (d >= kDestSourceP && d < kDestPartFxP) return DestinationKind::Voice;  // Source, Filter, Shaper P's
+  if (d >= kDestPartFxP && d < kDestPartFxP + kPartFxParamCount) return DestinationKind::Part;
   if (d >= kDestModP && d < kNumDestinations) return DestinationKind::ModParam;
   return DestinationKind::None;
 }
@@ -81,7 +82,7 @@ void destinationName(uint16_t d, char* buf, size_t size) {
     std::snprintf(buf, size, "Filter P%d", d - kDestFilterP + 1);
   } else if (d >= kDestShaperP && d < kDestPartFxP) {
     std::snprintf(buf, size, "Shaper P%d", d - kDestShaperP + 1);
-  } else if (d >= kDestPartFxP && d < kDestPartFxP + 16) {
+  } else if (d >= kDestPartFxP && d < kDestPartFxP + kPartFxParamCount) {
     std::snprintf(buf, size, "Part FX P%d", d - kDestPartFxP + 1);
   } else if (d >= kDestModP && d < kNumDestinations) {
     std::snprintf(buf, size, "Mod %d P%d", (d - kDestModP) / kModParamCount + 1, (d - kDestModP) % kModParamCount + 1);

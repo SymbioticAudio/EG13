@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "engine/mod_engine.h"
+#include "engine/part_fx_engine.h"
 
 namespace eg13 {
 
@@ -40,7 +41,7 @@ constexpr uint16_t modOutputSource(int slot, int output) {
 }
 
 // Matrix destinations. Saved in projects: append only, never renumber. Each slot's range has
-// room for 16 P's; Part FX P's are reserved for M5 (accepted, ignored until then).
+// room for 16 P's; Part FX P's are the part's Part FX controls.
 enum ModDestinationCode : uint16_t {
   kDestNone = 0,
   kDestPitch = 1,      // semitones: amount x kPitchRangeSemitones
