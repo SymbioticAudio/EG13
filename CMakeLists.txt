@@ -30,6 +30,13 @@ target_include_directories(eg13_ui_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plu
 target_link_libraries(eg13_ui_bridge PUBLIC clap eg13_core)
 target_compile_options(eg13_ui_bridge PRIVATE -Wall -Wextra)
 
+# The C function table the editors use (core-api/include is the pure-C public header).
+add_library(eg13_core_api STATIC plugin/src/core_api.cpp)
+target_include_directories(eg13_core_api PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/core-api/include)
+target_link_libraries(eg13_core_api PUBLIC eg13_ui_bridge eg13_core)
+target_compile_options(eg13_core_api PRIVATE -Wall -Wextra)
+
 if(EG13_BUILD_TESTS)
   enable_testing()
   add_subdirectory(third_party/Catch2)

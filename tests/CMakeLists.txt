@@ -1,9 +1,15 @@
 file(GLOB EG13_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp)
 add_executable(eg13_tests ${EG13_TEST_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/alloc_counter.cpp)
 find_package(Threads REQUIRED)
-target_link_libraries(eg13_tests PRIVATE eg13_ui_bridge eg13_core eg13_eurorack eg13_r8brain eg13_vcv eg13_sst Catch2::Catch2WithMain Threads::Threads eg13_nlohmann)
+target_link_libraries(eg13_tests PRIVATE eg13_core_api eg13_ui_bridge eg13_core eg13_eurorack eg13_r8brain eg13_vcv eg13_sst Catch2::Catch2WithMain Threads::Threads eg13_nlohmann)
 target_compile_definitions(eg13_tests PRIVATE EG13_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 target_include_directories(eg13_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# The public C headers must stay pure C: this TU is compiled as C11, pedantic, warnings as errors.
+add_library(eg13_core_api_c_check OBJECT core_api_c_check.c)
+target_include_directories(eg13_core_api_c_check PRIVATE ${CMAKE_SOURCE_DIR}/core-api/include)
+target_compile_options(eg13_core_api_c_check PRIVATE -std=c11 -Wall -Wextra -Wpedantic -Werror)
+target_sources(eg13_tests PRIVATE $<TARGET_OBJECTS:eg13_core_api_c_check>)
+
 # Built as core/engine/beads_engine.cpp is (no FMA contraction), so the restated Granular Delay
 # reference rounds like the engine on every compiler.
 set_source_files_properties(test_beads_engine.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
