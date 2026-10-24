@@ -71,4 +71,4 @@ Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second outpu
 
 ## Saved projects
 
-A project saves every setting, each engine's remembered settings, the routes and the envelopes' custom shapes. Projects saved by pre-release versions of EG13 open as the init patch.
+A project saves every setting, each engine's remembered settings (Part FX engines included, so switching a Part FX engine away and back returns its knobs), the routes and the envelopes' custom shapes. Projects saved before Part FX existed, like any earlier pre-release project, open as the init patch.

@@ -8,7 +8,7 @@ class Synth;
 
 namespace eg13::state {
 
-constexpr int kSchemaVersion = 5;
+constexpr int kSchemaVersion = 6;
 
 enum class LoadResult { Ok, OkWithWarnings, Invalid };
 
