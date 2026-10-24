@@ -22,6 +22,14 @@ target_include_directories(eg13_nlohmann SYSTEM INTERFACE ${CMAKE_SOURCE_DIR}/th
 
 add_subdirectory(core)
 
+# The UI bridge (edit queue to the synth and the host) has no Apple code, so it builds and is
+# tested on Linux too. The CLAP headers are all it needs from the plugin side.
+add_subdirectory(third_party/clap EXCLUDE_FROM_ALL)
+add_library(eg13_ui_bridge STATIC plugin/src/ui_bridge.cpp)
+target_include_directories(eg13_ui_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin/src)
+target_link_libraries(eg13_ui_bridge PUBLIC clap eg13_core)
+target_compile_options(eg13_ui_bridge PRIVATE -Wall -Wextra)
+
 if(EG13_BUILD_TESTS)
   enable_testing()
   add_subdirectory(third_party/Catch2)
@@ -34,7 +42,6 @@ if(EG13_BUILD_PLUGIN)
     enable_language(OBJC)
     enable_language(OBJCXX)
   endif()
-  add_subdirectory(third_party/clap EXCLUDE_FROM_ALL)
   set(CLAP_WRAPPER_DOWNLOAD_DEPENDENCIES TRUE CACHE BOOL "Fetch VST3 and AudioUnit SDKs")
   set(CLAP_WRAPPER_BUILD_AUV2 TRUE CACHE BOOL "Build the AUv2 wrapper")
   add_subdirectory(third_party/clap-wrapper)

@@ -17,3 +17,7 @@ The part is laid out in columns: Source, Filter, Shaper and Part FX, then a Mods
 ## Bottom bar and meters
 
 The bottom bar holds the part settings, the master Dry and Out levels and the meters. The meters show each part's output after its level, pan and mute. *To be filled in by later M6a tasks.*
+
+## Automation
+
+Turning a knob in the window counts as a touch: your host records the move as automation while you hold the knob, and stops when you let go. If the window closes while a knob is held, the touch ends at once. *To be filled in by later M6a tasks.*

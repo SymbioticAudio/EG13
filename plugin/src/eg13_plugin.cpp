@@ -7,6 +7,7 @@
 #include <string>
 
 #include "state/state.h"
+#include "ui_bridge.h"
 #include "util/denormal_guard.h"
 #include "synth/param_table.h"
 
@@ -26,6 +27,8 @@ struct Plugin {
   std::atomic<bool> restartRequested{false};  // cleared by activate
   Synth synth;
   state::StateStore store;
+  // Set by the editor (Task 6); until then null. Drained by process and params flush.
+  std::atomic<UiBridge*> uiBridge{nullptr};
 };
 
 Plugin* self(const clap_plugin_t* p) { return static_cast<Plugin*>(p->plugin_data); }
@@ -222,6 +225,11 @@ bool paramsValueToText(const clap_plugin_t* p, clap_id id, double value, char* d
 
 bool paramsTextToValue(const clap_plugin_t*, clap_id, const char*, double*) { return false; }
 
+// Editor edits become setParam calls and gesture/value events for the host.
+void drainUiBridge(Plugin* plugin, const clap_output_events_t* out) {
+  if (UiBridge* bridge = plugin->uiBridge.load(std::memory_order_acquire)) bridge->drain(out);
+}
+
 void sendHostUpdates(Plugin* plugin, const clap_output_events_t* out, uint32_t time) {
   HostUpdate updates[kMaxHostUpdates];
   const int count = plugin->synth.takeHostUpdates(updates, int(kMaxHostUpdates));
@@ -248,6 +256,7 @@ void sendHostUpdates(Plugin* plugin, const clap_output_events_t* out, uint32_t t
 void paramsFlush(const clap_plugin_t* p, const clap_input_events_t* in,
                  const clap_output_events_t* out) {
   self(p)->synth.beginBlock();
+  drainUiBridge(self(p), out);
   const uint32_t count = in->size(in);
   for (uint32_t i = 0; i < count; ++i) {
     const clap_event_header_t* hdr = in->get(in, i);
@@ -354,6 +363,7 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
   eg13::ScopedFlushDenormals flushDenormals;
   Plugin* plugin = self(p);
   plugin->synth.beginBlock();
+  drainUiBridge(plugin, proc->out_events);
   if (proc->transport != nullptr) plugin->synth.setTransport(transportFrom(*proc->transport));
   const uint32_t frames = proc->frames_count;
   const uint32_t numEvents = proc->in_events->size(proc->in_events);
