@@ -4,9 +4,12 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 #include "engine/engine_registry.h"
+#include "engine/part_fx_engine.h"
+#include "engine/rings_engine.h"
 #include "engine/tides_engine.h"
 #include "engine/warps_engine.h"
 #include "params/param_ids.h"
@@ -169,6 +172,56 @@ TEST_CASE("CPU: Source x Filter x Shaper chains, 2 x 8 voices, mono sources with
   REQUIRE(confirmed[0] < 50.0);
 }
 
+
+namespace {
+
+// A Part FX type with the P's that cost the most (M5 plan ruling 27): the step centre of a
+// stepped P is (step + 0.5) / 16.
+struct PartFxSetup {
+  std::string name;
+  int engine;
+  float p[kPartFxParamCount];
+};
+
+constexpr float step(int k) { return (float(k) + 0.5f) / 16.0f; }
+
+PartFxSetup makeSetup(const std::string& name, int engine) {
+  PartFxSetup s{name, engine, {}};
+  for (int i = 0; i < int(kPartFxParamCount); ++i) s.p[i] = kPartFxHostDefaults[i];
+  return s;
+}
+
+std::vector<PartFxSetup> costliestPartFx() {
+  std::vector<PartFxSetup> setups;
+  PartFxSetup spectral = makeSetup("Granular, Spectral, 16-bit stereo", int(PartFxEngine::Granular));
+  spectral.p[9] = step(3);   // Mode: Spectral
+  spectral.p[10] = 0.0f;     // Quality: 16-bit stereo
+  setups.push_back(spectral);
+  PartFxSetup delay = makeSetup("Granular Delay, Digital, Size 100%", int(PartFxEngine::GranularDelay));
+  delay.p[2] = 1.0f;         // Size: the delay
+  delay.p[9] = 0.0f;         // Quality: Digital
+  setups.push_back(delay);
+  for (int model = 0; model < RingsEngine::kNumModels; ++model) {
+    char label[48];
+    std::snprintf(label, sizeof label, "Resonator, 4 voices, model %d", model + 1);
+    PartFxSetup rings = makeSetup(label, int(PartFxEngine::Resonator));
+    rings.p[9] = step(model);  // Model
+    rings.p[10] = step(2);     // Polyphony: 4
+    setups.push_back(rings);
+  }
+  setups.push_back(makeSetup("Reverb", int(PartFxEngine::Reverb)));
+  return setups;
+}
+
+void applyPartFx(Synth& synth, int part, const PartFxSetup& setup) {
+  synth.setParam(paramSpec(partFxEngineParamIndex(part)).id, double(setup.engine));
+  for (int i = 0; i < int(kPartFxParamCount); ++i) {
+    synth.setParam(paramSpec(partFxParamIndex(part, i)).id, double(setup.p[i]));
+  }
+}
+
+}  // namespace
+
 namespace {
 
 // Percent of one core for 2 x 8 voices of the heaviest mono-source chain (Macro Oscillator ->
@@ -176,7 +229,7 @@ namespace {
 // runs the LFO in its costliest output mode (Frequency, measured during planning) and each part
 // has 12 active routes into the Source, Filter, Shaper, pitch, Amp, pan and mod slot P's;
 // otherwise no modulation (test::m3Patch). Provisional ruling 31.
-double modulatedLoad(bool modulated, int seconds) {
+double modulatedLoad(bool modulated, int seconds, const PartFxSetup* partFx = nullptr) {
   constexpr double kRate = 48000.0;
   constexpr int kBlock = 128;
   Synth synth(PluginKind::Instrument);
@@ -195,6 +248,7 @@ double modulatedLoad(bool modulated, int seconds) {
     synth.setParam(paramSpec(shaperParamIndex(part, 4)).id, WarpsEngine::optionValue(0));
     synth.setParam(paramSpec(shaperParamIndex(part, 5)).id, WarpsEngine::optionValue(0));
     synth.setParam(paramSpec(shaperParamIndex(part, 8)).id, 0.25);
+    if (partFx) applyPartFx(synth, part, *partFx);
     if (!modulated) continue;
     for (int slot = 0; slot < kNumModSlots; ++slot) {
       synth.setParam(paramSpec(modEngineParamIndex(part, slot)).id, double(ModEngineKind::Lfo));
@@ -238,6 +292,88 @@ TEST_CASE("CPU: modulation at full load stays within its own budget", "[.benchma
   std::printf("Same with 4 per-voice LFO slots (Frequency outputs) and 12 routes per part: %.2f%% of one core\n", with);
   std::printf("Modulation at full load: %.2f%% of one core (budget 10%%)\n", with - without);
   REQUIRE(with - without < 10.0);
+}
+
+namespace {
+
+// Percent of one core for 2 x 8 voices of Macro Oscillator, no Filter or Shaper, no modulation,
+// with `setup` in both parts (nullptr: Part FX Off), at 48 kHz in 128-sample blocks.
+double partFxLoad(const PartFxSetup* setup, ConverterQuality quality, int seconds) {
+  constexpr double kRate = 48000.0;
+  constexpr int kBlock = 128;
+  Synth synth(PluginKind::Instrument);
+  test::m3Patch(synth);
+  synth.setParam(paramSpec(masterParamIndex(MasterParam::Mode)).id, double(PartMode::Layer));
+  synth.setParam(paramSpec(masterParamIndex(MasterParam::LatencyMode)).id, double(int(quality)));
+  for (int part = 0; part < kNumParts; ++part) {
+    synth.setParam(paramSpec(sourceEngineParamIndex(part)).id, double(SourceEngine::Macro));
+    if (setup) applyPartFx(synth, part, *setup);
+  }
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  std::vector<float> in(kBlock, 0.0f), l(kBlock), r(kBlock);
+  const float* input[2] = {in.data(), in.data()};
+  float* out[2] = {l.data(), r.data()};
+  synth.process(input, out, nullptr, kBlock);
+  for (int key = 48; key < 56; ++key) synth.noteOn(0, key, 0.8f);
+  const int blocks = int(kRate) * seconds / kBlock;
+  const auto start = std::chrono::steady_clock::now();
+  for (int b = 0; b < blocks; ++b) {
+    if (b % 375 == 0) {
+      for (int key = 48; key < 56; ++key) synth.noteOn(0, key, 0.8f);
+    }
+    synth.process(input, out, nullptr, kBlock);
+  }
+  const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+  synth.setActive(false);
+  return 100.0 * elapsed / double(seconds);
+}
+
+}  // namespace
+
+TEST_CASE("CPU: Part FX at full load stays within its own budget", "[.benchmark]") {
+  // Both parts run the same Part FX setting; the Part FX share is the load with it minus the
+  // load with Part FX Off (which still pads the latency). The costliest setting per mode counts.
+  for (ConverterQuality q : {ConverterQuality::Live, ConverterQuality::Studio}) {
+    const char* const mode = q == ConverterQuality::Live ? "Live" : "Studio";
+    const double base = partFxLoad(nullptr, q, 5);
+    std::printf("%-6s Part FX Off, 2 x 8 voices: %.2f%% of one core\n", mode, base);
+    double worst = 0.0;
+    std::string worstName;
+    for (const PartFxSetup& setup : costliestPartFx()) {
+      const double share = partFxLoad(&setup, q, 5) - base;
+      std::printf("%-6s %-36s Part FX share %6.2f%% of one core (both parts)\n", mode, setup.name.c_str(), share);
+      if (share > worst) {
+        worst = share;
+        worstName = setup.name;
+      }
+    }
+    std::printf("%-6s costliest Part FX: %s: %.2f%% of one core (budget 5%%)\n", mode, worstName.c_str(), worst);
+    REQUIRE(worst < 5.0);
+  }
+}
+
+TEST_CASE("CPU: heaviest chain with modulation and Part FX", "[.benchmark]") {
+  // For information: the modulation benchmark's heaviest chain with the costliest Part FX in both
+  // parts; printed, not held to a budget.
+  const double without = modulatedLoad(false, 5);
+  const double modulated = modulatedLoad(true, 5);
+  double worst = 0.0;
+  PartFxSetup worstSetup = makeSetup("none", 0);
+  for (const PartFxSetup& setup : costliestPartFx()) {
+    const double load = modulatedLoad(true, 2, &setup);
+    if (load > worst) {
+      worst = load;
+      worstSetup = setup;
+    }
+  }
+  const double confirmed = modulatedLoad(true, 5, &worstSetup);
+  std::printf("Heaviest chain, no modulation, Part FX Off: %.2f%% of one core over 5 s\n", without);
+  std::printf("Same with modulation (4 LFO slots, 12 routes per part): %.2f%%\n", modulated);
+  std::printf("Same with modulation and %s in both parts: %.2f%% of one core over 5 s (for information)\n",
+              worstSetup.name.c_str(), confirmed);
+  REQUIRE(std::isfinite(confirmed));
+  REQUIRE(confirmed > 0.0);
 }
 
 TEST_CASE("CPU: the init patches", "[.benchmark]") {

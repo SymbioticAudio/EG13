@@ -44,6 +44,7 @@ const Section kSections[kNumSlotKinds] = {
     {SlotKind::Mod2, "mod2Settings"},
     {SlotKind::Mod3, "mod3Settings"},
     {SlotKind::Mod4, "mod4Settings"},
+    {SlotKind::PartFx, "partFxSettings"},  // M5: P1..P16 per Part FX engine
 };
 
 // Numbers per engine in a section: the P's, and for a mod slot its Scope last.

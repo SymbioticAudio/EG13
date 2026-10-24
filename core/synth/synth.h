@@ -30,12 +30,19 @@ constexpr size_t kModStashSize =
     size_t(kNumParts) * size_t(kNumModSlots) * size_t(kNumModEngines) * kModSlotParamCount;
 constexpr size_t kSlotStashSize = kSourceStashSize + kFilterStashSize + kShaperStashSize + kModStashSize;
 constexpr size_t kScopeStashSize = size_t(kNumParts) * size_t(kNumModSlots) * size_t(kNumModEngines);
-constexpr size_t kStashSize = kSlotStashSize + kScopeStashSize;
+// Part FX engines' P1..P16 per part (M5) come last, so every earlier index is unchanged.
+constexpr size_t kPartFxStashSize = size_t(kNumParts) * size_t(kNumPartFxEngines) * kPartFxSlotParamCount;
+constexpr size_t kStashSize = kSlotStashSize + kScopeStashSize + kPartFxStashSize;
 constexpr size_t stashIndex(int part, int engine, int p) {
   return (size_t(part) * size_t(kNumSourceEngines) + size_t(engine)) * kSourceParamCount + size_t(p);
 }
+constexpr size_t partFxStashIndex(int part, int engine, int p) {
+  return kSlotStashSize + kScopeStashSize +
+         (size_t(part) * size_t(kNumPartFxEngines) + size_t(engine)) * kPartFxSlotParamCount + size_t(p);
+}
 constexpr size_t slotStashIndex(SlotKind kind, int part, int engine, int p) {
   return kind == SlotKind::Source ? stashIndex(part, engine, p)
+         : kind == SlotKind::PartFx ? partFxStashIndex(part, engine, p)
          : kind == SlotKind::Filter
              ? kSourceStashSize +
                    (size_t(part) * size_t(kNumFilterEngines) + size_t(engine)) * kFilterParamCount + size_t(p)
@@ -66,8 +73,12 @@ static_assert(slotStashIndex(SlotKind::Shaper, kNumParts - 1, kNumShaperEngines 
                   kSourceStashSize + kFilterStashSize + kShaperStashSize - 1, "Shaper block size");
 static_assert(slotStashIndex(SlotKind::Mod4, kNumParts - 1, kNumModEngines - 1, int(kModSlotParamCount) - 1) ==
                   kSlotStashSize - 1, "Mod block size");
-static_assert(scopeStashIndex(kNumParts - 1, kNumModSlots - 1, kNumModEngines - 1) == kStashSize - 1,
+static_assert(scopeStashIndex(kNumParts - 1, kNumModSlots - 1, kNumModEngines - 1) == kSlotStashSize + kScopeStashSize - 1,
               "Scope block size");
+static_assert(slotStashIndex(SlotKind::PartFx, 0, 0, 0) == kSlotStashSize + kScopeStashSize,
+              "Part FX block starts after the scopes");
+static_assert(slotStashIndex(SlotKind::PartFx, kNumParts - 1, kNumPartFxEngines - 1, int(kPartFxSlotParamCount) - 1) ==
+                  kStashSize - 1, "Part FX block size");
 using EngineStash = std::array<float, kStashSize>;
 
 // Patch data (spec §7.1): what is saved with a project but is not a host parameter. Each part's
@@ -83,10 +94,10 @@ struct HostUpdate {
   float value;
 };
 // Host-update queue capacity, coalesced per id: per part every slot P, each mod slot's Scope, and
-// the four learnable CC numbers (M4).
+// the four learnable CC numbers (M4), and the Part FX P's (M5).
 constexpr size_t kMaxHostUpdates =
     size_t(kNumParts) * (kSourceParamCount + kFilterParamCount + kShaperParamCount +
-                         size_t(kNumModSlots) * (kModSlotParamCount + 1) + 4);
+                         size_t(kNumModSlots) * (kModSlotParamCount + 1) + kPartFxSlotParamCount + 4);
 
 // Two parts, MIDI routing by mode, main and Bus 2 outputs, Dry input and
 // atomic parameter snapshots.
@@ -177,6 +188,15 @@ class Synth {
   void process(const float* const* in, float* const* mainOut, float* const* bus2Out, int n);
 
   int latencySamples() const { return latency_; }
+  // The Latency Mode the running audio was prepared with (prepare() reads the parameter), and the
+  // parameter's value as applied at the last block (any thread; while inactive, at once). A
+  // different requested mode takes effect at the next prepare(): the plugin asks the host to
+  // restart it.
+  ConverterQuality preparedQuality() const { return preparedQuality_; }
+  // After a stateLoad while active it changes at the next beginBlock, not at once.
+  ConverterQuality requestedQuality() const {
+    return ConverterQuality(int(load(masterParamIndex(MasterParam::LatencyMode))));
+  }
   int activeVoiceCount(int part) const { return parts_[size_t(part)]->activeVoiceCount(); }
   const Part& part(int index) const { return *parts_[size_t(index)]; }  // tests
 
@@ -213,6 +233,7 @@ class Synth {
   SmoothedValue dryGain_;
   SmoothedValue partBMute_;
   int latency_ = 0;
+  ConverterQuality preparedQuality_ = ConverterQuality::Studio;
   std::vector<float> dryDelay_[2];
   size_t dryPos_ = 0;
   std::vector<float> partOut_[kNumParts][2];

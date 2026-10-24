@@ -1,6 +1,7 @@
 #include "eg13_plugin.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -21,11 +22,28 @@ struct Plugin {
   PluginKind kind;
   const clap_host_latency_t* hostLatency = nullptr;
   uint32_t reportedLatency = 0;
+  std::atomic<bool> active{false};
+  std::atomic<bool> restartRequested{false};  // cleared by activate
   Synth synth;
   state::StateStore store;
 };
 
 Plugin* self(const clap_plugin_t* p) { return static_cast<Plugin*>(p->plugin_data); }
+
+// The Latency Mode applies at the next activate (it rebuilds every converter and changes the
+// latency): when the parameter differs from the running mode, ask the host once to restart the
+// plugin (deactivate, activate). request_restart is thread-safe (clap/host.h). CLAP and VST3
+// hosts restart at once (the VST3 wrapper turns the request into
+// restartComponent(kIoChanged | kLatencyChanged): third_party/clap-wrapper wrapasvst3.cpp:1352-1355
+// and :1509-1515); clap-wrapper's AU restartPlugin() is empty, so an AU host applies it
+// when it next initialises the plugin (docs/manual/latency.md).
+void requestRestartIfModeChanged(Plugin* plugin) {
+  if (!plugin->active.load(std::memory_order_acquire)) return;  // the next activate prepares it
+  if (plugin->synth.requestedQuality() == plugin->synth.preparedQuality()) return;
+  if (!plugin->restartRequested.exchange(true, std::memory_order_acq_rel)) {
+    plugin->host->request_restart(plugin->host);
+  }
+}
 
 // The host's transport (CLAP beat times are fixed point) for the beat clock.
 Transport transportFrom(const clap_event_transport_t& t) {
@@ -176,7 +194,9 @@ bool paramsGetInfo(const clap_plugin_t* p, uint32_t index, clap_param_info_t* in
   const ParamSpec& spec = paramSpec(index);
   std::memset(info, 0, sizeof(*info));
   info->id = spec.id;
-  info->flags = CLAP_PARAM_IS_AUTOMATABLE | (spec.stepped ? CLAP_PARAM_IS_STEPPED : 0u);
+  // The Latency Mode is a setting, not a sound control: it applies at the next activate.
+  const bool automatable = index != masterParamIndex(MasterParam::LatencyMode);
+  info->flags = (automatable ? CLAP_PARAM_IS_AUTOMATABLE : 0u) | (spec.stepped ? CLAP_PARAM_IS_STEPPED : 0u);
   info->cookie = nullptr;
   std::snprintf(info->name, sizeof(info->name), "%s", self(p)->synth.paramName(index));
   std::snprintf(info->module, sizeof(info->module), "%s", spec.module);
@@ -235,6 +255,7 @@ void paramsFlush(const clap_plugin_t* p, const clap_input_events_t* in,
       handleEvent(self(p), hdr);
     }
   }
+  requestRestartIfModeChanged(self(p));
   sendHostUpdates(self(p), out, 0);
 }
 
@@ -277,6 +298,9 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
       plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT |
                                                    CLAP_PARAM_RESCAN_INFO);
     }
+    // While inactive the load applies at the next activate. While active, requestedQuality()
+    // changes at the next audio block, so if the host stops processing the request waits for it.
+    requestRestartIfModeChanged(plugin);
     return true;
   } catch (...) {
     return false;
@@ -306,17 +330,22 @@ void pluginDestroy(const clap_plugin_t* p) { delete self(p); }
 
 bool pluginActivate(const clap_plugin_t* p, double sampleRate, uint32_t, uint32_t maxFrames) {
   Plugin* plugin = self(p);
-  plugin->synth.prepare(sampleRate, int(maxFrames));
+  plugin->synth.prepare(sampleRate, int(maxFrames));  // in the Latency Mode the parameter holds
+  plugin->restartRequested.store(false, std::memory_order_release);
   const uint32_t latency = uint32_t(plugin->synth.latencySamples());
   if (latency != plugin->reportedLatency) {
     plugin->reportedLatency = latency;
     if (plugin->hostLatency) plugin->hostLatency->changed(plugin->host);
   }
   plugin->synth.setActive(true);
+  plugin->active.store(true, std::memory_order_release);
   return true;
 }
 
-void pluginDeactivate(const clap_plugin_t* p) { self(p)->synth.setActive(false); }
+void pluginDeactivate(const clap_plugin_t* p) {
+  self(p)->active.store(false, std::memory_order_release);
+  self(p)->synth.setActive(false);
+}
 bool pluginStartProcessing(const clap_plugin_t*) { return true; }
 void pluginStopProcessing(const clap_plugin_t*) {}
 void pluginReset(const clap_plugin_t* p) { self(p)->synth.reset(); }
@@ -334,6 +363,7 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
     for (uint32_t i = 0; i < numEvents; ++i) {
       handleEvent(plugin, proc->in_events->get(proc->in_events, i));
     }
+    requestRestartIfModeChanged(plugin);
     sendHostUpdates(plugin, proc->out_events, frames > 0 ? frames - 1 : 0);
     return CLAP_PROCESS_CONTINUE;
   }
@@ -387,6 +417,7 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
   while (eventIndex < numEvents) {
     handleEvent(plugin, proc->in_events->get(proc->in_events, eventIndex++));
   }
+  requestRestartIfModeChanged(plugin);
   sendHostUpdates(plugin, proc->out_events, frames > 0 ? frames - 1 : 0);
   return CLAP_PROCESS_CONTINUE;
 }

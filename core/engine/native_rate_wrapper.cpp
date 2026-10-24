@@ -12,11 +12,58 @@
 
 namespace eg13 {
 
+// Live: chosen by `eg13_tests "[.converter]"` (tests/test_converter_quality.cpp; M5 plan rulings 1-3)
+// over r8brain at 96 / 108 / 120 / 136 / 150 / 180.15 dB, linear and minimum phase, transition
+// band 30 %, input prime 2 or 1 native blocks. Measured 2026-10-23 (worst over hosts 44.1 / 48 /
+// 96 kHz and natives 24 / 32 / 47.87 / 48 / 96 kHz):
+//   attenuation   stop band   passband dev.   Dry + wet notch   worst 48 kHz input path (prime 2 / 1)
+//    96 dB         92.4 dB     0.35 dB         -1.11 dB          315 / 267
+//   108 dB        104.5 dB     0.29 dB         -1.08 dB          311 / 263   <- Live, prime 1
+//   120 dB        116.6 dB     0.23 dB         -1.05 dB          474 / 462  (r8brain adds a stage at 24 kHz)
+//   136 dB        130.3 dB     0.18 dB         -1.03 dB          466 / 454
+//   150 dB        144.1 dB     0.15 dB         -1.01 dB          460 / 448
+//   180.15 dB     149.7 dB     0.10 dB         -0.99 dB          539 / 491  (149.7: the float measurement floor)
+// Floors (owner decisions of 2026-10-23): stop band >= 96 dB; passband within 0.3 dB of 1 kHz up
+// to Studio's -0.1 dB edge; Dry + wet notch no deeper than -1.1 dB (Studio -0.99, Live -1.08).
+// Minimum phase is 30-60 samples faster at each attenuation but fails ruling 3: impulses land 2-6
+// samples off the reported latency and Dry plus the engine notches by 35-57 dB below f_pass.
+// The one-block input prime has no under- or overruns at any host rate and block.
+ConverterSpec converterSpec(ConverterQuality q) {
+  switch (q) {
+    case ConverterQuality::Live:
+      return {ConverterPhase::Linear, 108.0, NativeRateWrapper::kTransitionBandPercent, 1};
+    case ConverterQuality::Studio:
+      break;
+  }
+  // r8b::CDSPResampler24 (CDSPResampler.h:804-807), as shipped before the Latency Mode.
+  return {ConverterPhase::Linear, 180.15, NativeRateWrapper::kTransitionBandPercent, 2};
+}
+
+namespace {
+
+std::unique_ptr<r8b::CDSPResampler> makeConverter(const ConverterSpec& spec, double from, double to,
+                                                  int maxIn) {
+  const auto phase = spec.phase == ConverterPhase::Minimum ? r8b::fprMinPhase : r8b::fprLinearPhase;
+  return std::make_unique<r8b::CDSPResampler>(from, to, maxIn, spec.transitionBandPercent,
+                                              spec.attenuationDb, phase);
+}
+
+}  // namespace
+
 NativeRateWrapper::NativeRateWrapper(std::unique_ptr<VoiceEngine> inner, double nativeRate,
                                      int nativeBlock)
-    : inner_(std::move(inner)), nativeRate_(nativeRate), nativeBlock_(nativeBlock) {}
+    : inner_(std::move(inner)),
+      spec_(converterSpec(ConverterQuality::Studio)),
+      nativeRate_(nativeRate),
+      nativeBlock_(nativeBlock) {}
 
 NativeRateWrapper::~NativeRateWrapper() = default;
+
+void NativeRateWrapper::setQuality(ConverterQuality q) {
+  quality_ = q;
+  spec_ = converterSpec(q);
+  inner_->setConverterQuality(q);
+}
 
 void NativeRateWrapper::setAuxEnabled(bool on) {
   auxEnabled_ = on;
@@ -51,33 +98,36 @@ void NativeRateWrapper::prepare(double hostRate, int maxBlock) {
   }
   if (!bypass_) {
     for (int ch = 0; ch < outChannels_; ++ch) {
-      resampler_[ch] = std::make_unique<r8b::CDSPResampler24>(native, hostRate, nativeBlock_,
-                                                              kTransitionBandPercent);
+      resampler_[ch] = makeConverter(spec_, native, hostRate, nativeBlock_);
       fifo_[ch].assign(size_t(resampler_[ch]->getMaxOutLen(nativeBlock_)), 0.0f);
     }
     latency_ = int(std::lround(double(resampler_[0]->getInLenBeforeOutPos(0)) * hostRate / native));
     if (usesInput_) {
       for (int ch = 0; ch < inChannels_; ++ch) {
-        inputResampler_[ch] = std::make_unique<r8b::CDSPResampler24>(hostRate, native, maxBlock,
-                                                                     kTransitionBandPercent);
+        inputResampler_[ch] = makeConverter(spec_, hostRate, native, maxBlock);
       }
       const int withheld = inputResampler_[0]->getInLenBeforeOutPos(0);
-      inputPrime_ = size_t(2 * nativeBlock_ + int(std::ceil(double(withheld) * native / hostRate)) + 1);
+      inputPrime_ = size_t(spec_.primeBlocks * nativeBlock_ +
+                           int(std::ceil(double(withheld) * native / hostRate)) + 1);
       const size_t capacity = inputPrime_ + size_t(inputResampler_[0]->getMaxOutLen(maxBlock)) +
                               size_t(std::ceil(double(latency_) * native / hostRate)) +
                               size_t(2 * nativeBlock_);
       for (int ch = 0; ch < inChannels_; ++ch) inputFifo_[ch].assign(capacity, 0.0f);
       inputLatency_ = latency_ + int(std::lround(double(inputPrime_) * hostRate / native));
-      setUpPath(inPath_, hostRate, native, withheld, maxBlock, 0);
+      setUpPath(inPath_, spec_, hostRate, native, withheld, maxBlock, 0);
       silence_.assign(size_t(inputResampler_[0]->getMaxOutLen(maxBlock)), 0.0);
     }
-    setUpPath(outPath_, native, hostRate, resampler_[0]->getInLenBeforeOutPos(0), nativeBlock_, nativeBlock_);
+    setUpPath(outPath_, spec_, native, hostRate, resampler_[0]->getInLenBeforeOutPos(0), nativeBlock_, nativeBlock_);
     preroll_.assign(size_t(std::max(maxBlock, nativeBlock_)), 0.0);
   }
   // The engine's own latency (a fixed-block FIFO) delays both paths.
   engineLatency_ = int(std::lround(double(inner_->nativeLatency()) * hostRate / native));
   latency_ += engineLatency_;
   if (usesInput_) inputLatency_ += engineLatency_;
+  if (bypass_ && wholeBlocks_) {  // the whole-block FIFO: one native block, in host samples
+    latency_ += nativeBlock_;
+    if (usesInput_) inputLatency_ += nativeBlock_;
+  }
   extra_ = 0;
   for (auto& line : delay_) line.clear();
   reset();
@@ -123,6 +173,9 @@ void NativeRateWrapper::restartConversion() {
   outPath_.reset();
   lastInConverted_ = bypass_ ? 0 : inChannels_;
   lastOutConverted_ = bypass_ ? 0 : outChannels_;
+  wholePos_ = 0;
+  for (auto& block : native_) std::fill(block.begin(), block.end(), 0.0f);
+  for (auto& block : nativeIn_) std::fill(block.begin(), block.end(), 0.0f);
 }
 
 void NativeRateWrapper::noteOn(float note, float velocity) { inner_->noteOn(note, velocity); }
@@ -135,7 +188,9 @@ const EngineInfo& NativeRateWrapper::info() const { return inner_->info(); }
 
 void NativeRateWrapper::process(const float* const* in, float* const* out, const ParamValues& p,
                                 int n) {
-  if (bypass_) {
+  if (bypass_ && wholeBlocks_) {
+    processWholeBlocks(in, out, p, n);
+  } else if (bypass_) {
     inner_->process(usesInput_ ? in : nullptr, out, p, n);
   } else {
     if (restartPending_) restartConversion();  // after an output fallback (fallBackOutput)
@@ -272,25 +327,28 @@ int64_t NativeRateWrapper::converterPeriod(double from, double to) {
 // converter's latency plus a margin; r8brain 7.6, measured: within 1e-15, 5e-11 when
 // down-sampling). Paths without a period, with a period over 4096, or whose check fails never
 // skip.
-void NativeRateWrapper::setUpPath(Path& path, double from, double to, int latencyIn, int maxChunk, int chunk) {
+void NativeRateWrapper::setUpPath(Path& path, const ConverterSpec& spec, double from, double to, int latencyIn,
+                                  int maxChunk, int chunk) {
   path = Path{};
   const int64_t period = converterPeriod(from, to);
   if (period == 0 || period > 4096) return;
   path.period = period;
   path.span = 2 * int64_t(latencyIn) + 64;
   path.history.assign(size_t(path.span + period + maxChunk), 0.0f);
-  if (!checkResume(from, to, maxChunk, chunk, path)) path = Path{};
+  if (!checkResume(spec, from, to, maxChunk, chunk, path)) path = Path{};
 }
 
 // Main thread. Runs one converter without a break and, for resumptions at several
 // period-aligned starts (odd and even multiples), a second one restarted with resume(), both
 // with the chunk sizes the path sees at run time; true if every resumption gives the same
 // output counts and samples within 1e-6. Results are cached per configuration.
-bool NativeRateWrapper::checkResume(double from, double to, int maxChunk, int chunk, const Path& setUp) {
-  using Key = std::tuple<double, double, int, int, int64_t, int64_t>;
+bool NativeRateWrapper::checkResume(const ConverterSpec& spec, double from, double to, int maxChunk, int chunk,
+                                    const Path& setUp) {
+  using Key = std::tuple<double, double, int, int, int64_t, int64_t, int, double, double>;
   static std::mutex mutex;
   static std::map<Key, bool> cache;
-  const Key key{from, to, maxChunk, chunk, setUp.period, setUp.span};
+  const Key key{from, to, maxChunk, chunk, setUp.period, setUp.span,
+                int(spec.phase), spec.attenuationDb, spec.transitionBandPercent};
   {
     const std::lock_guard<std::mutex> lock(mutex);
     const auto found = cache.find(key);
@@ -308,7 +366,7 @@ bool NativeRateWrapper::checkResume(double from, double to, int maxChunk, int ch
   const int64_t window = 2 * setUp.span + 8 * int64_t(maxChunk) + 512;
   const int64_t length = setUp.span + (kTrials + 1) * setUp.period + window + 4 * int64_t(maxChunk);
   // The uninterrupted converter: every call's input start and outputs.
-  r8b::CDSPResampler24 whole(from, to, maxChunk, kTransitionBandPercent);
+  const auto whole = makeConverter(spec, from, to, maxChunk);
   std::vector<int64_t> starts;
   std::vector<size_t> offsets{0};
   std::vector<double> outputs;
@@ -317,14 +375,14 @@ bool NativeRateWrapper::checkResume(double from, double to, int maxChunk, int ch
     const int n = chunkAt(starts.size());
     for (int i = 0; i < n; ++i) x[size_t(i)] = signal(t + i);
     double* o = nullptr;
-    const int made = whole.process(x.data(), n, o);
+    const int made = whole->process(x.data(), n, o);
     outputs.insert(outputs.end(), o, o + made);
     starts.push_back(t);
     offsets.push_back(outputs.size());
     t += n;
   }
   bool ok = true;
-  r8b::CDSPResampler24 resumed(from, to, maxChunk, kTransitionBandPercent);
+  const auto resumed = makeConverter(spec, from, to, maxChunk);
   Path path = setUp;
   std::vector<double> scratch(static_cast<size_t>(maxChunk));
   std::vector<float> history;
@@ -344,12 +402,12 @@ bool NativeRateWrapper::checkResume(double from, double to, int maxChunk, int ch
     }
     // resume() replays the float history, as at run time; compare with the converter fed the
     // same float samples throughout.
-    resume(resumed, path, false, maxChunk, scratch);
+    resume(*resumed, path, false, maxChunk, scratch);
     for (int64_t t = at; ok && call + 1 < starts.size() && t < at + window; ++call) {
       const int n = int(starts[call + 1] - starts[call]);
       for (int i = 0; i < n; ++i) x[size_t(i)] = signal(t + i);
       double* o = nullptr;
-      const int made = resumed.process(x.data(), n, o);
+      const int made = resumed->process(x.data(), n, o);
       const size_t expected = offsets[call + 1] - offsets[call];
       if (size_t(made) != expected) {
         ok = false;
@@ -373,7 +431,7 @@ bool NativeRateWrapper::checkResume(double from, double to, int maxChunk, int ch
 // have had; the cost is one pre-roll of at most span + period samples per resumption.
 // Every voice resuming in the same block pays this at once (at 44.1 kHz, about 6 us per Warps
 // converter on an M1); M7 could spread resumptions over several blocks.
-void NativeRateWrapper::resume(r8b::CDSPResampler24& r, const Path& path, bool silence, int maxChunk,
+void NativeRateWrapper::resume(r8b::CDSPResampler& r, const Path& path, bool silence, int maxChunk,
                                std::vector<double>& scratch) {
   const int64_t end = path.fed;
   int64_t start = end > path.span ? end - path.span : 0;
@@ -532,6 +590,27 @@ void NativeRateWrapper::renderNativeBlock(const ParamValues& p) {
   lastOutConverted_ = active;
   fifoRead_ = 0;
   fifoSize_ = size_t(produced);
+}
+
+// Each host sample enters the input block and leaves from the output block at the same
+// position, so everything is one native block late; a full input block renders the next output
+// block. As on the converted path, absent inputs read as silence, and the engine gets the
+// P's of the call in which its block fills.
+void NativeRateWrapper::processWholeBlocks(const float* const* in, float* const* out, const ParamValues& p,
+                                           int n) {
+  const float* nativeIn[kMaxChannels] = {nativeIn_[0].data(), nativeIn_[1].data(), nativeIn_[2].data(),
+                                         nativeIn_[3].data()};
+  float* native[kMaxChannels] = {native_[0].data(), native_[1].data(), native_[2].data(), native_[3].data()};
+  for (int i = 0; i < n; ++i) {
+    for (int ch = 0; ch < inChannels_; ++ch) {
+      nativeIn_[ch][wholePos_] = in != nullptr && in[ch] != nullptr ? in[ch][i] : 0.0f;
+    }
+    for (int ch = 0; ch < outChannels_; ++ch) out[ch][i] = native_[ch][wholePos_];
+    if (++wholePos_ == size_t(nativeBlock_)) {
+      inner_->process(usesInput_ ? nativeIn : nullptr, native, p, nativeBlock_);
+      wholePos_ = 0;
+    }
+  }
 }
 
 void NativeRateWrapper::applyExtraDelay(float* const* out, int n) {

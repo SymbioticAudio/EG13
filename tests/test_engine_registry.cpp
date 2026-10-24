@@ -8,6 +8,7 @@
 
 #include "engine/bypass_engine.h"
 #include "engine/engine_registry.h"
+#include "engine/part_fx_engine.h"
 #include "engine/ripples_engine.h"
 #include "engine/shelves_engine.h"
 #include "engine/svf_engine.h"
@@ -188,5 +189,79 @@ TEST_CASE("Stereo filters split a block longer than maxBlock instead of overrunn
     REQUIRE(l1 == l2);
     REQUIRE(r1 == r2);
     REQUIRE(r1 != l1);  // the right instance ran
+  }
+}
+
+TEST_CASE("Part FX engine ids are permanent") {
+  REQUIRE(int(PartFxEngine::Off) == 0);
+  REQUIRE(int(PartFxEngine::Granular) == 1);
+  REQUIRE(int(PartFxEngine::GranularDelay) == 2);
+  REQUIRE(int(PartFxEngine::Resonator) == 3);
+  REQUIRE(int(PartFxEngine::Reverb) == 4);
+  REQUIRE(kNumPartFxEngines == 5);
+  REQUIRE(kPartFxEngineSelectorMax == 31);
+  REQUIRE(std::string(partFxEngineInfo(0).displayName) == "Off");
+  REQUIRE(std::string(partFxEngineInfo(1).displayName) == "Granular");
+  REQUIRE(std::string(partFxEngineInfo(2).displayName) == "Granular Delay");
+  REQUIRE(std::string(partFxEngineInfo(3).displayName) == "Resonator");
+  REQUIRE(std::string(partFxEngineInfo(4).displayName) == "Reverb");
+  REQUIRE(std::string(partFxEngineInfo(9).displayName) == "Off");
+  for (int e = 0; e <= 4; ++e) REQUIRE(partFxEngineFromSelector(double(e)) == e);
+  REQUIRE(partFxEngineFromSelector(5.0) == 0);
+  REQUIRE(partFxEngineFromSelector(17) == 0);
+  REQUIRE(partFxEngineFromSelector(31.0) == 0);
+  REQUIRE(partFxEngineFromSelector(-1.0) == 0);
+  REQUIRE(partFxEngineFromSelector(std::numeric_limits<double>::quiet_NaN()) == 0);
+}
+
+TEST_CASE("Part FX trims are the measured ones (M5 Task 14, ruling G11)") {
+  // Off and anything without an engine stay at unity; the others are measured in test_levels.cpp.
+  for (int e : {-1, 0, 5, 7}) {
+    REQUIRE(partFxTrimDb(e) == 0.0f);
+    REQUIRE(partFxTrim(e) == 1.0f);
+  }
+  REQUIRE(partFxTrimDb(int(PartFxEngine::Granular)) == 5.0f);
+  REQUIRE(partFxTrimDb(int(PartFxEngine::GranularDelay)) == 5.0f);
+  REQUIRE(partFxTrimDb(int(PartFxEngine::Resonator)) == 0.5f);
+  REQUIRE(partFxTrimDb(int(PartFxEngine::Reverb)) == 2.0f);
+  REQUIRE(partFxTrim(int(PartFxEngine::Reverb)) == std::pow(10.0f, 2.0f / 20.0f));
+}
+
+TEST_CASE("makeAllPartFx builds every engine at its native rate and block") {
+  const auto fx = makeAllPartFx();
+  REQUIRE(fx.size() == size_t(kNumPartFxEngines));
+  for (int e = 0; e < kNumPartFxEngines; ++e) {
+    INFO("engine " << e);
+    REQUIRE(fx[size_t(e)].engine != nullptr);
+    REQUIRE(std::string(fx[size_t(e)].engine->info().id) == partFxEngineInfo(e).id);
+    REQUIRE(fx[size_t(e)].wholeBlocks);  // ruling G8
+  }
+  REQUIRE(fx[0].nativeRate == 0.0);  // Off: the existing makeOff()
+  REQUIRE(fx[0].nativeBlock == makeOff().nativeBlock);
+  REQUIRE(fx[1].nativeRate == 32000.0);
+  REQUIRE(fx[1].nativeBlock == 32);
+  // Granular Delay runs at the host rate and nests its own converters; G17: its block is kHostBlock.
+  REQUIRE(fx[2].nativeRate == 0.0);
+  REQUIRE(fx[2].nativeBlock == makeOff().nativeBlock);
+  REQUIRE(fx[2].nativeBlock == makeFilter(int(FilterEngine::Analog)).nativeBlock);
+  REQUIRE(fx[3].nativeRate == 48000.0);
+  REQUIRE(fx[3].nativeBlock == 24);
+  REQUIRE(fx[4].nativeRate == 32000.0);
+  REQUIRE(fx[4].nativeBlock == 16);
+  REQUIRE(makePartFx(9).nativeRate == 0.0);  // unknown -> Off
+  REQUIRE(std::string(makePartFx(9).engine->info().id) == partFxEngineInfo(0).id);
+  REQUIRE_FALSE(makeFilter(1).wholeBlocks);  // other slots are unaffected
+}
+
+TEST_CASE("Every Part FX engine's defaults equal the per-position host defaults") {
+  for (int e = 1; e < kNumPartFxEngines; ++e) {
+    const EngineInfo& info = partFxEngineInfo(e);
+    INFO(info.displayName);
+    REQUIRE(info.paramCount <= kPartFxParamCount);
+    REQUIRE(info.paramCount > 0);
+    for (int i = 0; i < info.paramCount; ++i) {
+      INFO("P" << i + 1);
+      REQUIRE(info.params[i].defaultValue == kPartFxHostDefaults[i]);
+    }
   }
 }

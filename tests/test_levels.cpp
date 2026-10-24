@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 #include "engine/engine_registry.h"
@@ -85,20 +86,40 @@ TEST_CASE("Output levels of every Filter and Shaper at its defaults", "[levels]"
 }
 
 TEST_CASE("Reported latency per plugin and host rate", "[levels]") {
-  for (PluginKind kind : {PluginKind::Instrument, PluginKind::Effect}) {
-    for (double rate : {44100.0, 48000.0, 88200.0, 96000.0}) {
-      Synth synth(kind);
-      synth.prepare(rate, 512);
-      // The parts of the total: the Source path as the plugin aligns it, and the Shaper slot.
-      Voice sourceOnly(makeAllSources());
-      sourceOnly.prepare(rate, 512, kind == PluginKind::Effect ? Voice::Alignment::Input : Voice::Alignment::Notes);
-      ProcessorSlot shapers(makeAllShapers());
-      shapers.prepare(rate, Voice::kControlBlock);
-      std::printf("%-10s %6.0f Hz: %4d samples (%.2f ms) = Source %d + Shaper %d\n",
-                  kind == PluginKind::Effect ? "EG13 FX" : "EG13", rate, synth.latencySamples(),
-                  1000.0 * synth.latencySamples() / rate, sourceOnly.latencySamples(), shapers.latencySamples());
-      REQUIRE(synth.latencySamples() > 0);
-      REQUIRE(synth.latencySamples() == sourceOnly.latencySamples() + shapers.latencySamples());
+  for (ConverterQuality q : {ConverterQuality::Live, ConverterQuality::Studio}) {
+    for (PluginKind kind : {PluginKind::Instrument, PluginKind::Effect}) {
+      for (double rate : {44100.0, 48000.0, 88200.0, 96000.0}) {
+        Synth synth(kind);
+        synth.setParam(paramSpec(masterParamIndex(MasterParam::LatencyMode)).id, double(int(q)));
+        synth.prepare(rate, 512);
+        REQUIRE(synth.preparedQuality() == q);
+        // The parts of the total: the Source path as the plugin aligns it, and the Shaper slot.
+        Voice sourceOnly(makeAllSources());
+        sourceOnly.prepare(rate, 512, kind == PluginKind::Effect ? Voice::Alignment::Input : Voice::Alignment::Notes, q);
+        ProcessorSlot shapers(makeAllShapers());
+        shapers.prepare(rate, Voice::kControlBlock, q);
+        ProcessorSlot partFx(makeAllPartFx());  // M5: every part has a Part FX slot, Off included
+        partFx.prepare(rate, 512, q);
+        std::printf("%-6s %-10s %6.0f Hz: %4d samples (%.2f ms) = Source %d + Shaper %d + Part FX %d\n",
+                    q == ConverterQuality::Live ? "Live" : "Studio", kind == PluginKind::Effect ? "EG13 FX" : "EG13",
+                    rate, synth.latencySamples(), 1000.0 * synth.latencySamples() / rate,
+                    sourceOnly.latencySamples(), shapers.latencySamples(), partFx.latencySamples());
+        if (kind == PluginKind::Instrument) {  // which Part FX engine sets the slot's delay (G23)
+          std::string each;
+          for (int e = 1; e < kNumPartFxEngines; ++e) {
+            std::vector<SourceSpec> only;
+            only.push_back(makePartFx(e));
+            ProcessorSlot one(std::move(only));
+            one.prepare(rate, 512, q);
+            each += std::string(partFxEngineInfo(e).displayName) + " " + std::to_string(one.latencySamples()) + "  ";
+            REQUIRE(one.latencySamples() <= partFx.latencySamples());
+          }
+          std::printf("        Part FX alone: %s\n", each.c_str());
+        }
+        REQUIRE(synth.latencySamples() > 0);
+        REQUIRE(synth.latencySamples() ==
+                sourceOnly.latencySamples() + shapers.latencySamples() + partFx.latencySamples());
+      }
     }
   }
 }
@@ -212,5 +233,86 @@ TEST_CASE("Eight-note chords with the init patch stay within full scale", "[leve
     std::printf("  %-20s %.3f / %.3f\n", sourceEngineInfo(e).displayName, double(raw), double(clipped));
     REQUIRE(clipped <= 1.0f);
     REQUIRE(std::isfinite(raw));
+  }
+}
+
+namespace {
+
+struct PartFxLevel {
+  float peak;
+  double rms;
+};
+
+// Level of Part A's output for one held C3 at velocity 1 (Macro Oscillator, m3 patch: no
+// modulation, Voice Gain 0 dB, Soft Clip off) through the given Part FX at its host defaults,
+// over the second after the first 0.5 s (past the engines' latency and onset).
+PartFxLevel partFxLevel(int engine, ConverterQuality quality = ConverterQuality::Live) {
+  Synth synth(PluginKind::Instrument);
+  test::m3Patch(synth);
+  synth.setParam(paramSpec(masterParamIndex(MasterParam::LatencyMode)).id, double(int(quality)));
+  synth.setParam(paramSpec(masterParamIndex(MasterParam::Level)).id, 1.0);
+  synth.setParam(paramSpec(partFxEngineParamIndex(0)).id, double(engine));
+  for (int p = 0; p < int(kPartFxParamCount); ++p) {
+    synth.setParam(paramSpec(partFxParamIndex(0, p)).id, double(kPartFxHostDefaults[p]));
+  }
+  synth.prepare(kRate, 128);
+  std::vector<float> in(128, 0.0f), l(128), r(128);
+  const float* input[2] = {in.data(), in.data()};
+  float* out[2] = {l.data(), r.data()};
+  synth.noteOn(0, 48, 1.0f);
+  float peak = 0.0f;
+  double sum = 0.0;
+  size_t n = 0;
+  for (int b = 0; b < int(1.5 * kRate) / 128; ++b) {
+    synth.process(input, out, nullptr, 128);
+    if (b * 128 < int(kRate) / 2) continue;
+    for (int i = 0; i < 128; ++i) {
+      peak = std::max(peak, std::max(std::fabs(l[size_t(i)]), std::fabs(r[size_t(i)])));
+      sum += double(l[size_t(i)]) * double(l[size_t(i)]) + double(r[size_t(i)]) * double(r[size_t(i)]);
+      n += 2;
+    }
+  }
+  return {peak, std::sqrt(sum / double(n))};
+}
+
+}  // namespace
+
+TEST_CASE("Output levels of every Part FX at its defaults", "[levels]") {
+  std::printf("One held C3 at velocity 1 through each Part FX at its host defaults (trims applied), against Off:\n");
+  for (ConverterQuality q : {ConverterQuality::Live, ConverterQuality::Studio}) {
+    const PartFxLevel off = partFxLevel(int(PartFxEngine::Off), q);
+    REQUIRE(off.peak > 0.01f);
+    for (int e = 0; e < kNumPartFxEngines; ++e) {
+      const PartFxLevel level = partFxLevel(e, q);
+      const double peakDb = 20.0 * std::log10(double(level.peak) / double(off.peak));
+      const double rmsDb = 20.0 * std::log10(level.rms / off.rms);
+      std::printf("  %-6s %-14s trim %+5.1f dB  peak %.3f (%+5.2f dB)  rms %.4f (%+5.2f dB)\n",
+                  q == ConverterQuality::Live ? "Live" : "Studio", partFxEngineInfo(e).displayName,
+                  double(partFxTrimDb(e)), double(level.peak), peakDb, level.rms, rmsDb);
+      REQUIRE(std::isfinite(peakDb));
+      REQUIRE(std::fabs(peakDb) < 6.0);  // no engine jumps the peak
+      REQUIRE(std::fabs(rmsDb) < 1.5);   // the trims bring each engine's loudness within 1.5 dB of Off (G11)
+    }
+  }
+}
+
+// A host's reset-to-default sets each Part FX P to one fixed value whatever engine is selected
+// (kPartFxHostDefaults). They must make every engine finite and audible.
+TEST_CASE("Host defaults of the Part FX P's suit every engine", "[levels]") {
+  for (int part = 0; part < kNumParts; ++part) {
+    for (int p = 0; p < int(kPartFxParamCount); ++p) {
+      for (PluginKind plugin : {PluginKind::Instrument, PluginKind::Effect}) {
+        REQUIRE(paramDefault(partFxParamIndex(part, p), plugin) == kPartFxHostDefaults[p]);
+      }
+    }
+  }
+  for (int e = 1; e < kNumPartFxEngines; ++e) {
+    const PartFxLevel level = partFxLevel(e);
+    std::printf("Host defaults: %-14s peak %.3f rms %.4f\n", partFxEngineInfo(e).displayName, double(level.peak),
+                level.rms);
+    REQUIRE(std::isfinite(level.peak));
+    REQUIRE(std::isfinite(level.rms));
+    REQUIRE(level.peak > 0.01f);  // an audible wet signal
+    REQUIRE(level.peak < 1.5f);
   }
 }

@@ -27,12 +27,19 @@ ProcessorSlot::ProcessorSlot(std::vector<SourceSpec> engines) {
   if (engines.empty()) engines.push_back(makeOff());  // a slot needs at least one engine
   for (auto& e : engines) {
     engines_.push_back(std::make_unique<NativeRateWrapper>(std::move(e.engine), e.nativeRate, e.nativeBlock));
+    engines_.back()->setWholeBlocks(e.wholeBlocks);
+    outputGain_.push_back(e.outputGain);
   }
 }
 
-void ProcessorSlot::prepare(double hostRate, int maxBlock) {
+void ProcessorSlot::setOutputGain(int engine, float gain) {
+  if (engine >= 0 && engine < engineCount()) outputGain_[size_t(engine)] = gain;
+}
+
+void ProcessorSlot::prepare(double hostRate, int maxBlock, ConverterQuality q) {
   latency_ = 0;
   for (auto& e : engines_) {
+    e->setQuality(q);
     e->prepare(hostRate, maxBlock);
     latency_ = std::max(latency_, e->inputPathLatencySamples());
   }
@@ -135,6 +142,13 @@ void ProcessorSlot::render(int engine, const float* const* in, const SideSignals
   }
   e.setStereo(stereo);
   e.process(channels, out, p, n);
+  const float gain = outputGain_[size_t(engine)];
+  if (gain != 1.0f) {
+    for (int i = 0; i < n; ++i) {
+      out[0][i] *= gain;
+      out[1][i] *= gain;
+    }
+  }
 }
 
 void ProcessorSlot::process(const float* const* in, const SideSignals* sides, float* const* out,

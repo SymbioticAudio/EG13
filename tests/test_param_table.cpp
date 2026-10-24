@@ -27,13 +27,13 @@ std::string text(size_t index, double value) {
 
 }  // namespace
 
-TEST_CASE("The table has 286 parameters with unique IDs") {
+TEST_CASE("The table has 323 parameters with unique IDs") {
   REQUIRE(kSourceParamCount == 16);
   REQUIRE(kFilterParamCount == 4);
   REQUIRE(kShaperParamCount == 12);
   REQUIRE(kModSlotParamCount == 16);
-  REQUIRE(kParamsPerPart == 140);
-  REQUIRE(kParamCount == 286);
+  REQUIRE(kParamsPerPart == 158);
+  REQUIRE(kParamCount == 323);
   std::set<uint32_t> ids;
   for (size_t i = 0; i < kParamCount; ++i) ids.insert(paramSpec(i).id);
   REQUIRE(ids.size() == kParamCount);
@@ -146,16 +146,19 @@ TEST_CASE("Source P9..P16 have their own IDs after P1..P8") {
     }
   }
   // Layout per part: Source selector + P1..P16, Filter + P1..P4, Shaper + P1..P12, four mod slots
-  // (selector + P1..P16 + Scope), 12 route amounts, part settings.
+  // (selector + P1..P16 + Scope), Part FX (selector + P1..P16), 12 route amounts, part settings.
   REQUIRE(filterEngineParamIndex(0) == 17);
   REQUIRE(shaperEngineParamIndex(0) == 22);
   REQUIRE(modEngineParamIndex(0, 0) == 35);
   REQUIRE(modScopeParamIndex(0, 0) == 52);
   REQUIRE(modEngineParamIndex(0, 3) == 89);
-  REQUIRE(routeAmountParamIndex(0, 0) == 107);
-  REQUIRE(partParamIndex(0, PartParam::Level) == 119);
-  REQUIRE(sourceEngineParamIndex(1) == 140);
-  REQUIRE(masterParamIndex(MasterParam::Level) == 280);
+  REQUIRE(partFxEngineParamIndex(0) == 107);
+  REQUIRE(partFxParamIndex(0, 15) == 123);
+  REQUIRE(routeAmountParamIndex(0, 0) == 124);
+  REQUIRE(partParamIndex(0, PartParam::Level) == 136);
+  REQUIRE(partParamIndex(0, PartParam::PartFxInput) == 157);
+  REQUIRE(sourceEngineParamIndex(1) == 158);
+  REQUIRE(masterParamIndex(MasterParam::Level) == 316);
 }
 
 TEST_CASE("Engine selector and Input source format readable values") {
@@ -276,6 +279,13 @@ TEST_CASE("Slot lookups find every slot parameter and selector") {
   REQUIRE(counted[1] == 2 * 4);
   REQUIRE(counted[2] == 2 * 12);
   for (int k = int(SlotKind::Mod1); k <= int(SlotKind::Mod4); ++k) REQUIRE(counted[k] == 2 * 16);
+  REQUIRE(counted[int(SlotKind::PartFx)] == 2 * 16);
+  REQUIRE(slotEngineCount(SlotKind::PartFx) == 5);
+  REQUIRE(slotEngineFromSelector(SlotKind::PartFx, 3.0) == 3);
+  REQUIRE(slotEngineFromSelector(SlotKind::PartFx, 9.0) == 0);
+  REQUIRE_FALSE(isModSlot(SlotKind::PartFx));
+  REQUIRE(isModSlot(SlotKind::Mod4));
+  REQUIRE_FALSE(isModSlot(SlotKind::Shaper));
   for (int e = 0; e < slotEngineCount(SlotKind::Filter); ++e) {
     REQUIRE(slotEngineInfo(SlotKind::Filter, e).paramCount <= int(kFilterParamCount));
   }
@@ -437,4 +447,111 @@ TEST_CASE("Mod slot and route parameters name and format through their engines a
   REQUIRE(std::string(buf) == "On");
   REQUIRE(clampParam(routeAmountParamIndex(0, 0), -3.0) == -1.0f);
   REQUIRE(clampParam(modScopeParamIndex(0, 0), 0.6) == 1.0f);
+}
+
+namespace {
+
+struct BaseSpec {
+  uint32_t id;
+  const char* name;
+  const char* module;
+  float minValue, maxValue, defaultValue, effectDefault;
+  bool stepped;
+  int format;
+};
+
+// The table at BASE ede0d80 (before Part FX), captured from the table itself.
+const BaseSpec kBaseSpecs[] = {
+#include "param_table_base.inc"
+};
+
+}  // namespace
+
+TEST_CASE("Every existing parameter ID keeps its spec") {
+  REQUIRE(sizeof(kBaseSpecs) / sizeof(kBaseSpecs[0]) == 287);
+  for (const BaseSpec& base : kBaseSpecs) {
+    const int index = paramIndex(base.id);
+    INFO("id 0x" << std::hex << base.id << " " << base.name);
+    REQUIRE(index >= 0);
+    const ParamSpec& now = paramSpec(size_t(index));
+    REQUIRE(now.id == base.id);
+    REQUIRE(std::string(now.name) == base.name);
+    REQUIRE(std::string(now.module) == base.module);
+    REQUIRE(now.minValue == base.minValue);
+    REQUIRE(now.maxValue == base.maxValue);
+    REQUIRE(now.defaultValue == base.defaultValue);
+    REQUIRE(now.effectDefault == base.effectDefault);
+    REQUIRE(now.stepped == base.stepped);
+    REQUIRE(int(now.format) == base.format);
+  }
+}
+
+TEST_CASE("Part FX parameter IDs") {
+  REQUIRE(paramIndex(params::id(0, params::Slot::PartFx, 0)) == int(partFxEngineParamIndex(0)));
+  REQUIRE(paramIndex(params::id(0, params::Slot::PartFx, 16)) == int(partFxParamIndex(0, 15)));
+  REQUIRE(paramIndex(params::id(1, params::Slot::PartFx, 16)) == int(partFxParamIndex(1, 15)));
+  REQUIRE(paramIndex(params::id(0, params::Slot::PartFx, 17)) == -1);
+  REQUIRE(paramIndex(params::id(0, params::Slot::Part, 22)) == int(partParamIndex(0, PartParam::PartFxInput)));
+  REQUIRE(uint32_t(PartParam::PartFxInput) == 22);
+  REQUIRE(kPartParamCount == 22);
+  const ParamSpec& type = paramSpec(partFxEngineParamIndex(1));
+  REQUIRE(type.stepped);
+  REQUIRE(type.minValue == 0.0f);
+  REQUIRE(type.maxValue == 31.0f);
+  for (int p = 0; p < 16; ++p) {
+    const ParamSpec& s = paramSpec(partFxParamIndex(0, p));
+    REQUIRE_FALSE(s.stepped);
+    REQUIRE(s.minValue == 0.0f);
+    REQUIRE(s.maxValue == 1.0f);
+    REQUIRE(s.defaultValue == kPartFxHostDefaults[p]);
+    REQUIRE(s.effectDefault == kPartFxHostDefaults[p]);
+  }
+  const ParamSpec& input = paramSpec(partParamIndex(0, PartParam::PartFxInput));
+  REQUIRE(input.stepped);
+  REQUIRE(input.maxValue == 2.0f);
+  REQUIRE(input.defaultValue == 0.0f);
+  REQUIRE(input.effectDefault == 0.0f);
+  REQUIRE(text(partParamIndex(0, PartParam::PartFxInput), 0) == "Part mix");
+  REQUIRE(text(partParamIndex(0, PartParam::PartFxInput), 1) == "Input");
+  REQUIRE(text(partParamIndex(0, PartParam::PartFxInput), 2) == "Part mix + Input");
+}
+
+TEST_CASE("EG13 FX starts with Granular on Part A only") {
+  REQUIRE(paramDefault(partFxEngineParamIndex(0), PluginKind::Effect) == 1.0f);
+  REQUIRE(paramDefault(partFxEngineParamIndex(1), PluginKind::Effect) == 0.0f);
+  REQUIRE(paramDefault(partFxEngineParamIndex(0), PluginKind::Instrument) == 0.0f);
+  REQUIRE(paramDefault(partFxEngineParamIndex(1), PluginKind::Instrument) == 0.0f);
+  REQUIRE(text(partFxEngineParamIndex(0), 0) == "Off");
+  REQUIRE(text(partFxEngineParamIndex(0), 1) == "Granular");
+  REQUIRE(text(partFxEngineParamIndex(0), 2) == "Granular Delay");
+  REQUIRE(text(partFxEngineParamIndex(0), 3) == "Resonator");
+  REQUIRE(text(partFxEngineParamIndex(0), 4) == "Reverb");
+  REQUIRE(text(partFxEngineParamIndex(0), 20) == "Off");  // no engine: Off
+}
+
+TEST_CASE("Part FX P names and text follow the selected engine") {
+  char buf[64];
+  PartEngines e;
+  e.partFx = int(PartFxEngine::Granular);
+  REQUIRE(std::string(paramName(partFxParamIndex(0, 4), e)) == "Density");
+  formatParam(partFxParamIndex(0, 4), 0.75, buf, sizeof(buf), e);
+  REQUIRE(std::string(buf) == "75%");
+  e.partFx = int(PartFxEngine::Resonator);
+  REQUIRE(std::string(paramName(partFxParamIndex(0, 4), e)) == "Spread");
+  e.partFx = int(PartFxEngine::Reverb);
+  REQUIRE(std::string(paramName(partFxParamIndex(1, 15), e)) == "(unused)");
+  formatParam(partFxParamIndex(1, 15), 0.5, buf, sizeof(buf), e);
+  REQUIRE(std::string(buf) == "-");
+  e.partFx = int(PartFxEngine::Off);
+  REQUIRE(std::string(paramName(partFxParamIndex(0, 0), e)) == "(unused)");
+  REQUIRE(std::string(paramName(partFxEngineParamIndex(0), e)) == "Type");
+  SlotKind kind = SlotKind::Source;
+  int part = -1, p = -1;
+  REQUIRE(slotParamOf(partFxParamIndex(1, 3), &kind, &part, &p));
+  REQUIRE(kind == SlotKind::PartFx);
+  REQUIRE(part == 1);
+  REQUIRE(p == 3);
+  REQUIRE(slotSelectorOf(partFxEngineParamIndex(1), &kind, &part));
+  REQUIRE(kind == SlotKind::PartFx);
+  REQUIRE(part == 1);
 }

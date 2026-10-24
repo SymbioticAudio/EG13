@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -6,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "stmlib/utils/random.h"
 #include "alloc_counter.h"
 #include "engine/engine_registry.h"
 #include "engine/warps_engine.h"
@@ -81,17 +83,19 @@ float maxStep(const std::vector<float>& x) {
 }  // namespace
 
 TEST_CASE("The Filter slot has no latency at common host rates") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0, 96000.0}) {
     ProcessorSlot filters(makeAllFilters());
-    filters.prepare(rate, 16);
+    filters.prepare(rate, 16, q);
     REQUIRE(filters.latencySamples() == 0);
   }
 }
 
 TEST_CASE("Every Shaper engine is padded to one slot latency") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0, 96000.0}) {
     ProcessorSlot shapers(makeAllShapers());
-    shapers.prepare(rate, 16);
+    shapers.prepare(rate, 16, q);
     const int latency = shapers.latencySamples();
     INFO("Shaper slot latency at " << rate << " Hz: " << latency << " samples");
     REQUIRE(latency > 0);
@@ -426,4 +430,91 @@ TEST_CASE("Every Filter type has zero latency at every host rate") {
     slot.prepare(rate, 16);
     REQUIRE(slot.latencySamples() == 0);
   }
+}
+
+TEST_CASE("A Part FX ProcessorSlot pads every engine to the slot latency") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  for (double rate : {44100.0, 48000.0, 96000.0}) {
+    // Each engine alone, in whole-block mode as the real slot runs it.
+    int slowest = -1;
+    int maxLatency = 0;
+    for (int e = 0; e < kNumPartFxEngines; ++e) {
+      SourceSpec spec = makePartFx(e);
+      NativeRateWrapper w(std::move(spec.engine), spec.nativeRate, spec.nativeBlock);
+      w.setWholeBlocks(spec.wholeBlocks);
+      w.setQuality(q);
+      w.prepare(rate, 16);
+      const int own = w.inputPathLatencySamples();
+      WARN("latency " << (q == ConverterQuality::Live ? "Live" : "Studio") << " " << rate << " Hz "
+                      << partFxEngineInfo(e).displayName << ": " << own << " samples, "
+                      << 1000.0 * own / rate << " ms");
+      if (own > maxLatency) {
+        maxLatency = own;
+        slowest = e;
+      }
+    }
+    ProcessorSlot slot(makeAllPartFx());
+    slot.prepare(rate, 16, q);
+    const int latency = slot.latencySamples();
+    WARN("padded slot latency " << (q == ConverterQuality::Live ? "Live" : "Studio") << " " << rate << " Hz: "
+                                << latency << " samples, " << 1000.0 * latency / rate << " ms; set by "
+                                << partFxEngineInfo(slowest).displayName);
+    REQUIRE(latency == maxLatency);
+    REQUIRE(latency > 0);
+    // Every engine, through the real slot, lands an impulse at exactly the slot latency. The
+    // engines run dry (P1 = Blend / Dry-Wet / Mix / Amount at 0, the other P's at their defaults),
+    // so the impulse passes through the engine's own converters and whole-block FIFO unchanged
+    // and gives a clean onset. Off has no P's.
+    std::vector<float> impulse(9600, 0.0f);
+    impulse[1000] = 0.5f;
+    for (int e = 0; e < kNumPartFxEngines; ++e) {
+      ParamValues dry = test::defaultParams(partFxEngineInfo(e));
+      dry.p[0] = 0.0f;
+      slot.setEngine(e);
+      slot.reset();
+      INFO(partFxEngineInfo(e).displayName << " at " << rate << " Hz, slot latency " << latency);
+      REQUIRE(test::peakIndex(run(slot, impulse, impulse, dry).l) == 1000 + latency);
+    }
+  }
+}
+
+TEST_CASE("A Part FX ProcessorSlot runs a host-rate-bypassed engine in whole native blocks") {
+  // Every Part FX engine at 48 kHz, where the Resonator and Granular Delay are bypassed by their
+  // wrappers; only the slot's whole-block setting (SourceSpec::wholeBlocks, ruling G8) makes the
+  // output independent of the host slicing. Each run draws from the same random sequence.
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  const int engine = GENERATE(int(PartFxEngine::Granular), int(PartFxEngine::GranularDelay),
+                              int(PartFxEngine::Resonator), int(PartFxEngine::Reverb));
+  INFO("engine " << engine);
+  std::vector<float> noise(4800);
+  unsigned state = 12345u;
+  for (auto& x : noise) {
+    state = state * 1664525u + 1013904223u;
+    x = (float(state >> 8) / float(1u << 24) - 0.5f) * 0.5f;
+  }
+  auto render = [&](size_t chunk) {
+    stmlib::Random::Seed(1);
+    ProcessorSlot slot(makeAllPartFx());
+    slot.prepare(48000.0, 16, q);
+    slot.setEngine(engine);
+    slot.reset();
+    ParamValues p = test::defaultParams(partFxEngineInfo(engine));
+    p.p[0] = engine == int(PartFxEngine::Resonator) ? 1.0f : 0.7f;  // mostly wet
+    p.p[4] = 0.8f;                                                   // Granular Density: grains at random
+    std::vector<float> out(noise.size());
+    for (size_t done = 0; done < noise.size(); done += chunk) {
+      const int n = int(std::min(chunk, noise.size() - done));
+      const float* in[2] = {noise.data() + done, noise.data() + done};
+      float l[16], r[16];
+      float* o[2] = {l, r};
+      const SideSignals sides{};
+      slot.process(in, &sides, o, p, n);
+      std::copy(l, l + n, out.begin() + long(done));
+    }
+    return out;
+  };
+  const auto whole = render(16);
+  REQUIRE(test::rms(whole, 1200, whole.size()) > 0.001);  // it sounds
+  REQUIRE(render(7) == whole);
+  REQUIRE(render(1) == whole);
 }

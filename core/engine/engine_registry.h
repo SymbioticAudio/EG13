@@ -35,6 +35,21 @@ int shaperEngineFromSelector(double value);  // unknown values -> Off
 const EngineInfo& filterEngineInfo(int engine);  // unknown -> Off's
 const EngineInfo& shaperEngineInfo(int engine);  // unknown -> Off's
 
+// Part FX engine ids. Saved in projects: never renumber; new engines are appended. Selector values
+// without an engine fall back to Off.
+enum class PartFxEngine : int { Off = 0, Granular = 1, GranularDelay = 2, Resonator = 3, Reverb = 4 };
+constexpr int kNumPartFxEngines = 5;
+constexpr int kPartFxEngineSelectorMax = 31;  // fixed host range so adding engines changes nothing
+
+int partFxEngineFromSelector(double value);  // unknown values -> Off
+const EngineInfo& partFxEngineInfo(int engine);  // unknown -> Off's
+
+// Gain staging (M5, preflight ruling G11), on the sourceTrimDb precedent: each Part FX engine's
+// trim at the slot output, outside the fidelity boundary. set from M5 Task 14's level
+// measurements (docs/manual/part-fx.md, Levels); unknown engines 0 dB.
+float partFxTrimDb(int engine);
+float partFxTrim(int engine);
+
 // Mod engine ids. Saved in projects: never renumber; new engines are appended.
 enum class ModEngineKind : int { Off = 0, Envelope = 1, Lfo = 2, Random = 3, FunctionGenerator = 4 };
 constexpr int kNumModEngines = 5;

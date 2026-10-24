@@ -192,10 +192,10 @@ TEST_CASE("Part-level routes read the most recently started voice") {
   rig.part.lastVoice = 3;
   rig.route(0, kSrcVelocity, kDestPartLevel, -0.5f);
   rig.mod.processPart(rig.params, rig.part, rig.voices, 16);
-  REQUIRE(std::fabs(rig.mod.partLevel(rig.params, 0.8f) - 0.5f) < 1e-6f);
+  REQUIRE(std::fabs(rig.mod.partLevel(0.8f) - 0.5f) < 1e-6f);
   rig.part.lastVoice = -1;
   rig.mod.processPart(rig.params, rig.part, rig.voices, 16);
-  REQUIRE(rig.mod.partLevel(rig.params, 0.8f) == 0.8f);
+  REQUIRE(rig.mod.partLevel(0.8f) == 0.8f);
 }
 
 TEST_CASE("A NaN from a mod engine contributes nothing") {
@@ -260,7 +260,7 @@ TEST_CASE("Part modulation with the real engines does not allocate") {
         VoiceControl c;
         mod.processVoice(v, params, part, voices[v], base, &c, 16);
       }
-      mod.partLevel(params, 0.5f);
+      mod.partLevel(0.5f);
     }
     mod.startVoice(3);
     mod.reset();
@@ -339,4 +339,61 @@ TEST_CASE("Every mod slot instance has its own random sequence, the same each ti
   REQUIRE(std::fabs(slots01) < 0.2);
   REQUIRE(randomX1(100, 50)[0] == std::vector<float>(x[0].begin(), x[0].begin() + 50));  // deterministic
   REQUIRE(randomX1(101, 50)[0] != std::vector<float>(x[0].begin(), x[0].begin() + 50));  // the base matters
+}
+
+TEST_CASE("Routes into Part FX P's add to the base and clamp") {
+  Rig rig;
+  rig.part.lastVoice = -1;
+  rig.part.modWheel = 0.5f;
+  rig.route(0, kSrcModWheel, kDestPartFxP, 1.0f);
+  rig.route(1, kSrcModWheel, kDestPartFxP + 15, -0.25f);
+  rig.mod.processPart(rig.params, rig.part, rig.voices, 16);
+  ParamValues base;
+  for (int i = 0; i < kMaxSlotParams; ++i) base.p[i] = 0.1f * float(i % 10);
+  base.p[0] = 0.8f;
+  ParamValues out;
+  rig.mod.partFxParams(base, &out);
+  REQUIRE(out.p[0] == 1.0f);
+  REQUIRE(std::fabs(out.p[15] - (base.p[15] - 0.125f)) < 1e-6f);
+  for (int i = 1; i < 15; ++i) REQUIRE(out.p[i] == base.p[i]);
+}
+
+TEST_CASE("Part FX routes read per-voice sources from the most recent voice") {
+  Rig rig;
+  rig.voices[3].velocity = 0.6f;
+  rig.voices[5].velocity = 0.2f;
+  rig.route(0, kSrcVelocity, kDestPartFxP + 2, 0.5f);
+  ParamValues base;
+  base.p[2] = 0.1f;
+  ParamValues out;
+  rig.part.lastVoice = 3;
+  rig.mod.processPart(rig.params, rig.part, rig.voices, 16);
+  rig.mod.partFxParams(base, &out);
+  REQUIRE(std::fabs(out.p[2] - 0.4f) < 1e-6f);
+  rig.part.lastVoice = 5;
+  rig.mod.processPart(rig.params, rig.part, rig.voices, 16);
+  rig.mod.partFxParams(base, &out);
+  REQUIRE(std::fabs(out.p[2] - 0.2f) < 1e-6f);
+  rig.part.lastVoice = -1;
+  rig.mod.processPart(rig.params, rig.part, rig.voices, 16);
+  rig.mod.partFxParams(base, &out);
+  REQUIRE(out.p[2] == base.p[2]);
+}
+
+TEST_CASE("Reset clears the cached part sums") {
+  Rig rig;
+  rig.part.modWheel = 0.5f;
+  rig.route(0, kSrcModWheel, kDestPartLevel, 0.3f);
+  rig.route(1, kSrcModWheel, kDestPartFxP + 1, 0.4f);
+  rig.mod.processPart(rig.params, rig.part, rig.voices, 16);
+  ParamValues base;
+  base.p[1] = 0.2f;
+  ParamValues out;
+  rig.mod.partFxParams(base, &out);
+  REQUIRE(out.p[1] > 0.2f);
+  REQUIRE(rig.mod.partLevel(0.5f) > 0.5f);
+  rig.mod.reset();
+  rig.mod.partFxParams(base, &out);
+  REQUIRE(out.p[1] == 0.2f);
+  REQUIRE(rig.mod.partLevel(0.5f) == 0.5f);
 }

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "engine/part_fx_engine.h"
 #include "engine/voice_engine.h"
 #include "mod/mod_routes.h"
 #include "synth/plugin_kind.h"
@@ -17,11 +18,13 @@ constexpr size_t kSourceParamCount = 16;
 constexpr size_t kFilterParamCount = 4;
 constexpr size_t kShaperParamCount = 12;
 constexpr size_t kModSlotParamCount = size_t(kModParamCount);
+constexpr size_t kPartFxSlotParamCount = size_t(kPartFxParamCount);  // M5: Part FX P1..P16
 
-// The engine slots of a part: Source, Filter, Shaper, then the four mod slots (M4).
-enum class SlotKind : int { Source = 0, Filter = 1, Shaper = 2, Mod1 = 3, Mod2 = 4, Mod3 = 5, Mod4 = 6 };
-constexpr int kNumSlotKinds = 7;
-constexpr bool isModSlot(SlotKind kind) { return int(kind) >= int(SlotKind::Mod1); }
+// The engine slots of a part: Source, Filter, Shaper, then the four mod slots (M4), then the Part
+// FX (M5). The values are table and stash order, not parameter IDs.
+enum class SlotKind : int { Source = 0, Filter = 1, Shaper = 2, Mod1 = 3, Mod2 = 4, Mod3 = 5, Mod4 = 6, PartFx = 7 };
+constexpr int kNumSlotKinds = 8;
+constexpr bool isModSlot(SlotKind kind) { return kind >= SlotKind::Mod1 && kind <= SlotKind::Mod4; }
 constexpr SlotKind modSlotKind(int slot) { return SlotKind(int(SlotKind::Mod1) + slot); }
 constexpr int modSlotIndex(SlotKind kind) { return int(kind) - int(SlotKind::Mod1); }
 
@@ -48,12 +51,13 @@ enum class PartParam : uint32_t {
   CcB,
   CcC,
   CcD,
+  PartFxInput,   // M5: 0 Part mix, 1 Input, 2 Part mix + Input
 };
-constexpr size_t kPartParamCount = 21;
+constexpr size_t kPartParamCount = 22;
 
 // Value = parameter-ID index for part 0xFF, Slot::Part. Never renumber; append only.
-enum class MasterParam : uint32_t { Level = 0, Dry, Mode, SplitNote, VoiceGain, SoftClip };
-constexpr size_t kMasterParamCount = 6;
+enum class MasterParam : uint32_t { Level = 0, Dry, Mode, SplitNote, VoiceGain, SoftClip, LatencyMode };
+constexpr size_t kMasterParamCount = 7;
 
 enum class PartMode { Single = 0, Layer = 1, Split = 2, Multi = 3 };
 
@@ -61,6 +65,7 @@ constexpr size_t slotParamCount(SlotKind kind) {
   return kind == SlotKind::Source   ? kSourceParamCount
          : kind == SlotKind::Filter ? kFilterParamCount
          : kind == SlotKind::Shaper ? kShaperParamCount
+         : kind == SlotKind::PartFx ? kPartFxSlotParamCount
                                     : kModSlotParamCount;
 }
 // A slot's block in a part's table: its selector, its P's, and for a mod slot its Scope.
@@ -71,9 +76,9 @@ constexpr size_t slotOffset(SlotKind kind) {
   for (int k = 0; k < int(kind); ++k) offset += slotBlockSize(SlotKind(k));
   return offset;
 }
-// Per part: the seven slot blocks, the 12 route amounts, then the part settings. Table order
+// Per part: the eight slot blocks, the 12 route amounts, then the part settings. Table order
 // only: saved state uses parameter IDs.
-constexpr size_t kSlotsBlockSize = slotOffset(SlotKind::Mod4) + slotBlockSize(SlotKind::Mod4);
+constexpr size_t kSlotsBlockSize = slotOffset(SlotKind::PartFx) + slotBlockSize(SlotKind::PartFx);
 constexpr size_t kParamsPerPart = kSlotsBlockSize + size_t(kNumRoutes) + kPartParamCount;
 constexpr size_t kParamCount = size_t(kNumParts) * kParamsPerPart + kMasterParamCount;
 
@@ -89,6 +94,8 @@ constexpr size_t filterEngineParamIndex(int part) { return slotEngineParamIndex(
 constexpr size_t filterParamIndex(int part, int p) { return slotParamIndex(SlotKind::Filter, part, p); }
 constexpr size_t shaperEngineParamIndex(int part) { return slotEngineParamIndex(SlotKind::Shaper, part); }
 constexpr size_t shaperParamIndex(int part, int p) { return slotParamIndex(SlotKind::Shaper, part, p); }
+constexpr size_t partFxEngineParamIndex(int part) { return slotEngineParamIndex(SlotKind::PartFx, part); }
+constexpr size_t partFxParamIndex(int part, int p) { return slotParamIndex(SlotKind::PartFx, part, p); }
 constexpr size_t modEngineParamIndex(int part, int slot) { return slotEngineParamIndex(modSlotKind(slot), part); }
 constexpr size_t modParamIndex(int part, int slot, int p) { return slotParamIndex(modSlotKind(slot), part, p); }
 constexpr size_t modScopeParamIndex(int part, int slot) {
@@ -129,6 +136,9 @@ enum class ParamFormat {
   MpeMode,      // M4
   CcNumber,     // M4
   VoiceGain,    // M4
+  LatencyMode,  // M5: ConverterQuality
+  PartFxEngine,  // M5
+  PartFxInput,   // M5
 };
 
 struct ParamSpec {
@@ -151,6 +161,7 @@ struct PartEngines {
   int shaper = 0;
   int mod[kNumModSlots] = {};
   uint16_t routeDestination[kNumRoutes] = {};
+  int partFx = 0;  // M5
 };
 
 int slotEngineCount(SlotKind kind);

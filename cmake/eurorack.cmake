@@ -50,6 +50,20 @@ add_library(eg13_eurorack STATIC
   ${EURORACK_DIR}/peaks/modulations/lfo.cc
   ${EURORACK_DIR}/peaks/modulations/multistage_envelope.cc
   ${EURORACK_DIR}/peaks/resources.cc
+  ${EURORACK_DIR}/clouds/dsp/granular_processor.cc
+  ${EURORACK_DIR}/clouds/dsp/correlator.cc
+  ${EURORACK_DIR}/clouds/dsp/mu_law.cc
+  ${EURORACK_DIR}/clouds/dsp/pvoc/frame_transformation.cc
+  ${EURORACK_DIR}/clouds/dsp/pvoc/phase_vocoder.cc
+  ${EURORACK_DIR}/clouds/dsp/pvoc/stft.cc
+  ${EURORACK_DIR}/clouds/resources.cc
+  ${EURORACK_DIR}/beads/dsp/processor.cc
+  ${EURORACK_DIR}/beads/dsp/delay_controller.cc
+  ${EURORACK_DIR}/beads/dsp/delay_clock.cc
+  ${EURORACK_DIR}/beads/dsp/mu_law.cc
+  ${EURORACK_DIR}/beads/dsp/trigger_generator.cc
+  ${EURORACK_DIR}/beads/resources.cc
+  ${EURORACK_DIR}/stmlib/dsp/atan.cc
   ${EURORACK_DIR}/stmlib/dsp/units.cc
   ${EG13_EURORACK_PATCHES}/stmlib/utils/random.cc)
 target_include_directories(eg13_eurorack SYSTEM BEFORE PUBLIC ${EG13_EURORACK_PATCHES})

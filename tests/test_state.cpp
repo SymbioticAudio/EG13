@@ -54,7 +54,7 @@ TEST_CASE("State round-trips every parameter exactly") {
 TEST_CASE("Saved state has decimal parameter IDs") {
   Synth a(PluginKind::Instrument);
   const std::string json = state::StateStore{}.save(a);
-  REQUIRE(json.find("\"schemaVersion\":5") != std::string::npos);
+  REQUIRE(json.find("\"schemaVersion\":6") != std::string::npos);
   REQUIRE(json.find("\"257\":") != std::string::npos);       // Part A Source P1
   REQUIRE(json.find("\"16711680\":") != std::string::npos);  // master level
 }
@@ -63,10 +63,10 @@ TEST_CASE("Unusable state is rejected and leaves the synth unchanged") {
   Synth s(PluginKind::Instrument);
   s.setParam(kTimbre, 0.25);
   state::StateStore store;
-  for (const char* bad : {"", "not json", "[]", "{}", R"({"schemaVersion":5})",
+  for (const char* bad : {"", "not json", "[]", "{}", R"({"schemaVersion":6})",
                           R"({"schemaVersion":"5","params":{}})",
                           R"({"schemaVersion":0,"params":{}})",
-                          R"({"schemaVersion":5,"params":[]})"}) {
+                          R"({"schemaVersion":6,"params":[]})"}) {
     INFO(bad);
     REQUIRE(store.load(s, bad) == state::LoadResult::Invalid);
     REQUIRE(s.param(kTimbre) == 0.25);
@@ -77,7 +77,7 @@ TEST_CASE("Missing parameters fall back to the defaults for the synth's kind") {
   Synth fx(PluginKind::Effect);
   fx.setParam(masterId(MasterParam::Dry), 0.2);
   state::StateStore store;
-  REQUIRE(store.load(fx, R"({"schemaVersion":5,"params":{"257":0.9}})") == state::LoadResult::Ok);
+  REQUIRE(store.load(fx, R"({"schemaVersion":6,"params":{"257":0.9}})") == state::LoadResult::Ok);
   REQUIRE(fx.param(masterId(MasterParam::Dry)) ==
           double(paramDefault(masterParamIndex(MasterParam::Dry), PluginKind::Effect)));
   REQUIRE(fx.param(kTimbre) == double(paramDefault(sourceParamIndex(0, 2), PluginKind::Effect)));
@@ -87,13 +87,13 @@ TEST_CASE("Unknown data is preserved on resave") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
   const char* json =
-      R"({"schemaVersion":5,"params":{"257":0.9,"999999":0.5},"future":{"x":1}})";
+      R"({"schemaVersion":6,"params":{"257":0.9,"999999":0.5},"future":{"x":1}})";
   REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
   const std::string saved = store.save(s);
   REQUIRE(saved.find("\"999999\":0.5") != std::string::npos);
   REQUIRE(saved.find("\"future\":{\"x\":1}") != std::string::npos);
 
-  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{}})") == state::LoadResult::Ok);
+  REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{}})") == state::LoadResult::Ok);
   const std::string resaved = store.save(s);
   REQUIRE(resaved.find("\"999999\":") == std::string::npos);
   REQUIRE(resaved.find("future") == std::string::npos);
@@ -102,7 +102,7 @@ TEST_CASE("Unknown data is preserved on resave") {
 TEST_CASE("Malformed entries are skipped with a warning") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
-  const char* json = R"({"schemaVersion":5,"params":{"257":0.9,"abc":0.5,"259":"x"}})";
+  const char* json = R"({"schemaVersion":6,"params":{"257":0.9,"abc":0.5,"259":"x"}})";
   REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
   REQUIRE(s.param(kModel) == double(0.9f));
   REQUIRE(s.param(kTimbre) == double(paramDefault(sourceParamIndex(0, 2), PluginKind::Instrument)));
@@ -117,15 +117,16 @@ TEST_CASE("Newer schema versions load what is understood, with a warning") {
   REQUIRE(s.param(kModel) == double(0.9f));
 }
 
-TEST_CASE("Documents older than schema 5 load as the init state, with a warning") {
+TEST_CASE("Documents older than schema 6 load as the init state, with a warning") {
   for (PluginKind kind : {PluginKind::Instrument, PluginKind::Effect}) {
-    for (const char* old : {R"({"schemaVersion":4,"params":{"257":0.9},"engineSettings":{"0":{"1":[0.1]}},"x":1})",
-                            R"({"schemaVersion":1,"params":{"257":0.9,"16711680":0.5}})"}) {
+    for (const char* old : {R"({"schemaVersion":5,"params":{"257":0.9},"engineSettings":{"0":{"1":[0.1]}},"x":1})",
+                            R"({"schemaVersion":1,"params":{"257":0.9,"16711680":0.5}})",
+                            R"({"schemaVersion":5,"params":{"257":0.9},"partFxSettings":{"0":{"1":[0.1]}}})"}) {
       INFO(old);
       Synth s(kind);
       state::StateStore store;
       // Extras kept from an earlier load: an unknown parameter and key, and a newer version's route.
-      REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{"999999":0.5},"future":{"x":1},)"
+      REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{"999999":0.5},"future":{"x":1},)"
                             R"("routes":{"0":[[1,2,0,4]],"2":[[5,5,5]]}})") == state::LoadResult::OkWithWarnings);
       s.setParam(kTimbre, 0.123);
       s.setRoute(1, 3, Route{kSrcModWheel, kDestPan, kSrcNone});
@@ -144,7 +145,7 @@ TEST_CASE("Documents older than schema 5 load as the init state, with a warning"
 TEST_CASE("Loaded values are clamped and stepped values rounded") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
-  const std::string json = R"({"schemaVersion":5,"params":{"259":1.7,")" +
+  const std::string json = R"({"schemaVersion":6,"params":{"259":1.7,")" +
                            std::to_string(partId(0, PartParam::VoiceCount)) + R"(":5.6}})";
   REQUIRE(store.load(s, json) == state::LoadResult::Ok);
   REQUIRE(s.param(kTimbre) == 1.0);
@@ -154,7 +155,7 @@ TEST_CASE("Loaded values are clamped and stepped values rounded") {
 TEST_CASE("Huge loaded values clamp instead of overflowing") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{"259":1e300}})") == state::LoadResult::Ok);
+  REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{"259":1e300}})") == state::LoadResult::Ok);
   REQUIRE(s.param(kTimbre) == 1.0);
 }
 
@@ -163,18 +164,18 @@ TEST_CASE("A load while processing is reflected immediately") {
   s.prepare(48000.0, 256);
   s.setActive(true);
   state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{"16711680":0.25}})") ==
+  REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{"16711680":0.25}})") ==
           state::LoadResult::Ok);
   REQUIRE(s.param(params::kMasterLevel) == 0.25);
   s.setActive(false);
 }
 
-TEST_CASE("Saved state is schema 5 and carries every engine's settings") {
+TEST_CASE("Saved state is schema 6 and carries every engine's settings") {
   Synth a(PluginKind::Instrument);
   a.setParam(paramSpec(sourceParamIndex(0, 1)).id, 0.9);  // Macro Harmonics
   a.setParam(paramSpec(sourceEngineParamIndex(0)).id, 1);  // switch to Digital (stashes Macro's P1..P8)
   const std::string json = state::StateStore{}.save(a);
-  REQUIRE(json.find("\"schemaVersion\":5") != std::string::npos);
+  REQUIRE(json.find("\"schemaVersion\":6") != std::string::npos);
   REQUIRE(json.find("\"engineSettings\"") != std::string::npos);
 
   Synth b(PluginKind::Instrument);
@@ -191,7 +192,7 @@ TEST_CASE("Malformed engineSettings entries are dropped with a warning") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
   const char* json =
-      R"({"schemaVersion":5,"params":{},"engineSettings":{"0":{"1":[0.1,0.2],"9":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],)"
+      R"({"schemaVersion":6,"params":{},"engineSettings":{"0":{"1":[0.1,0.2],"9":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],)"
       R"("2":[0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,"x"],)"
       R"("3":[0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3]},"7":{}}})";
   REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
@@ -247,7 +248,7 @@ TEST_CASE("engineSettings arrays of other lengths are dropped with a warning") {
     INFO(count);
     Synth s(PluginKind::Instrument);
     state::StateStore store;
-    const std::string json = R"({"schemaVersion":5,"params":{},"engineSettings":{"1":{"2":)" +
+    const std::string json = R"({"schemaVersion":6,"params":{},"engineSettings":{"1":{"2":)" +
                              engineArray(count, 0.25) + R"(,"3":)" + engineArray(16, 0.5) + "}}}";
     REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
     const EngineStash stash = s.engineStash();
@@ -306,7 +307,7 @@ TEST_CASE("Malformed filterSettings and shaperSettings entries are dropped with 
   Synth s(PluginKind::Instrument);
   state::StateStore store;
   const char* json =
-      R"({"schemaVersion":5,"params":{},)"
+      R"({"schemaVersion":6,"params":{},)"
       R"("filterSettings":{"0":{"1":[0.1,0.2,0.3],"2":[0.4,0.4,0.4,0.4],"9":[1,1,1,1]}},)"
       R"("shaperSettings":{"1":{"2":[0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5]}}})";
   REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
@@ -327,13 +328,13 @@ TEST_CASE("Filter and Shaper settings: wrong types, out-of-range values and Off"
   state::StateStore store;
   SECTION("a non-number element drops the entry") {
     Synth s(PluginKind::Instrument);
-    REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"filterSettings":{"0":{"1":[0.1,"x",0.3,0.4]}}})") ==
+    REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{},"filterSettings":{"0":{"1":[0.1,"x",0.3,0.4]}}})") ==
             state::LoadResult::OkWithWarnings);
     REQUIRE(s.engineStash()[slotStashIndex(SlotKind::Filter, 0, 1, 0)] == defaults[slotStashIndex(SlotKind::Filter, 0, 1, 0)]);
   }
   SECTION("values outside 0..1 clamp") {
     Synth s(PluginKind::Instrument);
-    REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"filterSettings":{"1":{"2":[-0.5,1.5,0.25,7]}}})") ==
+    REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{},"filterSettings":{"1":{"2":[-0.5,1.5,0.25,7]}}})") ==
             state::LoadResult::Ok);
     const EngineStash stash = s.engineStash();
     REQUIRE(stash[slotStashIndex(SlotKind::Filter, 1, 2, 0)] == 0.0f);
@@ -343,7 +344,7 @@ TEST_CASE("Filter and Shaper settings: wrong types, out-of-range values and Off"
   }
   SECTION("a part that is not an object, or a section that is not an object, is dropped") {
     Synth s(PluginKind::Instrument);
-    REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"filterSettings":{"0":[0.1,0.2,0.3,0.4]},"shaperSettings":7})") ==
+    REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{},"filterSettings":{"0":[0.1,0.2,0.3,0.4]},"shaperSettings":7})") ==
             state::LoadResult::OkWithWarnings);
     const EngineStash stash = s.engineStash();
     for (size_t i = 0; i < kStashSize; ++i) {
@@ -353,7 +354,7 @@ TEST_CASE("Filter and Shaper settings: wrong types, out-of-range values and Off"
   SECTION("Off's entry (engine 0) loads like any other") {
     Synth s(PluginKind::Instrument);
     const std::string eq = std::to_string(paramSpec(shaperEngineParamIndex(1)).id);
-    const std::string json = R"({"schemaVersion":5,"params":{")" + eq + R"(":2},)" +
+    const std::string json = R"({"schemaVersion":6,"params":{")" + eq + R"(":2},)" +
                              R"("shaperSettings":{"1":{"0":[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,0,0.5]}}})";
     REQUIRE(store.load(s, json) == state::LoadResult::Ok);
     REQUIRE(s.engine(SlotKind::Shaper, 1) == int(ShaperEngine::Eq));
@@ -395,6 +396,44 @@ TEST_CASE("Every slot, part and engine's settings round-trip to their own place"
   }
 }
 
+TEST_CASE("Part FX type, P's, input and per-engine settings round-trip") {
+  Synth a(PluginKind::Instrument);
+  const int types[kNumParts] = {1, 4};  // Granular on part 1, Reverb on part 2
+  const double inputs[kNumParts] = {2, 1};
+  for (int part = 0; part < kNumParts; ++part) {
+    // Fill engine 3 (Resonator) first, then move on: its values are stashed.
+    a.setParam(paramSpec(slotEngineParamIndex(SlotKind::PartFx, part)).id, 3.0);
+    for (int p = 0; p < int(slotParamCount(SlotKind::PartFx)); ++p) {
+      a.setParam(paramSpec(slotParamIndex(SlotKind::PartFx, part, p)).id, 0.05 + 0.05 * p + 0.01 * part);
+    }
+    a.setParam(paramSpec(slotEngineParamIndex(SlotKind::PartFx, part)).id, double(types[part]));
+    for (int p = 0; p < int(slotParamCount(SlotKind::PartFx)); ++p) {
+      a.setParam(paramSpec(slotParamIndex(SlotKind::PartFx, part, p)).id, 0.9 - 0.04 * p - 0.01 * part);
+    }
+    a.setParam(partId(part, PartParam::PartFxInput), inputs[part]);
+  }
+  const std::string json = state::StateStore{}.save(a);
+  REQUIRE(json.find("\"partFxSettings\"") != std::string::npos);
+
+  Synth b(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.load(b, json) == state::LoadResult::Ok);
+  for (int part = 0; part < kNumParts; ++part) {
+    REQUIRE(b.engine(SlotKind::PartFx, part) == types[part]);
+    REQUIRE(b.param(partId(part, PartParam::PartFxInput)) == inputs[part]);
+    for (int p = 0; p < int(slotParamCount(SlotKind::PartFx)); ++p) {
+      const uint32_t id = paramSpec(slotParamIndex(SlotKind::PartFx, part, p)).id;
+      REQUIRE(b.param(id) == a.param(id));
+    }
+    // Switch back to the stashed engine: its values return.
+    b.setParam(paramSpec(slotEngineParamIndex(SlotKind::PartFx, part)).id, 3.0);
+    for (int p = 0; p < int(slotParamCount(SlotKind::PartFx)); ++p) {
+      const uint32_t id = paramSpec(slotParamIndex(SlotKind::PartFx, part, p)).id;
+      REQUIRE(b.param(id) == double(float(0.05 + 0.05 * p + 0.01 * part)));
+    }
+  }
+}
+
 TEST_CASE("Mod slot settings and scopes round-trip per engine") {
   Synth a(PluginKind::Instrument);
   const uint32_t engineId = paramSpec(modEngineParamIndex(1, 2)).id;
@@ -421,16 +460,16 @@ TEST_CASE("Mod slot settings and scopes round-trip per engine") {
 TEST_CASE("mod settings arrays have 17 numbers; a scope is 0 or 1") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"mod2Settings":{"0":{"4":[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.7]}}})") ==
+  REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{},"mod2Settings":{"0":{"4":[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.7]}}})") ==
           state::LoadResult::Ok);
   const EngineStash stash = s.engineStash();
   REQUIRE(stash[slotStashIndex(SlotKind::Mod2, 0, 4, 15)] == 0.1f);
   REQUIRE(stash[scopeStashIndex(0, 1, 4)] == 1.0f);  // 0.7 rounds to per part
-  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"mod2Settings":{"0":{"4":[0.1,0.1]}}})") ==
+  REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{},"mod2Settings":{"0":{"4":[0.1,0.1]}}})") ==
           state::LoadResult::OkWithWarnings);
 }
 
-TEST_CASE("Saved state is schema 5 and carries routes and envelope shapes") {
+TEST_CASE("Saved state is schema 6 and carries routes and envelope shapes") {
   Synth a(PluginKind::Instrument);
   a.setRoute(1, 7, Route{kSrcModWheel, uint16_t(kDestShaperP + 2), kSrcVelocity});
   EnvelopeShape shape;
@@ -454,7 +493,7 @@ TEST_CASE("Malformed routes and envelope shapes are dropped with a warning") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
   const char* json =
-      R"({"schemaVersion":5,"params":{},"routes":{"0":[[9,2,0],[1,"x",0],[1,2],[70000,1,0]],"5":[],"1":7},)"
+      R"({"schemaVersion":6,"params":{},"routes":{"0":[[9,2,0],[1,"x",0],[1,2],[70000,1,0]],"5":[],"1":7},)"
       R"("envelopeShapes":{"0":[{"count":9,"types":[0,1,2,7,0,0],"loops":[0,1,0,0,0,3]},{"count":2},5]}})";
   REQUIRE(store.load(s, json) == state::LoadResult::OkWithWarnings);
   const PatchData patch = s.patch();
@@ -475,18 +514,18 @@ TEST_CASE("Routes and envelope shapes: wrong types, negative, float and non-obje
     state::LoadResult result;
   };
   for (const Case c : {
-           Case{R"({"schemaVersion":5,"params":{},"routes":7})", state::LoadResult::OkWithWarnings},
-           Case{R"({"schemaVersion":5,"params":{},"routes":[[1,2,0]]})", state::LoadResult::OkWithWarnings},
-           Case{R"({"schemaVersion":5,"params":{},"routes":{"0":[[-1,2,0],[1.5,2,0],[1,2],"x",null,{}]}})",
+           Case{R"({"schemaVersion":6,"params":{},"routes":7})", state::LoadResult::OkWithWarnings},
+           Case{R"({"schemaVersion":6,"params":{},"routes":[[1,2,0]]})", state::LoadResult::OkWithWarnings},
+           Case{R"({"schemaVersion":6,"params":{},"routes":{"0":[[-1,2,0],[1.5,2,0],[1,2],"x",null,{}]}})",
                 state::LoadResult::OkWithWarnings},
-           Case{R"({"schemaVersion":5,"params":{},"routes":{"x":[[1,2,0]],"-1":[[1,2,0]],"99999999999":[]}})",
+           Case{R"({"schemaVersion":6,"params":{},"routes":{"x":[[1,2,0]],"-1":[[1,2,0]],"99999999999":[]}})",
                 state::LoadResult::OkWithWarnings},
-           Case{R"({"schemaVersion":5,"params":{},"envelopeShapes":[1]})", state::LoadResult::OkWithWarnings},
-           Case{R"({"schemaVersion":5,"params":{},"envelopeShapes":{"0":[{"count":2.5,"types":[0,0,0,0,0,0],)"
+           Case{R"({"schemaVersion":6,"params":{},"envelopeShapes":[1]})", state::LoadResult::OkWithWarnings},
+           Case{R"({"schemaVersion":6,"params":{},"envelopeShapes":{"0":[{"count":2.5,"types":[0,0,0,0,0,0],)"
                 R"("loops":[0,0,0,0,0,0]},{"count":2,"types":[0,0,0,0,0],"loops":[0,0,0,0,0,0]},)"
                 R"({"count":2,"types":[0,0,"a",0,0,0],"loops":[0,0,0,0,0,0]},{}]}})",
                 state::LoadResult::OkWithWarnings},
-           Case{R"({"schemaVersion":5,"params":{},"envelopeShapes":{"1":[7,null,"x"],"0":[{"count":2}],"0x":[]}})",
+           Case{R"({"schemaVersion":6,"params":{},"envelopeShapes":{"1":[7,null,"x"],"0":[{"count":2}],"0x":[]}})",
                 state::LoadResult::OkWithWarnings},
        }) {
     INFO(c.json);
@@ -503,7 +542,7 @@ TEST_CASE("Routes and envelope shapes: wrong types, negative, float and non-obje
   // Negative and out-of-range numbers in a well-formed shape are sanitized, not dropped.
   Synth s(PluginKind::Instrument);
   state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"envelopeShapes":{"1":[{"count":-3,)"
+  REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{},"envelopeShapes":{"1":[{"count":-3,)"
                         R"("types":[-1,1,2,300,0,0],"loops":[0,0,-5,0,0,0]}]}})") == state::LoadResult::Ok);
   const EnvelopeShape shape = s.patch().shapes[1][0];
   REQUIRE(shape.count == 1);
@@ -519,7 +558,7 @@ TEST_CASE("Routes with codes from a newer version come back unchanged on resave"
   state::StateStore store;
   // Route 1 uses a reserved source (17..31) into the Amp at 100 %: kept, and ignored (G4).
   const std::string amount = std::to_string(paramSpec(routeAmountParamIndex(0, 1)).id);
-  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{")" + amount +
+  REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{")" + amount +
                             R"(":1.0},"routes":{"0":[[30,200,17],[17,2,0]]}})") == state::LoadResult::Ok);
   REQUIRE(s.patch().routes[0][0] == Route{30, 200, 17});
   REQUIRE(s.patch().routes[0][1] == Route{17, kDestAmp, kSrcNone});
@@ -547,14 +586,14 @@ TEST_CASE("Routes with codes from a newer version come back unchanged on resave"
 TEST_CASE("A part named twice in routes or envelopeShapes is read once, with a warning") {
   Synth s(PluginKind::Instrument);
   state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"routes":{"0":[[9,2,0]],"00":[[4,3,0]]},)"
+  REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{},"routes":{"0":[[9,2,0]],"00":[[4,3,0]]},)"
                         R"("envelopeShapes":{"0":[{"count":2,"types":[0,0,0,0,0,0],"loops":[0,0,0,0,0,0]}],)"
                         R"("00":[{"count":3,"types":[0,0,0,0,0,0],"loops":[0,0,0,0,0,0]}]}})") ==
           state::LoadResult::OkWithWarnings);
   REQUIRE(s.patch().routes[0][0] == Route{kSrcModWheel, kDestAmp, kSrcNone});  // "0" comes first
   REQUIRE(s.patch().shapes[0][0].count == 2);
   // Each alone loads clean.
-  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"routes":{"00":[[4,3,0]]}})") == state::LoadResult::Ok);
+  REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{},"routes":{"00":[[4,3,0]]}})") == state::LoadResult::Ok);
   REQUIRE(s.patch().routes[0][0] == Route{kSrcGate, kDestPan, kSrcNone});
 }
 
@@ -612,24 +651,24 @@ TEST_CASE("A newer version's extra routes, route numbers, segments and parts com
 
   // A load without that data forgets it: the next save is this version's own.
   Synth fresh(PluginKind::Instrument);
-  REQUIRE(store.load(fresh, R"({"schemaVersion":5,"params":{}})") == state::LoadResult::Ok);
+  REQUIRE(store.load(fresh, R"({"schemaVersion":6,"params":{}})") == state::LoadResult::Ok);
   const nlohmann::json own = nlohmann::json::parse(store.save(fresh));
   REQUIRE(own["routes"].size() == size_t(kNumParts));
   REQUIRE(own["routes"]["0"].size() == size_t(kNumRoutes));
   REQUIRE(own["envelopeShapes"]["1"].size() == size_t(kNumModSlots));
 }
 
-TEST_CASE("A schema 5 document holding more than schema 5 does warns, reads what fits and keeps the rest") {
+TEST_CASE("A schema 6 document holding more than schema 6 does warns, reads what fits and keeps the rest") {
   std::string routes = R"({"0":[[1,2,0])";
   for (int r = 1; r < 13; ++r) routes += R"(,[4,3,0])";
   routes += "]}";
   for (const std::string& json :
-       {R"({"schemaVersion":5,"params":{},"routes":)" + routes + "}",
-        std::string(R"({"schemaVersion":5,"params":{},"routes":{"0":[[1,2,0,4]]}})"),
-        std::string(R"({"schemaVersion":5,"params":{},"routes":{"2":[[1,2,0]]}})"),
-        std::string(R"({"schemaVersion":5,"params":{},"envelopeShapes":{"0":[{"count":2,"types":[0,0,0,0,0,0,0],)"
+       {R"({"schemaVersion":6,"params":{},"routes":)" + routes + "}",
+        std::string(R"({"schemaVersion":6,"params":{},"routes":{"0":[[1,2,0,4]]}})"),
+        std::string(R"({"schemaVersion":6,"params":{},"routes":{"2":[[1,2,0]]}})"),
+        std::string(R"({"schemaVersion":6,"params":{},"envelopeShapes":{"0":[{"count":2,"types":[0,0,0,0,0,0,0],)"
                     R"("loops":[0,0,0,0,0,0,0]}]}})"),
-        std::string(R"({"schemaVersion":5,"params":{},"envelopeShapes":{"0":[{"count":2,"types":[0,0,0,0,0,0],)"
+        std::string(R"({"schemaVersion":6,"params":{},"envelopeShapes":{"0":[{"count":2,"types":[0,0,0,0,0,0],)"
                     R"("loops":[0,0,0,0,0,0],"curve":1}]}})")}) {
     INFO(json);
     Synth s(PluginKind::Instrument);
@@ -646,7 +685,7 @@ TEST_CASE("A schema 5 document holding more than schema 5 does warns, reads what
   }
   Synth s(PluginKind::Instrument);
   state::StateStore store;
-  REQUIRE(store.load(s, R"({"schemaVersion":5,"params":{},"routes":)" + routes + "}") ==
+  REQUIRE(store.load(s, R"({"schemaVersion":6,"params":{},"routes":)" + routes + "}") ==
           state::LoadResult::OkWithWarnings);
   REQUIRE(s.patch().routes[0][0] == Route{kSrcVelocity, kDestAmp, kSrcNone});
   REQUIRE(s.patch().routes[0][11] == Route{kSrcGate, kDestPan, kSrcNone});

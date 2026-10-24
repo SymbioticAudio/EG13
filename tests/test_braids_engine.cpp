@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
@@ -53,9 +54,11 @@ TEST_CASE("Digital Oscillator describes itself") {
 }
 
 TEST_CASE("Digital Oscillator stays in tune through the wrapper") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0, 96000.0}) {
     NativeRateWrapper wrapped(std::make_unique<BraidsEngine>(), BraidsEngine::kNativeRate,
                               BraidsEngine::kNativeBlock);
+    wrapped.setQuality(q);
     wrapped.prepare(rate, 512);
     wrapped.noteOn(69.0f, 1.0f);
     const int n = int(rate * 1.5);

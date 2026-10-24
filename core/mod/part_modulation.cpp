@@ -54,6 +54,7 @@ void PartModulation::reset() {
   for (auto& slot : partSlots_) slot.reset();
   for (auto& outputs : partPrevious_) std::fill(std::begin(outputs), std::end(outputs), 0.0f);
   std::fill(std::begin(partSource_), std::end(partSource_), 0.0f);
+  partSums_ = RouteSums{};
 }
 
 void PartModulation::configure(int slot, int engine, bool perPart) {
@@ -150,6 +151,7 @@ void PartModulation::processPart(const ModParams& params, const ModPartInputs& p
     partSlots_[size_t(s)].process(ctx, modulatedSlot(params.slot[s], sums, s), params.shapes[s], n);
   }
   fillMods(partSource_, part.lastVoice, true);
+  sumRoutes(params.routes, partSource_, DestinationKind::Part, &partSums_);
 }
 
 void PartModulation::processVoice(int v, const ModParams& params, const ModPartInputs& part,
@@ -181,10 +183,15 @@ void PartModulation::processVoice(int v, const ModParams& params, const ModPartI
   control->pan = sums.touched[kDestPan] ? clamp01(0.5f + sums.value[kDestPan]) * 2.0f - 1.0f : 0.0f;
 }
 
-float PartModulation::partLevel(const ModParams& params, float base) const {
-  RouteSums sums;
-  sumRoutes(params.routes, partSource_, DestinationKind::Part, &sums);
-  return modulated(base, sums, kDestPartLevel);
+float PartModulation::partLevel(float base) const {
+  return modulated(base, partSums_, kDestPartLevel);
+}
+
+void PartModulation::partFxParams(const ParamValues& base, ParamValues* out) const {
+  ParamValues result = base;
+  for (int i = 0; i < kPartFxParamCount; ++i)
+    result.p[i] = modulated(base.p[i], partSums_, uint16_t(kDestPartFxP + i));
+  *out = result;
 }
 
 }  // namespace eg13

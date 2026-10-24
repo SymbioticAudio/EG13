@@ -67,7 +67,9 @@ TEST_CASE("Destinations sort into mod-slot, voice and part evaluations") {
   REQUIRE(destinationKind(kDestSourceP + 15) == DestinationKind::Voice);
   REQUIRE(destinationKind(kDestFilterP) == DestinationKind::Voice);
   REQUIRE(destinationKind(kDestShaperP + 11) == DestinationKind::Voice);
-  REQUIRE(destinationKind(kDestPartFxP) == DestinationKind::None);  // M5
+  REQUIRE(destinationKind(kDestPartFxP) == DestinationKind::Part);
+  REQUIRE(destinationKind(kDestPartFxP + 15) == DestinationKind::Part);
+  REQUIRE(destinationKind(kDestModP) == DestinationKind::ModParam);
   REQUIRE(destinationKind(modParamDestination(2, 5)) == DestinationKind::ModParam);
   REQUIRE(destinationKind(5) == DestinationKind::None);    // reserved
   REQUIRE(destinationKind(144) == DestinationKind::None);  // unknown, from a newer version

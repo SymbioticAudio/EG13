@@ -36,7 +36,9 @@ void Synth::prepare(double sampleRate, int maxBlock) {
   applyPending();
   // The instrument lines up note onsets; EG13 FX lines up the input path with Dry.
   const auto alignment = kind_ == PluginKind::Effect ? Voice::Alignment::Input : Voice::Alignment::Notes;
-  for (auto& part : parts_) part->prepare(sampleRate, maxBlock, alignment);
+  // Every converter of both parts runs in the Latency Mode the parameter holds now.
+  preparedQuality_ = requestedQuality();
+  for (auto& part : parts_) part->prepare(sampleRate, maxBlock, alignment, preparedQuality_);
   latency_ = parts_[0]->latencySamples();
   for (auto& line : dryDelay_) line.assign(size_t(latency_), 0.0f);
   for (auto& part : partOut_) {
@@ -420,6 +422,7 @@ PartEngines Synth::partEngines(int part) const {
   e.filter = engine(SlotKind::Filter, part);
   e.shaper = engine(SlotKind::Shaper, part);
   for (int slot = 0; slot < kNumModSlots; ++slot) e.mod[slot] = engine(modSlotKind(slot), part);
+  e.partFx = engine(SlotKind::PartFx, part);
   for (int r = 0; r < kNumRoutes; ++r) e.routeDestination[r] = mainPatch_.routes[size_t(part)][size_t(r)].destination;
   return e;
 }
@@ -531,6 +534,8 @@ PartSettings Synth::readPartSettings(int part) const {
   s.filterEngine = slotEngineFromSelector(SlotKind::Filter, load(filterEngineParamIndex(part)));
   s.shaperEngine = slotEngineFromSelector(SlotKind::Shaper, load(shaperEngineParamIndex(part)));
   s.inputSource = int(v(PartParam::InputSource));
+  s.partFxEngine = slotEngineFromSelector(SlotKind::PartFx, load(partFxEngineParamIndex(part)));
+  s.partFxInput = std::clamp(int(v(PartParam::PartFxInput)), 0, 2);
   // MPE zones (provisional ruling 11): the lower zone's master is channel 1, the upper zone's 16;
   // a zone has 15 member channels, or 7 each when the other part uses the other zone.
   s.mpe = int(v(PartParam::MpeMode));
@@ -606,6 +611,7 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
     for (int i = 0; i < int(kSourceParamCount); ++i) params.slots.source.p[i] = load(sourceParamIndex(p, i));
     for (int i = 0; i < int(kFilterParamCount); ++i) params.slots.filter.p[i] = load(filterParamIndex(p, i));
     for (int i = 0; i < int(kShaperParamCount); ++i) params.slots.shaper.p[i] = load(shaperParamIndex(p, i));
+    for (int i = 0; i < int(kPartFxSlotParamCount); ++i) params.partFx.p[i] = load(partFxParamIndex(p, i));
     for (int slot = 0; slot < kNumModSlots; ++slot) {
       for (int i = 0; i < int(kModSlotParamCount); ++i) params.mod.slot[slot].p[i] = load(modParamIndex(p, slot, i));
       params.mod.shapes[slot] = patch_.shapes[size_t(p)][size_t(slot)];

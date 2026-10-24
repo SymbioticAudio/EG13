@@ -27,8 +27,9 @@ class ProcessorSlot {
  public:
   explicit ProcessorSlot(std::vector<SourceSpec> engines);  // index = engine id; empty -> Off only
 
-  // Main thread: prepares every engine (allocates) and pads it to latencySamples().
-  void prepare(double hostRate, int maxBlock);
+  // Main thread: prepares every engine (allocates) with converters of quality q and pads it to
+  // latencySamples(), the slowest engine's within that mode.
+  void prepare(double hostRate, int maxBlock, ConverterQuality q = ConverterQuality::Studio);
   // reset(): every engine; no fade; mono. restart(): the current engine only (a new note on an
   // idle voice, or after a NaN). Both: a waiting request takes effect at once, and until the
   // next process() a setEngine() switches at once too, since nothing has played to fade from.
@@ -53,6 +54,10 @@ class ProcessorSlot {
   // belong to the requested engine, as the host already shows them.
   void setEngine(int engine);
 
+  // Main thread: scales one engine's output, before the crossfade (default: its SourceSpec's
+  // outputGain). The Part FX slot mutes Off this way: its bypass line carries the part mix.
+  void setOutputGain(int engine, float gain);
+
   void noteOn(float note, float velocity);
   void noteOff();
   void setNote(float note);
@@ -70,6 +75,7 @@ class ProcessorSlot {
               const ParamValues& p, bool stereo, int n);
 
   std::vector<std::unique_ptr<NativeRateWrapper>> engines_;
+  std::vector<float> outputGain_;  // per engine
   int current_ = 0;
   int previous_ = -1;
   int pending_ = -1;

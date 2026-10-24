@@ -39,7 +39,9 @@ class Voice {
         std::vector<SourceSpec> shapers);  // index = SourceEngine / FilterEngine / ShaperEngine
 
   // main thread
-  void prepare(double hostRate, int maxBlock, Alignment alignment = Alignment::Notes);
+  // q: the converter quality of every Source, Filter and Shaper engine (Latency Mode).
+  void prepare(double hostRate, int maxBlock, Alignment alignment = Alignment::Notes,
+               ConverterQuality q = ConverterQuality::Studio);
   void reset();
   void setEngine(int engine);        // Source; audio thread
   void setFilterEngine(int engine);  // audio thread; crossfades while sounding

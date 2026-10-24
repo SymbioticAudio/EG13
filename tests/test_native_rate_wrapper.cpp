@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
@@ -37,8 +38,10 @@ std::unique_ptr<NativeRateWrapper> wrappedPlaits() {
 }  // namespace
 
 TEST_CASE("NativeRateWrapper is a bit-exact pass-through at the native rate") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   auto wrapped = wrappedPlaits();
   PlaitsEngine direct;
+  wrapped->setQuality(q);
   wrapped->prepare(PlaitsEngine::kNativeRate, 512);
   direct.prepare(PlaitsEngine::kNativeRate, 512);
   REQUIRE(wrapped->latencySamples() == 0);
@@ -49,9 +52,11 @@ TEST_CASE("NativeRateWrapper is a bit-exact pass-through at the native rate") {
 }
 
 TEST_CASE("NativeRateWrapper keeps Plaits in tune at common host rates") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   const auto p = test::defaultParams(PlaitsEngine::staticInfo());
   for (double rate : {44100.0, 48000.0, 88200.0, 96000.0, 192000.0}) {
     auto wrapped = wrappedPlaits();
+    wrapped->setQuality(q);
     wrapped->prepare(rate, 512);
     wrapped->noteOn(69.0f, 1.0f);
     const int n = int(rate * 1.5);
@@ -63,8 +68,10 @@ TEST_CASE("NativeRateWrapper keeps Plaits in tune at common host rates") {
 }
 
 TEST_CASE("NativeRateWrapper latency is reported and at most 3 ms") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 96000.0, 192000.0}) {
     NativeRateWrapper wrapped(std::make_unique<test::ImpulseEngine>(), 48000.0, 12);
+    wrapped.setQuality(q);
     wrapped.prepare(rate, 512);
     const int latency = wrapped.latencySamples();
     INFO("rate " << rate << " latency " << latency);
@@ -86,11 +93,13 @@ TEST_CASE("NativeRateWrapper latency is reported and at most 3 ms") {
 }
 
 TEST_CASE("NativeRateWrapper output is independent of host block size") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   const auto p = test::defaultParams(PlaitsEngine::staticInfo());
   auto a = wrappedPlaits();
   auto b = wrappedPlaits();
   auto c = wrappedPlaits();
   for (auto* w : {a.get(), b.get(), c.get()}) {
+    w->setQuality(q);
     w->prepare(44100.0, 4096);
     w->noteOn(60.0f, 1.0f);
   }
@@ -100,7 +109,9 @@ TEST_CASE("NativeRateWrapper output is independent of host block size") {
 }
 
 TEST_CASE("NativeRateWrapper process does not allocate") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   auto wrapped = wrappedPlaits();
+  wrapped->setQuality(q);
   wrapped->prepare(44100.0, 512);
   const auto p = test::defaultParams(PlaitsEngine::staticInfo());
   std::vector<float> left(512), right(512);
@@ -121,8 +132,10 @@ TEST_CASE("NativeRateWrapper process does not allocate") {
 }
 
 TEST_CASE("Onset after reset lands at the reported latency") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0, 96000.0}) {
     NativeRateWrapper w(std::make_unique<test::ImpulseEngine>(), PlaitsEngine::kNativeRate, 12);
+    w.setQuality(q);
     w.prepare(rate, 512);
     w.reset();
     w.noteOn(60.0f, 1.0f);
@@ -157,7 +170,9 @@ std::vector<float> renderWithInput(VoiceEngine& engine, const std::vector<float>
 }  // namespace
 
 TEST_CASE("A host-rate engine passes input straight through") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   NativeRateWrapper wrapped(std::make_unique<test::EchoEngine>(), 0.0, 16);
+  wrapped.setQuality(q);
   wrapped.prepare(44100.0, 256);
   REQUIRE(wrapped.latencySamples() == 0);
   REQUIRE(wrapped.inputLatencySamples() == 0);
@@ -168,8 +183,10 @@ TEST_CASE("A host-rate engine passes input straight through") {
 }
 
 TEST_CASE("Input path latency is reported and constant") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0, 96000.0}) {
     NativeRateWrapper wrapped(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+    wrapped.setQuality(q);
     wrapped.prepare(rate, 256);
     const int latency = wrapped.inputLatencySamples();
     INFO("rate " << rate << " input latency " << latency);
@@ -186,13 +203,16 @@ TEST_CASE("Input path latency is reported and constant") {
     REQUIRE(wrapped.inputUnderruns() == 0);
 
     NativeRateWrapper other(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+    other.setQuality(q);
     other.prepare(rate, 256);
     REQUIRE(renderWithInput(other, input, 1) == big);
   }
 }
 
 TEST_CASE("Extra delay adds exactly that many samples") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   NativeRateWrapper wrapped(std::make_unique<test::ImpulseEngine>(), 48000.0, 12);
+  wrapped.setQuality(q);
   wrapped.prepare(48000.0, 256);
   wrapped.setExtraDelay(100);
   REQUIRE(wrapped.extraDelaySamples() == 100);
@@ -203,7 +223,9 @@ TEST_CASE("Extra delay adds exactly that many samples") {
 }
 
 TEST_CASE("Engines that don't use input never see it") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   NativeRateWrapper wrapped(std::make_unique<test::ImpulseEngine>(), 32000.0, 16);
+  wrapped.setQuality(q);
   wrapped.prepare(48000.0, 256);
   REQUIRE(wrapped.inputLatencySamples() == 0);
   std::vector<float> input(4000, 0.5f);
@@ -212,7 +234,9 @@ TEST_CASE("Engines that don't use input never see it") {
 }
 
 TEST_CASE("Input conversion does not allocate") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   NativeRateWrapper wrapped(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+  wrapped.setQuality(q);
   wrapped.prepare(44100.0, 256);
   wrapped.setExtraDelay(37);
   std::vector<float> input(256, 0.25f), l(256), r(256);
@@ -230,6 +254,7 @@ TEST_CASE("Input conversion does not allocate") {
 }
 
 TEST_CASE("Input path survives host rates below the native rate") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   struct Case { double native; double host; int block; };
   for (const Case c : {Case{32000.0, 22050.0, 16}, Case{48000.0, 32000.0, 24},
                        Case{48000.0, 16000.0, 24}}) {
@@ -239,6 +264,7 @@ TEST_CASE("Input path survives host rates below the native rate") {
     input[size_t(at)] = 1.0f;
     for (int mixed = 0; mixed < 2; ++mixed) {
       NativeRateWrapper wrapped(std::make_unique<test::EchoEngine>(), c.native, c.block);
+      wrapped.setQuality(q);
       wrapped.prepare(c.host, 256);
       const int latency = wrapped.inputLatencySamples();
       std::vector<float> out(static_cast<size_t>(n));
@@ -262,9 +288,11 @@ TEST_CASE("Input path survives host rates below the native rate") {
 }
 
 TEST_CASE("Host-rate engines are prepared for host-sized blocks") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   auto probe = std::make_unique<test::MaxBlockProbeEngine>();
   test::MaxBlockProbeEngine* raw = probe.get();
   NativeRateWrapper wrapped(std::move(probe), 0.0, 16);
+  wrapped.setQuality(q);
   wrapped.prepare(44100.0, 512);
   REQUIRE(raw->preparedMax >= 512);
   std::vector<float> l(512), r(512);
@@ -311,8 +339,10 @@ TEST_CASE("sideSourceOf steps in quarters") {
 }
 
 TEST_CASE("Side inputs are converted with the input path's latency") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0}) {
     NativeRateWrapper w(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
+    w.setQuality(q);
     w.prepare(rate, 256);
     Channels in(8000);
     in.c[2][3000] = 1.0f;  // side 1 -> out L
@@ -326,7 +356,9 @@ TEST_CASE("Side inputs are converted with the input path's latency") {
 }
 
 TEST_CASE("Missing side inputs read as silence") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   NativeRateWrapper w(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
+  w.setQuality(q);
   w.prepare(48000.0, 256);
   Channels in(4000);
   for (auto& s : in.c[2]) s = 0.5f;
@@ -337,11 +369,14 @@ TEST_CASE("Missing side inputs read as silence") {
 }
 
 TEST_CASE("AUX is converted like the main outputs") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0}) {
     NativeRateWrapper aux(std::make_unique<test::AuxImpulseEngine>(), 47872.34, 12);
     aux.setAuxEnabled(true);
+    aux.setQuality(q);
     aux.prepare(rate, 256);
     NativeRateWrapper main(std::make_unique<test::ImpulseEngine>(), 47872.34, 12);
+    main.setQuality(q);
     main.prepare(rate, 256);
     REQUIRE(aux.latencySamples() == main.latencySamples());
     aux.noteOn(60.0f, 1.0f);
@@ -356,8 +391,10 @@ TEST_CASE("AUX is converted like the main outputs") {
 
 // Task 2 carry-forward: AUX in bypass (the engine at the host rate) and through the extra delay.
 TEST_CASE("AUX passes through a bypassed wrapper bit for bit") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   NativeRateWrapper aux(std::make_unique<test::AuxImpulseEngine>(), 48000.0, 12);
   aux.setAuxEnabled(true);
+  aux.setQuality(q);
   aux.prepare(48000.0, 256);
   REQUIRE(aux.latencySamples() == 0);
   aux.noteOn(60.0f, 1.0f);
@@ -369,12 +406,15 @@ TEST_CASE("AUX passes through a bypassed wrapper bit for bit") {
 }
 
 TEST_CASE("Extra delay delays AUX with the main outputs, bypassed or converted") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {48000.0, 44100.0}) {  // 48 kHz: bypassed; 44.1 kHz: converted
     NativeRateWrapper delayed(std::make_unique<test::AuxImpulseEngine>(), 48000.0, 12);
     NativeRateWrapper plain(std::make_unique<test::AuxImpulseEngine>(), 48000.0, 12);
     delayed.setAuxEnabled(true);
     plain.setAuxEnabled(true);
+    delayed.setQuality(q);
     delayed.prepare(rate, 256);
+    plain.setQuality(q);
     plain.prepare(rate, 256);
     delayed.setExtraDelay(100);
     REQUIRE(delayed.latencySamples() == plain.latencySamples() + 100);
@@ -391,7 +431,9 @@ TEST_CASE("Extra delay delays AUX with the main outputs, bypassed or converted")
 }
 
 TEST_CASE("An engine's own latency is added to the wrapper's") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   NativeRateWrapper bypassed(std::make_unique<test::FixedLatencyEngine>(), 96000.0, 60);
+  bypassed.setQuality(q);
   bypassed.prepare(96000.0, 256);
   REQUIRE(bypassed.inputLatencySamples() == 60);
   REQUIRE(bypassed.latencySamples() == 60);
@@ -401,15 +443,19 @@ TEST_CASE("An engine's own latency is added to the wrapper's") {
 
   NativeRateWrapper fixed(std::make_unique<test::FixedLatencyEngine>(), 96000.0, 60);
   NativeRateWrapper echo(std::make_unique<test::EchoEngine>(), 96000.0, 60);
+  fixed.setQuality(q);
   fixed.prepare(48000.0, 256);
+  echo.setQuality(q);
   echo.prepare(48000.0, 256);
   REQUIRE(fixed.inputLatencySamples() - echo.inputLatencySamples() == 30);
 }
 
 TEST_CASE("setStereo reaches the wrapped engine") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   auto probe = std::make_unique<test::StereoProbeEngine>();
   test::StereoProbeEngine* raw = probe.get();
   NativeRateWrapper w(std::move(probe), 0.0, 16);
+  w.setQuality(q);
   w.prepare(48000.0, 256);
   w.setStereo(true);
   REQUIRE(raw->stereo());
@@ -418,7 +464,9 @@ TEST_CASE("setStereo reaches the wrapped engine") {
 }
 
 TEST_CASE("Four-channel conversion does not allocate") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   NativeRateWrapper w(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
+  w.setQuality(q);
   w.prepare(44100.0, 256);
   w.setExtraDelay(11);
   std::vector<float> a(256, 0.25f), l(256), r(256), x(256);
@@ -499,12 +547,15 @@ double largestDifference(const Channels& a, const Channels& b, int channels) {
 }  // namespace
 
 TEST_CASE("Side inputs that drop out and come back match always-on conversion") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0, 88200.0}) {
     for (int chunk : {16, 37}) {
       NativeRateWrapper skipping(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
       NativeRateWrapper always(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
       always.setSkipUnused(false);
+      skipping.setQuality(q);
       skipping.prepare(rate, 256);
+      always.setQuality(q);
       always.prepare(rate, 256);
       Channels in(30000);
       for (size_t i = 0; i < 30000; ++i) {
@@ -531,12 +582,15 @@ TEST_CASE("Side inputs that drop out and come back match always-on conversion") 
 }
 
 TEST_CASE("Mono, then stereo, then mono again matches always-on conversion") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0}) {
     for (int chunk : {16, 37}) {
       NativeRateWrapper skipping(std::make_unique<test::StereoProbeEngine>(), 96000.0, 60);
       NativeRateWrapper always(std::make_unique<test::StereoProbeEngine>(), 96000.0, 60);
       always.setSkipUnused(false);
+      skipping.setQuality(q);
       skipping.prepare(rate, 256);
+      always.setQuality(q);
       always.prepare(rate, 256);
       Channels in(30000);
       for (size_t i = 0; i < 30000; ++i) {
@@ -559,13 +613,16 @@ TEST_CASE("Mono, then stereo, then mono again matches always-on conversion") {
 }
 
 TEST_CASE("Ring Mod / Vocoder going mono, stereo and mono matches always-on conversion") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   for (double rate : {44100.0, 48000.0}) {
     SourceSpec s1 = makeShaper(int(ShaperEngine::RingMod));
     SourceSpec s2 = makeShaper(int(ShaperEngine::RingMod));
     NativeRateWrapper skipping(std::move(s1.engine), s1.nativeRate, s1.nativeBlock);
     NativeRateWrapper always(std::move(s2.engine), s2.nativeRate, s2.nativeBlock);
     always.setSkipUnused(false);
+    skipping.setQuality(q);
     skipping.prepare(rate, 16);
+    always.setQuality(q);
     always.prepare(rate, 16);
     skipping.noteOn(45.0f, 1.0f);
     always.noteOn(45.0f, 1.0f);
@@ -589,7 +646,9 @@ TEST_CASE("Ring Mod / Vocoder going mono, stereo and mono matches always-on conv
 }
 
 TEST_CASE("Skipping and resuming conversions allocates nothing") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   NativeRateWrapper w(std::make_unique<test::SideEchoEngine>(), 96000.0, 60);
+  w.setQuality(q);
   w.prepare(44100.0, 64);
   Channels in(20000);
   for (size_t i = 0; i < 20000; ++i) {
@@ -624,6 +683,7 @@ TEST_CASE("Skipping and resuming conversions allocates nothing") {
 // stereo and back three times and the side inputs drop out and come back, at onsets that land
 // on odd and even multiples of the converter period.
 TEST_CASE("Skipping matches always-on conversion at every native and host rate") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   struct Native {
     double rate;
     int block;
@@ -660,7 +720,9 @@ TEST_CASE("Skipping matches always-on conversion at every native and host rate")
           auto skipping = make();
           auto always = make();
           always->setSkipUnused(false);
+          skipping->setQuality(q);
           skipping->prepare(host, 64);
+          always->setQuality(q);
           always->prepare(host, 64);
           const SkipRun a = runSkipping(*skipping, in, chunk, present);
           const SkipRun b = runSkipping(*always, in, chunk, present);
@@ -685,9 +747,11 @@ TEST_CASE("Skipping matches always-on conversion at every native and host rate")
 }
 
 TEST_CASE("A resumed converter out of step falls back to converting always") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   // 176.4 kHz to 32 kHz: r8brain adds a 2:1 stage, so the true period is 882. Forcing the ratio's
   // own period, 441, puts a resumption at an odd multiple one sample out of step.
   NativeRateWrapper w(std::make_unique<test::StereoProbeEngine>(), 32000.0, 16);
+  w.setQuality(q);
   w.prepare(176400.0, 64);
   REQUIRE(w.inputSkipEnabled());
   w.forceSkipPeriodsForTest(441, 0);
@@ -710,13 +774,16 @@ TEST_CASE("A resumed converter out of step falls back to converting always") {
 }
 
 TEST_CASE("Review case: the Modal Synth's input at 176.4 kHz resumes in step") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   // Fix round 1, Critical 1: stereo onsets at 20480 and 23111 resumed one sample out of step.
   for (int maxBlock : {64, 256, 512}) {
     for (size_t onset : {size_t(20000), size_t(20480), size_t(23111)}) {
       NativeRateWrapper skipping(std::make_unique<test::StereoProbeEngine>(), 32000.0, 16);
       NativeRateWrapper always(std::make_unique<test::StereoProbeEngine>(), 32000.0, 16);
       always.setSkipUnused(false);
+      skipping.setQuality(q);
       skipping.prepare(176400.0, maxBlock);
+      always.setQuality(q);
       always.prepare(176400.0, maxBlock);
       Channels in(60000);
       for (size_t i = 0; i < 60000; ++i) {
@@ -738,6 +805,7 @@ TEST_CASE("Review case: the Modal Synth's input at 176.4 kHz resumes in step") {
 // After a fallback the wrapper restarts as reset() would (a one-off gap), so the output is back
 // in time with an always-converting wrapper: the input-to-output delay stays the reported one.
 TEST_CASE("After a fallback the output is aligned again") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   struct Case {
     int64_t inputPeriod;
     int64_t outputPeriod;
@@ -747,7 +815,9 @@ TEST_CASE("After a fallback the output is aligned again") {
     NativeRateWrapper w(std::make_unique<test::StereoProbeEngine>(), 32000.0, 16);
     NativeRateWrapper always(std::make_unique<test::StereoProbeEngine>(), 32000.0, 16);
     always.setSkipUnused(false);
+    w.setQuality(q);
     w.prepare(176400.0, 64);
+    always.setQuality(q);
     always.prepare(176400.0, 64);
     w.forceSkipPeriodsForTest(c.inputPeriod, c.outputPeriod);
     const size_t n = 120000;
@@ -770,4 +840,170 @@ TEST_CASE("After a fallback the output is aligned again") {
     INFO("largest difference after the fallback " << worst);
     REQUIRE(worst <= 1e-3);
   }
+}
+
+// Preflight ruling G8: setWholeBlocks(true) runs a bypassed engine through a one-native-block
+// FIFO, so it only ever sees whole native blocks whatever the host slicing, and the wrapper's
+// latency grows by one native block.
+namespace {
+
+// Passes its input through and marks the first sample of every call with +1 on L; records the
+// smallest and largest call.
+class CallMarkEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int) override {}
+  void reset() override {}
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  void process(const float* const* in, float* const* out, const ParamValues&, int n) override {
+    smallest = std::min(smallest, n);
+    largest = std::max(largest, n);
+    for (int i = 0; i < n; ++i) {
+      out[0][i] = (in ? in[0][i] : 0.0f) + (i == 0 ? 1.0f : 0.0f);
+      out[1][i] = in ? in[1][i] : 0.0f;
+    }
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"callmark", "Call mark", 0, nullptr, true, false, 0, nullptr};
+    return kInfo;
+  }
+  int smallest = 1 << 30;
+  int largest = 0;
+};
+
+}  // namespace
+
+TEST_CASE("Whole blocks: a bypassed engine sees only native blocks, one block late") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  constexpr int kBlock = 16;
+  const size_t n = 3000;
+  Channels in(n);
+  for (size_t i = 0; i < n; ++i) in.c[0][i] = in.c[1][i] = float(0.5 * std::sin(0.013 * double(i)));
+  std::vector<Channels> outs;
+  for (int chunk : {1, 7, 129}) {
+    auto engine = std::make_unique<CallMarkEngine>();
+    CallMarkEngine* probe = engine.get();
+    NativeRateWrapper w(std::move(engine), 32000.0, kBlock);
+    w.setQuality(q);
+    w.setWholeBlocks(true);
+    REQUIRE(w.wholeBlocks());
+    w.prepare(32000.0, 256);
+    REQUIRE(w.latencySamples() == kBlock);
+    REQUIRE(w.inputLatencySamples() == kBlock);
+    outs.push_back(runAll(w, in, false, chunk));
+    INFO("chunk " << chunk);
+    REQUIRE(probe->smallest == kBlock);
+    REQUIRE(probe->largest == kBlock);
+  }
+  REQUIRE(outs[0].c[0] == outs[1].c[0]);
+  REQUIRE(outs[0].c[0] == outs[2].c[0]);
+  REQUIRE(outs[0].c[1] == outs[1].c[1]);
+  REQUIRE(outs[0].c[1] == outs[2].c[1]);
+  // Exactly the input one native block late, with a call mark every native block.
+  for (size_t i = 0; i < n; ++i) {
+    INFO("sample " << i);
+    const float expectedR = i >= kBlock ? in.c[1][i - kBlock] : 0.0f;
+    const float expectedL = i >= kBlock ? in.c[0][i - kBlock] + (i % kBlock == 0 ? 1.0f : 0.0f) : 0.0f;
+    REQUIRE(outs[0].c[1][i] == expectedR);
+    REQUIRE(outs[0].c[0][i] == expectedL);
+  }
+}
+
+TEST_CASE("Whole blocks: onset after reset, AUX, extra delay and the engine's own latency") {
+  // A note before the first block is rendered into it and leaves one native block later.
+  NativeRateWrapper impulse(std::make_unique<test::ImpulseEngine>(), 48000.0, 12);
+  impulse.setWholeBlocks(true);
+  impulse.prepare(48000.0, 256);
+  REQUIRE(impulse.latencySamples() == 12);
+  REQUIRE(impulse.inputLatencySamples() == 0);  // the engine reads no input
+  render(impulse, ParamValues{}, 100, 7);
+  impulse.reset();
+  impulse.noteOn(60.0f, 1.0f);
+  auto out = render(impulse, ParamValues{}, 200, 5);
+  REQUIRE(test::peakIndex(out) == 12);
+  REQUIRE(out[12] == 1.0f);
+
+  impulse.setExtraDelay(30);
+  REQUIRE(impulse.latencySamples() == 42);
+  impulse.reset();
+  impulse.noteOn(60.0f, 1.0f);
+  out = render(impulse, ParamValues{}, 200, 9);
+  REQUIRE(test::peakIndex(out) == 42);
+
+  NativeRateWrapper aux(std::make_unique<test::AuxImpulseEngine>(), 48000.0, 12);
+  aux.setAuxEnabled(true);
+  aux.setWholeBlocks(true);
+  aux.prepare(48000.0, 256);
+  aux.noteOn(60.0f, 1.0f);
+  const Channels a = runAll(aux, Channels(200), false, 3);
+  REQUIRE(test::peakIndex(a.c[2]) == 12);
+  REQUIRE(a.c[2][12] == 1.0f);
+
+  NativeRateWrapper fixed(std::make_unique<test::FixedLatencyEngine>(), 96000.0, 60);
+  fixed.setWholeBlocks(true);
+  fixed.prepare(96000.0, 256);
+  REQUIRE(fixed.latencySamples() == 120);
+  REQUIRE(fixed.inputLatencySamples() == 120);
+  Channels in(2000);
+  in.c[0][500] = 1.0f;
+  REQUIRE(test::peakIndex(runAll(fixed, in, false, 37).c[0]) == 620);
+}
+
+TEST_CASE("Whole blocks change nothing when unset or when converting") {
+  const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  {  // unset (the default): the bypass passes each call straight through
+    auto engine = std::make_unique<CallMarkEngine>();
+    CallMarkEngine* probe = engine.get();
+    NativeRateWrapper w(std::move(engine), 32000.0, 16);
+    REQUIRE_FALSE(w.wholeBlocks());
+    w.setQuality(q);
+    w.prepare(32000.0, 256);
+    REQUIRE(w.latencySamples() == 0);
+    REQUIRE(w.inputLatencySamples() == 0);
+    Channels in(500);
+    in.c[0][3] = 0.5f;
+    const Channels out = runAll(w, in, false, 7);
+    REQUIRE(probe->largest == 7);
+    REQUIRE(out.c[0][3] == 0.5f);
+    REQUIRE(out.c[0][0] == 1.0f);
+  }
+  for (double rate : {44100.0, 48000.0, 96000.0}) {
+    NativeRateWrapper plain(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+    NativeRateWrapper whole(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+    plain.setQuality(q);
+    whole.setQuality(q);
+    whole.setWholeBlocks(true);
+    plain.prepare(rate, 256);
+    whole.prepare(rate, 256);
+    INFO("rate " << rate);
+    REQUIRE(whole.latencySamples() == plain.latencySamples());
+    REQUIRE(whole.inputLatencySamples() == plain.inputLatencySamples());
+    Channels in(6000);
+    for (size_t i = 0; i < 6000; ++i) in.c[0][i] = in.c[1][i] = float(0.5 * std::sin(0.02 * double(i)));
+    const Channels a = runAll(plain, in, false, 7);
+    const Channels b = runAll(whole, in, false, 7);
+    REQUIRE(a.c[0] == b.c[0]);
+    REQUIRE(a.c[1] == b.c[1]);
+  }
+}
+
+TEST_CASE("Whole blocks in bypass allocate nothing") {
+  NativeRateWrapper w(std::make_unique<test::EchoEngine>(), 32000.0, 16);
+  w.setWholeBlocks(true);
+  w.prepare(32000.0, 256);
+  Channels in(256);
+  Channels out(256);
+  const float* i2[2] = {in.c[0].data(), in.c[1].data()};
+  float* o2[2] = {out.c[0].data(), out.c[1].data()};
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int block = 0; block < 200; ++block) {
+      if (block == 100) w.reset();
+      w.process(block % 5 == 0 ? nullptr : i2, o2, ParamValues{}, 1 + block % 256);
+    }
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
 }

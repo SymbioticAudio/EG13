@@ -79,7 +79,11 @@ class PartModulation {
                     const SlotParams& base, VoiceControl* control, int n);
   // base + the routes into Part Level (after processPart()), clamped. Per-part slots read this
   // tick's outputs; per-voice slots (of lastVoice) the previous tick's, as they have not run yet.
-  float partLevel(const ModParams& params, float base) const;
+  // Both read the Part-kind route sums cached by the last processPart() (computed once per tick).
+  float partLevel(float base) const;
+  // The part's Part FX P1..P16: each base P plus the routes into it, clamped. Same sources and
+  // timing as partLevel(). `out` may be the same object as `base`.
+  void partFxParams(const ParamValues& base, ParamValues* out) const;
 
   const float* outputs(int slot, int voice) const;  // voice < 0: the part instance
 
@@ -96,6 +100,7 @@ class PartModulation {
   bool perPart_[kNumModSlots] = {};
   float partPrevious_[kNumModSlots][kMaxModOutputs] = {};
   float partSource_[kNumSources] = {};
+  RouteSums partSums_ = {};  // Part-kind sums for this tick
 };
 
 }  // namespace eg13
