@@ -19,6 +19,13 @@
 - **M6b (next plan):** live modulation display (modulated values on knobs, the motion chips, mod shape displays); matrix editing ("Modulate from…", adding and removing routes, choosing sources and destinations); the collapsible keyboard (AudioKit Keyboard if it can be styled, otherwise our own); keyboard focus navigation; settings and about.
 - **Why split:** each half is independently shippable. The M6b items need new audio-to-UI data paths, which are easier to design once M6a's snapshot path exists. Preset browsing in the header belongs to M7.
 
+**Design iteration (owner, 2026-10-24): the UI design is not final.**
+- Tasks 2 to 6 are design-independent plumbing.
+- Every look-and-layout choice lives in `EG13Palette`, `EG13KnobStyle` and the view files, so changing the design never touches the plumbing.
+- Two owner gates stop execution until the owner signs off: **Task 7a**, after the controls; and **Task 9a**, after the layout.
+- Each gate shows the design in the preview app (Task 7) and in a host. Feedback rounds follow until the owner approves.
+- Feedback that changes §8 updates the spec in the same round.
+
 ## Global Constraints
 
 - License GPL-3.0. Commit as `Westlee Latta <symbioticaudio@proton.me>` with the session trailers. Never rewrite pushed history.
@@ -220,6 +227,19 @@
 - [ ] **Step 1: Failing tests:** "drag 200 pt spans the range"; "shift drag is 10× finer"; "double-click resets to default"; "stepped values snap"; "every gesture is begin…end balanced, including a cancelled drag".
 - [ ] **Steps 2–4:** `swift test --package-path ui/EG13UI`. **Step 5: Commit** `M6a: EG13 palette, theme and controls`.
 
+### Task 7a: Owner design gate — controls
+
+**Files:**
+- Create: `ui/EG13UI/Sources/EG13UIPreview/main.swift`, an executable target in the package.
+  - It opens a window with the editor over `EG13FakeCore`, which needs no DAW.
+  - It has a "Controls" page: every knob style option, the engine picker and the stepped controls, in both part accents, at 75, 100 and 200 %.
+- Modify: `ui/EG13UI/Package.swift` (the executable product `EG13UIPreview`), and `docs/superpowers/m6-resume.md` (the design log).
+
+- [ ] **Step 1:** Build and run the preview with `swift run --package-path ui/EG13UI EG13UIPreview`. Capture screenshots to `docs/superpowers/m6-design/controls-r1/`.
+- [ ] **Step 2: STOP for the owner.** Show the screenshots and the run command. Record the feedback in the design log as round N.
+- [ ] **Step 3:** Apply the feedback in the style and control files only, re-run the Task 7 tests, take new screenshots, and repeat Step 2 until the owner approves the controls.
+- [ ] **Step 4: Commit each round** as `M6a design: controls round N`. Record the approval, with its date, in the design log and in spec §8.
+
 ### Task 8: UI model
 
 **Files:**
@@ -266,6 +286,16 @@
   - "Part tabs switch every card to that part".
 - [ ] **Steps 2–4.** Build the plugin. Manual check in a host: every card shows the right names for each engine.
 - [ ] **Step 5: Manual** (`interface.md`: the header, columns, cards, hidden unused controls, bottom bar, part settings popover and meters) and **commit** `M6a: one-part editor with every control`.
+
+### Task 9a: Owner design gate — layout
+
+**Files:**
+- Modify: the files under `Views/`, `Style/EG13Palette.swift`, the preview app's "Editor" page, the design log, and spec §8.
+
+- [ ] **Step 1:** Show the full editor to the owner in the preview app and in a host (Reaper or Bitwig, and Logic). Show both parts, every engine type in each slot, and the part settings popover. Screenshots go to `docs/superpowers/m6-design/layout-r1/`.
+- [ ] **Step 2: STOP for the owner.** Record the feedback as round N.
+- [ ] **Step 3:** Apply the feedback. Re-run the Task 9 reachability test after each round, so every control stays reachable. Repeat until the owner approves.
+- [ ] **Step 4: Commit each round** as `M6a design: layout round N`. Record the approval in the design log and spec §8, and update `interface.md` to match.
 
 ### Task 10: README, validators and host check
 
