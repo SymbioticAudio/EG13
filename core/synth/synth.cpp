@@ -244,6 +244,16 @@ ParamSnapshot Synth::defaultSnapshot() const {
   return values;
 }
 
+void Synth::uiSnapshot(UiSnapshot* out) const {  // main thread
+  const bool pending = hasPending();
+  for (size_t i = 0; i < kParamCount; ++i) out->values[i] = pending ? pendingValues_[i] : load(i);
+  for (int p = 0; p < kNumParts; ++p) {
+    for (int ch = 0; ch < 2; ++ch) out->partPeak[p][ch] = partPeak_[p][ch].exchange(0.0f, std::memory_order_relaxed);
+    out->activeVoices[p] = activeVoiceCount(p);
+  }
+  out->engineGeneration = engineGeneration_.load(std::memory_order_relaxed);
+}
+
 ParamSnapshot Synth::snapshot() const {
   ParamSnapshot values{};
   const bool pending = hasPending();
@@ -286,6 +296,9 @@ void Synth::adoptEngines(const ParamSnapshot& values) {
       currentEngine_[size_t(k)][size_t(part)] = slotEngineFromSelector(kind, values[slotEngineParamIndex(kind, part)]);
     }
   }
+  // A load while active only takes effect here, on the audio thread: bump again so an editor that
+  // saw the load's first bump re-reads the engines once they have actually changed.
+  engineGeneration_.fetch_add(1, std::memory_order_relaxed);
 }
 
 PatchData Synth::defaultPatch(PluginKind kind) {
@@ -300,6 +313,7 @@ void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash, co
   ParamSnapshot clamped{};
   for (size_t i = 0; i < kParamCount; ++i) clamped[i] = clampParam(i, double(values[i]));
   const EngineStash s = stash ? *stash : defaultStash();
+  engineGeneration_.fetch_add(1, std::memory_order_relaxed);  // a load may switch any engine
   mainPatch_ = patch ? *patch : defaultPatch(kind_);
   if (!active_.load(std::memory_order_acquire)) {  // no audio thread can run
     store(clamped);
@@ -468,6 +482,7 @@ void Synth::switchEngine(SlotKind kind, int part, int next) {
   }
   current = next;
   engineChanged_.store(true, std::memory_order_release);
+  engineGeneration_.fetch_add(1, std::memory_order_relaxed);
 }
 
 void Synth::queueHostUpdate(const HostUpdate& update) {
@@ -632,6 +647,14 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
     inputs.input = hasInput ? partIn : nullptr;
     inputs.other = other;
     part.process(inputs, out, params, n);
+    for (int ch = 0; ch < 2; ++ch) {  // the part's peak after level and pan, once per chunk
+      float peak = 0.0f;
+      for (int i = 0; i < n; ++i) peak = std::max(peak, std::fabs(out[ch][i]));
+      float stored = partPeak_[p][ch].load(std::memory_order_relaxed);
+      while (peak > stored &&
+             !partPeak_[p][ch].compare_exchange_weak(stored, peak, std::memory_order_relaxed)) {
+      }
+    }
     const int output = part.settings().output;
     heard[p] = output != 2;  // Other part only: feeds the other part, not heard
     toBus2[p] = bus2Out != nullptr && output == 1;
