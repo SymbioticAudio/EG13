@@ -2,6 +2,7 @@
 
 #include <clap/clap.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -31,8 +32,9 @@ class UiBridge {
  public:
   static constexpr size_t kQueueSize = 1024;
 
-  // requestFlush runs on the main thread after each queued event: the plugin asks the host
-  // for a params flush when it is not processing.
+  // requestFlush runs on the main thread when events are waiting: the plugin asks the host
+  // for a params flush when it is not processing. At most one request is pending until the
+  // next drain.
   explicit UiBridge(Synth& synth, std::function<void()> requestFlush);
   // Closes any gesture still open (closeAllGestures). The end events only reach the host if a
   // drain follows, so the owner closes gestures and flushes before it destroys the bridge.
@@ -42,12 +44,16 @@ class UiBridge {
 
   // Main thread. Never block: events that do not fit the queue wait in order on the main
   // thread and are retried by the next call or pump().
+  // A second beginEdit on an open id, and an endEdit on an id with no open gesture, are
+  // ignored, so the host always sees balanced begin and end events.
   void beginEdit(uint32_t id);
   void edit(uint32_t id, double v);
   void endEdit(uint32_t id);
   void pump();
   void closeAllGestures();
   size_t overflowSize() const { return overflow_.size(); }
+  // Host events the host's output queue refused (try_push returned false).
+  size_t droppedHostEvents() const { return dropped_.load(std::memory_order_relaxed); }
 
   // Audio thread in process(); in params flush, whichever thread flush runs on. Never
   // allocates, locks or waits. Applies queued edits to the synth and reports them to out
@@ -56,9 +62,12 @@ class UiBridge {
 
  private:
   void push(const UiEvent& event);
+  void requestFlush();
 
   Synth& synth_;
   std::function<void()> requestFlush_;
+  std::atomic<bool> flushPending_{false};  // set by requestFlush, cleared by drain
+  std::atomic<size_t> dropped_{0};
   SpscQueue<UiEvent, kQueueSize> queue_;
   std::deque<UiEvent> overflow_;      // main thread only
   std::vector<uint32_t> openGestures_;  // main thread only

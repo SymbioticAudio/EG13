@@ -62,7 +62,7 @@ TEST_CASE("Edits reach the synth and the host in order") {
   bridge.edit(a, va);
   bridge.edit(b, vb);
   bridge.endEdit(a);
-  REQUIRE(flushes == 4);
+  REQUIRE(flushes == 1);  // coalesced until the next drain
   FakeOut fake;
   bridge.drain(&fake.out);
 
@@ -171,4 +171,71 @@ TEST_CASE("drain allocates nothing") {
   }
   REQUIRE(allocations == 0);
   REQUIRE(fake.events.size() == 202);
+}
+
+TEST_CASE("pump requests a flush when it moves overflowed events") {
+  eg13::Synth synth(eg13::PluginKind::Instrument);
+  int flushes = 0;
+  UiBridge bridge(synth, [&flushes] { ++flushes; });
+  const uint32_t a = idAt(0);
+  const double hi = double(eg13::paramSpec(0).maxValue);
+  for (int i = 0; i < 1500; ++i) bridge.edit(a, hi);
+  REQUIRE(bridge.overflowSize() > 0);
+  REQUIRE(flushes == 1);  // coalesced
+  FakeOut fake;
+  bridge.drain(&fake.out);
+  bridge.pump();
+  REQUIRE(bridge.overflowSize() == 0);
+  REQUIRE(flushes == 2);  // the pump asked, once
+  bridge.pump();
+  REQUIRE(flushes == 2);  // nothing moved, nothing asked
+}
+
+TEST_CASE("A gesture that overflows mid-stream stays balanced and in order") {
+  eg13::Synth synth(eg13::PluginKind::Instrument);
+  UiBridge bridge(synth, {});
+  const uint32_t a = idAt(0);
+  const double hi = double(eg13::paramSpec(0).maxValue);
+  bridge.beginEdit(a);
+  for (int i = 0; i < 2000; ++i) bridge.edit(a, hi);
+  bridge.endEdit(a);
+  REQUIRE(bridge.overflowSize() > 0);
+  FakeOut fake;
+  for (int guard = 0; guard < 10 && bridge.overflowSize() > 0; ++guard) {
+    bridge.drain(&fake.out);
+    bridge.pump();
+  }
+  bridge.drain(&fake.out);
+  REQUIRE(fake.events.size() == 2002);
+  REQUIRE(fake.events.front().type == CLAP_EVENT_PARAM_GESTURE_BEGIN);
+  REQUIRE(fake.events.back().type == CLAP_EVENT_PARAM_GESTURE_END);
+  size_t values = 0;
+  for (size_t i = 1; i + 1 < fake.events.size(); ++i) values += fake.events[i].type == CLAP_EVENT_PARAM_VALUE;
+  REQUIRE(values == 2000);
+}
+
+TEST_CASE("Nested begins and unmatched ends are ignored") {
+  eg13::Synth synth(eg13::PluginKind::Instrument);
+  UiBridge bridge(synth, {});
+  const uint32_t a = idAt(0);
+  bridge.endEdit(a);    // no open gesture
+  bridge.beginEdit(a);
+  bridge.beginEdit(a);  // already open
+  bridge.endEdit(a);
+  bridge.endEdit(a);    // already closed
+  FakeOut fake;
+  bridge.drain(&fake.out);
+  REQUIRE(fake.events.size() == 2);
+  REQUIRE(fake.events[0].type == CLAP_EVENT_PARAM_GESTURE_BEGIN);
+  REQUIRE(fake.events[1].type == CLAP_EVENT_PARAM_GESTURE_END);
+}
+
+TEST_CASE("Refused host events are counted") {
+  eg13::Synth synth(eg13::PluginKind::Instrument);
+  UiBridge bridge(synth, {});
+  bridge.edit(idAt(0), 0.0);
+  clap_output_events_t refuse{};
+  refuse.try_push = [](const clap_output_events_t*, const clap_event_header_t*) { return false; };
+  bridge.drain(&refuse);
+  REQUIRE(bridge.droppedHostEvents() == 1);
 }
