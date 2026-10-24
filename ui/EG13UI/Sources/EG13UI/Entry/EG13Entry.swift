@@ -79,3 +79,6 @@ public func eg13UISetVisible(_ handle: UnsafeMutableRawPointer?, _ visible: Bool
     let bits = UInt(bitPattern: handle)
     onMain { controller(bits).setVisible(visible) }
 }
+
+@_cdecl("eg13_ui_live_count")
+public func eg13UILiveCount() -> Int32 { Int32(EG13LiveObjects.current) }

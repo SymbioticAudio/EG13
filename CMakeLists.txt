@@ -44,6 +44,13 @@ if(EG13_BUILD_UI)
     message(FATAL_ERROR "EG13_BUILD_UI needs macOS")
   endif()
   include(cmake/eg13_ui.cmake)
+
+  # The editor window (CLAP gui extension logic); linked into the plugin and the tests.
+  add_library(eg13_gui STATIC plugin/src/gui.cpp)
+  target_include_directories(eg13_gui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/core-api/include)
+  target_link_libraries(eg13_gui PUBLIC eg13_ui_bridge eg13_ui_swift)
+  target_compile_options(eg13_gui PRIVATE -Wall -Wextra)
 endif()
 
 if(EG13_BUILD_TESTS)

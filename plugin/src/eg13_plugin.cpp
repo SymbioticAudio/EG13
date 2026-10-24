@@ -4,10 +4,15 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 
+#include "core_api.h"
 #include "state/state.h"
 #include "ui_bridge.h"
+#if EG13_HAS_UI
+#include "gui.h"
+#endif
 #include "util/denormal_guard.h"
 #include "synth/param_table.h"
 
@@ -27,8 +32,19 @@ struct Plugin {
   std::atomic<bool> restartRequested{false};  // cleared by activate
   Synth synth;
   state::StateStore store;
-  // Set by the editor (Task 6); until then null. Drained by process and params flush.
+  const clap_host_gui_t* hostGui = nullptr;
+  std::atomic<bool> processing{false};
+  // The editor's edit queue lives as long as the plugin (created in init, destroyed with the
+  // plugin), not the editor: events queued when an editor closes still drain through process or
+  // params flush. uiBridge is what process and flush read; bridge owns it.
+  std::unique_ptr<UiBridge> bridge;
   std::atomic<UiBridge*> uiBridge{nullptr};
+  // The editor's view of the plugin; outlives every editor (it is the editor's `context`).
+  std::unique_ptr<CoreApiContext> coreContext;
+  EG13CoreAPI coreApi{};
+#if EG13_HAS_UI
+  std::unique_ptr<Gui> gui;  // destroyed first: its editor still uses the members above
+#endif
 };
 
 Plugin* self(const clap_plugin_t* p) { return static_cast<Plugin*>(p->plugin_data); }
@@ -332,10 +348,44 @@ bool pluginInit(const clap_plugin_t* p) {
       plugin->host->get_extension(plugin->host, CLAP_EXT_PARAMS));
   plugin->hostLatency = static_cast<const clap_host_latency_t*>(
       plugin->host->get_extension(plugin->host, CLAP_EXT_LATENCY));
+  plugin->hostGui = static_cast<const clap_host_gui_t*>(
+      plugin->host->get_extension(plugin->host, CLAP_EXT_GUI));
+
+  // The bridge asks the host for a params flush when edits wait and nothing is processing.
+  plugin->bridge = std::make_unique<UiBridge>(plugin->synth, [plugin] {
+    if (plugin->hostParams && plugin->hostParams->request_flush) {
+      plugin->hostParams->request_flush(plugin->host);  // thread-safe (clap/ext/params.h)
+    }
+  });
+  plugin->uiBridge.store(plugin->bridge.get(), std::memory_order_release);
+  plugin->coreContext = std::make_unique<CoreApiContext>(CoreApiContext{
+      plugin->synth, *plugin->bridge, [plugin](uint32_t width, uint32_t height) {
+        if (plugin->hostGui && plugin->hostGui->request_resize) {
+          plugin->hostGui->request_resize(plugin->host, width, height);
+        }
+      }});
+  plugin->coreApi = makeCoreApi(*plugin->coreContext);
+#if EG13_HAS_UI
+  plugin->gui = std::make_unique<Gui>(
+      plugin->coreApi, plugin->kind == PluginKind::Effect ? 1 : 0, *plugin->bridge, [plugin] {
+        // The gesture ends queued by closing the editor need a drain; a running process() does it.
+        if (plugin->processing.load(std::memory_order_acquire)) return;
+        if (plugin->hostParams && plugin->hostParams->request_flush) {
+          plugin->hostParams->request_flush(plugin->host);
+        }
+      });
+#endif
   return true;
 }
 
-void pluginDestroy(const clap_plugin_t* p) { delete self(p); }
+void pluginDestroy(const clap_plugin_t* p) {
+  Plugin* plugin = self(p);
+#if EG13_HAS_UI
+  plugin->gui.reset();  // closes an editor the host left open
+#endif
+  plugin->uiBridge.store(nullptr, std::memory_order_release);
+  delete plugin;
+}
 
 bool pluginActivate(const clap_plugin_t* p, double sampleRate, uint32_t, uint32_t maxFrames) {
   Plugin* plugin = self(p);
@@ -355,8 +405,13 @@ void pluginDeactivate(const clap_plugin_t* p) {
   self(p)->active.store(false, std::memory_order_release);
   self(p)->synth.setActive(false);
 }
-bool pluginStartProcessing(const clap_plugin_t*) { return true; }
-void pluginStopProcessing(const clap_plugin_t*) {}
+bool pluginStartProcessing(const clap_plugin_t* p) {
+  self(p)->processing.store(true, std::memory_order_release);
+  return true;
+}
+void pluginStopProcessing(const clap_plugin_t* p) {
+  self(p)->processing.store(false, std::memory_order_release);
+}
 void pluginReset(const clap_plugin_t* p) { self(p)->synth.reset(); }
 
 clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* proc) {
@@ -432,17 +487,85 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
   return CLAP_PROCESS_CONTINUE;
 }
 
+#if EG13_HAS_UI
+// ---- gui ------------------------------------------------------------------------------
+
+Gui& guiOf(const clap_plugin_t* p) { return *self(p)->gui; }
+
+bool guiApiOk(const char* api, bool isFloating) {
+  return api != nullptr && std::strcmp(api, CLAP_WINDOW_API_COCOA) == 0 && !isFloating;
+}
+
+bool guiIsApiSupported(const clap_plugin_t*, const char* api, bool isFloating) {
+  return guiApiOk(api, isFloating);
+}
+bool guiGetPreferredApi(const clap_plugin_t*, const char** api, bool* isFloating) {
+  *api = CLAP_WINDOW_API_COCOA;
+  *isFloating = false;
+  return true;
+}
+bool guiCreate(const clap_plugin_t* p, const char* api, bool isFloating) {
+  return guiApiOk(api, isFloating) && guiOf(p).create();
+}
+void guiDestroy(const clap_plugin_t* p) { guiOf(p).destroy(); }
+bool guiSetScale(const clap_plugin_t*, double) { return false; }  // Cocoa works in points
+bool guiGetSize(const clap_plugin_t* p, uint32_t* width, uint32_t* height) {
+  *width = guiOf(p).width();
+  *height = guiOf(p).height();
+  return true;
+}
+bool guiCanResize(const clap_plugin_t*) { return true; }
+bool guiGetResizeHints(const clap_plugin_t*, clap_gui_resize_hints_t* hints) {
+  hints->can_resize_horizontally = true;
+  hints->can_resize_vertically = true;
+  hints->preserve_aspect_ratio = true;
+  hints->aspect_ratio_width = kGuiBaseWidth;
+  hints->aspect_ratio_height = kGuiBaseHeight;
+  return true;
+}
+bool guiAdjustSize(const clap_plugin_t*, uint32_t* width, uint32_t* height) {
+  adjustGuiSize(*width, *height);
+  return true;
+}
+bool guiSetSize(const clap_plugin_t* p, uint32_t width, uint32_t height) {
+  guiOf(p).setSize(width, height);
+  return true;
+}
+bool guiSetParent(const clap_plugin_t* p, const clap_window_t* window) {
+  return window != nullptr && window->cocoa != nullptr && guiOf(p).setParent(window->cocoa);
+}
+bool guiSetTransient(const clap_plugin_t*, const clap_window_t*) { return false; }
+void guiSuggestTitle(const clap_plugin_t*, const char*) {}
+bool guiShow(const clap_plugin_t* p) {
+  guiOf(p).setVisible(true);
+  return true;
+}
+bool guiHide(const clap_plugin_t* p) {
+  guiOf(p).setVisible(false);
+  return true;
+}
+
+const clap_plugin_gui_t kGui = {
+    guiIsApiSupported, guiGetPreferredApi, guiCreate,       guiDestroy,    guiSetScale,
+    guiGetSize,        guiCanResize,       guiGetResizeHints, guiAdjustSize, guiSetSize,
+    guiSetParent,      guiSetTransient,    guiSuggestTitle, guiShow,       guiHide};
+#endif
+
 const void* pluginGetExtension(const clap_plugin_t*, const char* id) {
   if (std::strcmp(id, CLAP_EXT_AUDIO_PORTS) == 0) return &kAudioPorts;
   if (std::strcmp(id, CLAP_EXT_NOTE_PORTS) == 0) return &kNotePorts;
   if (std::strcmp(id, CLAP_EXT_PARAMS) == 0) return &kParams;
   if (std::strcmp(id, CLAP_EXT_STATE) == 0) return &kState;
   if (std::strcmp(id, CLAP_EXT_LATENCY) == 0) return &kLatency;
+#if EG13_HAS_UI
+  if (std::strcmp(id, CLAP_EXT_GUI) == 0) return &kGui;
+#endif
   return nullptr;
 }
 
 void pluginOnMainThread(const clap_plugin_t* p) {
   Plugin* plugin = self(p);
+  if (plugin->bridge) plugin->bridge->pump();
   if (plugin->synth.takeEngineChanged() && plugin->hostParams) {
     // VALUES too: recovers any swapped value whose try_push failed.
     plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT |

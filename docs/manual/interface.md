@@ -4,7 +4,9 @@ EG13 opens its own window in the host. It shows one part at a time and lets you 
 
 ## Window and scaling
 
-The window is 1200 × 760 points at 100 % and scales from 75 % to 200 %, keeping its proportions. *To be filled in by later M6a tasks.*
+The window is 1200 × 760 points at 100 %. You can resize it from 75 % (900 × 570) to 200 % (2400 × 1520). The proportions stay locked: dragging any edge or corner scales the whole window, and the layout scales with it, so nothing is cropped or rearranged at any size. In hosts that cannot resize plugin windows, the window stays at 100 %.
+
+The window works in points, so on a Retina display it is drawn sharp at every size and EG13 ignores the host's own scale setting. Closing the window and opening it again starts at 100 %.
 
 ## Part tabs
 

@@ -1,11 +1,22 @@
 import AppKit
 import EG13CBridge
+import os
 import QuartzCore
 import SwiftUI
 import SymbioticIcons
 #if canImport(SymbioticBrand)
 import SymbioticBrand
 #endif
+
+/// How many editor objects (controllers and plugin views) are alive. Tests read it through
+/// eg13_ui_live_count to prove create/destroy leaks nothing, a running timer included (a timer
+/// keeps its controller alive).
+enum EG13LiveObjects {
+    private static let count = OSAllocatedUnfairLock(initialState: 0)
+    static var current: Int { count.withLock { $0 } }
+    static func born() { count.withLock { $0 += 1 } }
+    static func died() { count.withLock { $0 -= 1 } }
+}
 
 /// The container NSView the plugin embeds in the host's view. Holds the SwiftUI root.
 final class EG13PluginView: NSView {
@@ -23,7 +34,10 @@ final class EG13PluginView: NSView {
         appearance = EG13Theme.appearance
         hosting.appearance = EG13Theme.appearance
         addSubview(hosting)
+        EG13LiveObjects.born()
     }
+
+    deinit { EG13LiveObjects.died() }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -58,7 +72,10 @@ final class EG13UIController: NSObject {
         synth = EG13Synth(core: client, kind: kind)
         view = EG13PluginView(synth: synth, zoom: CGFloat(zoom))
         super.init()
+        EG13LiveObjects.born()
     }
+
+    deinit { EG13LiveObjects.died() }
 
     func attach(to parent: NSView) -> Bool {
         view.removeFromSuperview()

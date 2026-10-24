@@ -5,7 +5,9 @@
 # namespace, so every class EG13 defines must start with EG13, or be a Swift class of a module
 # whose name does (_TtC6EG13UI..., and the aliased _TtC18EG13SymbioticIcons...). A class of an
 # unrenamed SymbioticIcons/SymbioticTokens module (_TtC15SymbioticIcons...) would collide with
-# another plugin built from the same packages. Classes the bundle only references (NSView, ...) are not checked.
+# another plugin built from the same packages.
+# One exception: clap-wrapper's AUv2 view classes (wrapAsAUV2_<type>_cocoaUI_com_symbioticaudio_eg13...)
+# are named after the bundle identifier, so they are unique to EG13 even without the prefix. Classes the bundle only references (NSView, ...) are not checked.
 set -euo pipefail
 if [ $# -ne 1 ]; then
   echo "usage: check-objc-prefix.sh <bundle>" >&2
@@ -36,7 +38,7 @@ COUNT=0
 while IFS= read -r name; do
   [ -n "$name" ] || continue
   COUNT=$((COUNT + 1))
-  if [[ "$name" =~ ^(EG13|_TtC[0-9]+EG13) ]]; then
+  if [[ "$name" =~ ^(EG13|_TtC[0-9]+EG13|wrapAsAUV2_[a-z]+_cocoaUI_com_symbioticaudio_eg13) ]]; then
     :
   else
     BAD="$BAD$name"$'\n'

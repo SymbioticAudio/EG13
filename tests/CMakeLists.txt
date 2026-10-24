@@ -1,4 +1,8 @@
 file(GLOB EG13_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp)
+# The editor tests need the Swift UI; they are built only with it.
+if(NOT EG13_HAS_UI)
+  list(FILTER EG13_TEST_SOURCES EXCLUDE REGEX "test_gui\\.cpp$")
+endif()
 add_executable(eg13_tests ${EG13_TEST_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/alloc_counter.cpp)
 find_package(Threads REQUIRED)
 target_link_libraries(eg13_tests PRIVATE eg13_core_api eg13_ui_bridge eg13_core eg13_eurorack eg13_r8brain eg13_vcv eg13_sst Catch2::Catch2WithMain Threads::Threads eg13_nlohmann)
@@ -26,7 +30,7 @@ target_sources(eg13_tests PRIVATE $<TARGET_OBJECTS:eg13_vcv_flagged_reference>)
 # The Swift UI link check (the same library and link flags the plugin bundles use).
 if(EG13_HAS_UI)
   target_sources(eg13_tests PRIVATE ui_link.cpp)
-  target_link_libraries(eg13_tests PRIVATE eg13_ui_swift)
+  target_link_libraries(eg13_tests PRIVATE eg13_gui eg13_ui_swift)
 endif()
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/third_party/Catch2/extras)
