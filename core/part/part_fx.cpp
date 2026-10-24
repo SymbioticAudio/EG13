@@ -69,6 +69,7 @@ void PartFx::reset() {
   tickCount_ = 0;
   time_ = 0;
   fresh_ = true;
+  retarget_ = false;
   params_ = ParamValues{};
   note_ = 60.0f;
   slot_.setNote(note_);
@@ -109,6 +110,7 @@ void PartFx::followSlot() {
       fadeWeight_ = 1.0f;
     }
     engine_ = slot_.engine();
+    retarget_ = true;  // the next tick's P's belong to the new engine (see beginTick)
   } else if (!slot_.fading()) {
     previous_ = -1;
     fadeWeight_ = 1.0f;
@@ -126,6 +128,14 @@ void PartFx::beginTick(const ParamValues& p, float note, bool trigger) {
   }
   const int size = int(ticks_.size());
   if (size == 0) return;  // not prepared
+  if (retarget_) {
+    // A new engine started: the P's waiting in the ring were made for the engine it replaced
+    // (they stay queued for the voices' latency). Give the new engine this tick's at once and
+    // overwrite every waiting tick's; notes and triggers keep their time. Bounded: the ring.
+    retarget_ = false;
+    params_ = p;
+    for (int i = 0; i < tickCount_; ++i) ticks_[size_t((tickOldest_ + i) % size)].p = p;
+  }
   if (tickCount_ > 0) {
     Tick& newest = ticks_[size_t((tickOldest_ + tickCount_ - 1) % size)];
     if (newest.start == time_) {  // a second tick at the same time replaces the first

@@ -30,7 +30,9 @@ constexpr int kNumPartFxInputs = 3;
 // crossfade (the slot latency's hold, then 10 ms).
 //
 // Controls (P's, the note and triggers) are given once per 16-sample tick by beginTick() and act
-// after the voices' latency, so they line up with the sound made in that tick (ruling 20).
+// after the voices' latency, so they line up with the sound made in that tick (ruling 20). When a
+// new engine starts, the P's queued for the engine it replaced are not its own: the next tick's P's
+// replace them (and act at once); queued notes and triggers keep their time.
 class PartFx {
  public:
   explicit PartFx(std::vector<SourceSpec> engines);  // index = PartFxEngine; 0 must be Off
@@ -95,6 +97,7 @@ class PartFx {
   int tickCount_ = 0;
   int64_t time_ = 0;  // samples processed
   bool fresh_ = true;  // no tick since reset()
+  bool retarget_ = false;  // an engine started: the next tick's P's replace every queued tick's
   bool idle_ = true;   // no process() since reset(): a selector change snaps
   ParamValues params_{};
   float note_ = 60.0f;

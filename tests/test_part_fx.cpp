@@ -56,6 +56,38 @@ class ParamDcEngine final : public VoiceEngine {
   }
 };
 
+// Records the extremes of every P it is given since the last clear().
+class SpyEngine final : public VoiceEngine {
+ public:
+  void prepare(double, int) override {}
+  void reset() override {}
+  void noteOn(float, float) override {}
+  void noteOff() override {}
+  void setNote(float) override {}
+  void process(const float* const* in, float* const* out, const ParamValues& p, int n) override {
+    for (int k = 0; k < kPartFxParamCount; ++k) {
+      lo[k] = std::min(lo[k], p.p[k]);
+      hi[k] = std::max(hi[k], p.p[k]);
+    }
+    for (int i = 0; i < n; ++i) {
+      out[0][i] = in ? in[0][i] : 0.0f;
+      out[1][i] = in ? in[1][i] : 0.0f;
+    }
+  }
+  const EngineInfo& info() const override {
+    static const EngineInfo kInfo = {"spy", "Spy", 0, nullptr, true, false, 0, nullptr};
+    return kInfo;
+  }
+  void clear() {
+    for (int k = 0; k < kPartFxParamCount; ++k) {
+      lo[k] = 1e9f;
+      hi[k] = -1e9f;
+    }
+  }
+  float lo[kPartFxParamCount], hi[kPartFxParamCount];
+};
+SpyEngine* gSpy = nullptr;
+
 struct NoteLog {
   int noteOns = 0;
   float lastNote = -1.0f;  // from noteOn or setNote
@@ -122,6 +154,15 @@ std::vector<SourceSpec> delayFx() {
   std::vector<SourceSpec> all;
   all.push_back(makePartFx(int(PartFxEngine::Off)));
   all.push_back({std::make_unique<test::FixedLatencyEngine>(), 0.0, 16, true});
+  return all;
+}
+std::vector<SourceSpec> spyFx() {  // Off, then a host-rate spy
+  std::vector<SourceSpec> all;
+  all.push_back(makeOff());
+  auto spy = std::make_unique<SpyEngine>();
+  gSpy = spy.get();
+  spy->clear();
+  all.push_back({std::move(spy), 0.0, 16});
   return all;
 }
 std::vector<SourceSpec> nanFx() {
@@ -588,6 +629,118 @@ TEST_CASE("Switching Part FX type while sounding crossfades and keeps alignment"
   }
   REQUIRE(weight > 0.9f);
   REQUIRE(maxStep(out, size_t(at), size_t(n)) <= 2.0f * maxStep(ref, size_t(at), size_t(n)) * 1.05f);
+}
+
+// I1: a type change gives the new engine its own P's from its first sample, not the previous
+// engine's, which are still queued for the voices' latency. The previous engine's P's are 0; the
+// new engine's P at `index` is `value`. Voices sound throughout (Off, then the spy).
+void requireNewEngineNeverSeesOldP(int index, float value, ConverterQuality q, double rate, int switchTick) {
+  CAPTURE(index, value, qualityName(q), rate, switchTick);
+  PartFx fx(spyFx());
+  const int voices = 268 * int(rate / 48000.0) + 7;  // not a multiple of 16
+  fx.prepare(rate, 16, voices, q);
+  const int ticks = switchTick + 100 + voices / 16;
+  std::vector<float> mono(16);
+  const Stereo mix = sineSignal(size_t(ticks) * 16, 440.0, rate, 0.5f);
+  ParamValues oldP{}, newP{};
+  newP.p[index] = value;
+  for (int t = 0; t < ticks; ++t) {
+    const bool after = t >= switchTick;
+    if (t == switchTick) {
+      fx.setEngine(1);  // as Part::applySettings does, just before the tick's controls
+      gSpy->clear();
+    }
+    fx.beginTick(after ? newP : oldP, 60.0f, false);
+    const float* m[2] = {mix.l.data() + t * 16, mix.r.data() + t * 16};
+    float l[16], r[16];
+    float* o[2] = {l, r};
+    fx.process(m, nullptr, o, 16);
+  }
+  REQUIRE(gSpy->hi[index] >= gSpy->lo[index]);  // the spy ran
+  REQUIRE(gSpy->lo[index] == value);
+  REQUIRE(gSpy->hi[index] == value);
+  REQUIRE(fx.appliedParams().p[index] == value);
+}
+
+TEST_CASE("After a Part FX type change Granular Delay never sees the old engine's Quality") {
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  const ConverterQuality q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  const int tick = GENERATE(20, 21);
+  requireNewEngineNeverSeesOldP(9, 1.0f / 3.0f, q, rate, tick);  // Granular Delay P10: Vintage digital
+}
+
+TEST_CASE("After a Part FX type change Granular never sees the old engine's Mode or Quality") {
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  const ConverterQuality q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  requireNewEngineNeverSeesOldP(9, 1.0f, q, rate, 20);   // Granular P10: Spectral
+  requireNewEngineNeverSeesOldP(10, 1.0f, q, rate, 20);  // Granular P11: the last Quality
+}
+
+TEST_CASE("After a Part FX type change Reverb and Resonator pots start at their own values") {
+  const ConverterQuality q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  for (int index : {0, 1, 2, 3}) requireNewEngineNeverSeesOldP(index, 0.9f, q, 48000.0, 20);
+}
+
+TEST_CASE("A Part FX type change replaces only the queued P's, not notes or triggers") {
+  // A trigger queued before the change still acts voiceLatency samples after its tick.
+  gLog[1] = NoteLog{};
+  PartFx fx([] {
+    std::vector<SourceSpec> all;
+    all.push_back(makeOff());
+    all.push_back({std::make_unique<LoggingEngine>(&gLog[1]), 0.0, 16});
+    return all;
+  }());
+  const int voices = 200;
+  fx.prepare(48000.0, 16, voices);
+  const Stereo mix = sineSignal(16 * 40, 440.0, 48000.0, 0.5f);
+  std::vector<int> noteOnsAfter;
+  for (int t = 0; t < 40; ++t) {
+    if (t == 5) fx.setEngine(1);
+    // The trigger tick (t = 4) began before the change; its note-on acts at sample 264, inside tick 16.
+    fx.beginTick(ParamValues{}, 60.0f + float(t == 4 ? 7 : 0), t == 4);
+    const float* m[2] = {mix.l.data() + t * 16, mix.r.data() + t * 16};
+    float l[16], r[16];
+    float* o[2] = {l, r};
+    fx.process(m, nullptr, o, 16);
+    noteOnsAfter.push_back(gLog[1].noteOns);
+  }
+  // The engine received the trigger (G26 notwithstanding, the queue kept it) exactly once, at sample 264.
+  REQUIRE(noteOnsAfter[15] == 0);
+  REQUIRE(noteOnsAfter[16] == 1);
+  REQUIRE(noteOnsAfter.back() == 1);
+}
+
+TEST_CASE("A Part FX type change requested during a fade neither doubles nor drops the voices") {
+  // Off -> Gain (unity) -> Off -> Gain within 5 ms each: every switch lands inside the previous
+  // one's hold or crossfade. The output stays on the Off part's.
+  const double rate = GENERATE(44100.0, 48000.0, 96000.0);
+  const ConverterQuality q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  CAPTURE(rate, qualityName(q));
+  const int n = int(rate * 0.6);
+  const int gap = int(rate * 0.005);
+  const int start = int(rate * 0.1);
+  const std::vector<int> switches = {start, start + gap, start + 2 * gap, start + 3 * gap, start + 4 * gap};
+  const int engines[] = {2, 0, 2, 0, 2};
+  auto play = [&](bool change) {
+    Part part(sine32k, makeAllModEngines, passFx);
+    part.prepare(rate, kBlock, Voice::Alignment::Notes, q);
+    part.applySettings(fxSettings(0));
+    part.noteOn(81, 1.0f);
+    PartParams params;
+    params.partFx.p[0] = 0.25f;  // Gain at unity
+    int k = 0;
+    return render(part, n, 100, params, nullptr, switches, [&](int) {
+      if (change) part.applySettings(fxSettings(engines[k]));
+      ++k;
+    });
+  };
+  const Stereo reference = play(false);
+  const Stereo switched = play(true);
+  double worst = 0.0;
+  for (int s = start; s < n; ++s) worst = std::max(worst, double(std::fabs(switched.l[size_t(s)] - reference.l[size_t(s)])));
+  std::printf("Part FX request during a fade %s %.0f Hz: largest difference from Off %.5f\n", qualityName(q), rate, worst);
+  REQUIRE(worst < 1e-3);
+  REQUIRE(test::rms(switched.l, size_t(n) - 4800, size_t(n)) > 0.3);
 }
 
 TEST_CASE("A NaN Part FX output restarts the engine and mutes that slice") {
