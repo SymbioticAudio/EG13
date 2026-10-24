@@ -45,8 +45,8 @@ int partFxEngineFromSelector(double value);  // unknown values -> Off
 const EngineInfo& partFxEngineInfo(int engine);  // unknown -> Off's
 
 // Gain staging (M5, preflight ruling G11), on the sourceTrimDb precedent: each Part FX engine's
-// trim at the slot output, outside the fidelity boundary. Unity (0 dB) until Task 14 measures
-// and sets them; unknown engines 0 dB.
+// trim at the slot output, outside the fidelity boundary. set from M5 Task 14's level
+// measurements (docs/manual/part-fx.md, Levels); unknown engines 0 dB.
 float partFxTrimDb(int engine);
 float partFxTrim(int engine);
 

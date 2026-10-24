@@ -33,7 +33,9 @@ Plugin* self(const clap_plugin_t* p) { return static_cast<Plugin*>(p->plugin_dat
 // The Latency Mode applies at the next activate (it rebuilds every converter and changes the
 // latency): when the parameter differs from the running mode, ask the host once to restart the
 // plugin (deactivate, activate). request_restart is thread-safe (clap/host.h). CLAP and VST3
-// hosts restart at once; clap-wrapper's AU restartPlugin() is empty, so an AU host applies it
+// hosts restart at once (the VST3 wrapper turns the request into
+// restartComponent(kIoChanged | kLatencyChanged): third_party/clap-wrapper wrapasvst3.cpp:1352-1355
+// and :1509-1515); clap-wrapper's AU restartPlugin() is empty, so an AU host applies it
 // when it next initialises the plugin (docs/manual/latency.md).
 void requestRestartIfModeChanged(Plugin* plugin) {
   if (!plugin->active.load(std::memory_order_acquire)) return;  // the next activate prepares it
@@ -296,7 +298,9 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
       plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT |
                                                    CLAP_PARAM_RESCAN_INFO);
     }
-    requestRestartIfModeChanged(plugin);  // while inactive the load applies at the next activate
+    // While inactive the load applies at the next activate. While active, requestedQuality()
+    // changes at the next audio block, so if the host stops processing the request waits for it.
+    requestRestartIfModeChanged(plugin);
     return true;
   } catch (...) {
     return false;

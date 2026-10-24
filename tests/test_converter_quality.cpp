@@ -367,7 +367,7 @@ bool primeHolds(const ConverterSpec& spec, double host, const Native& native, do
   return true;
 }
 
-// Ruling 3 (for minimum phase): an impulse lands at the reported latency +-1 on both paths, and Dry
+// Ruling 3: an impulse lands at the reported latency +-1 on both paths, and Dry
 // plus a unity engine path has no comb notch deeper than 1 dB below f_pass.
 struct Alignment {
   int worstOutputError = 0;
@@ -700,7 +700,7 @@ TEST_CASE("Latency Mode defaults: instrument Live, EG13 FX Studio") {
   REQUIRE(fx.preparedQuality() == ConverterQuality::Studio);
 }
 
-// Ruling 2's candidates with ruling 1's floors, ruling 3's alignment for minimum phase and the
+// Ruling 2's candidates with ruling 1's floors, ruling 3's alignment and the
 // prime check; prints each with its latencies and the selection. Not run in CI (minutes).
 TEST_CASE("Live candidate report", "[.converter]") {
   struct Candidate {

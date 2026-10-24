@@ -208,10 +208,10 @@ TEST_CASE("Delay-mode transitions while Size crosses 0.98-0.99 repeatedly", "[st
   // processor.cc:111-119: an integrator runs at +-1 s per second (clamped to +-1.5 s, starting at
   // -1.5 s) and delay mode is on while it is above 0. It rises while Size is above 0.99 (0.98
   // once in delay mode) and falls below, so a switch needs Size held on one side for over 1.5 s.
-  // Phase 1 holds Size on each side for 4 s, six times, and checks the output tells the modes
-  // apart: a steady tone in delay mode keeps its level frame to frame, while grains of it come
-  // and go. Phase 2 sweeps Size through the band 0.97..0.995 (accumulated phase, 50 ms to 550 ms
-  // periods) with the transition integrator going nowhere, as the stress; with and without Freeze.
+  // Phase 1 holds Size on each side for 4 s, six times, and checks each switch shows as a dip
+  // to near silence 1.5 s in (Beads fades the wet sound around it) with the wet sound back at its
+  // level by the end of the dwell. Phase 2 sweeps Size through the band 0.97..0.995 (accumulated
+  // phase, 50 ms to 550 ms periods) with the transition integrator going nowhere, as the stress; with and without Freeze.
   const auto mode = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
   const bool freeze = GENERATE(false, true);
   INFO("mode " << int(mode) << " freeze " << freeze);

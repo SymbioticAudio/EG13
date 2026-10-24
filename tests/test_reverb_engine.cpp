@@ -373,7 +373,12 @@ TEST_CASE("Reverb with no input decays to silence") {
   engine.prepare(ReverbEngine::kNativeRate, 256);
   std::vector<float> l(256), r(256);
   float* out[2] = {l.data(), r.data()};
-  for (int b = 0; b < 10; ++b) engine.process(nullptr, out, defaults(), 256);
+  // Feed it first (1 s of noise), so the silence afterwards is a decay and not an empty start.
+  const auto in = noise(256, 4);
+  const float* i2[2] = {in.data(), in.data()};
+  for (int b = 0; b < 188; ++b) engine.process(i2, out, defaults(), 256);
+  REQUIRE(test::rms(l, 0, l.size()) > 1e-4);  // it rings
+  for (int b = 0; b < 2000; ++b) engine.process(nullptr, out, defaults(), 256);
   for (float v : l) REQUIRE(v == 0.0f);
 }
 

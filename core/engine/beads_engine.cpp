@@ -375,8 +375,8 @@ void BeadsEngine::reset() {
 }
 
 // A seed for the processor once the active path's input has caught up (see Impl::seedDelay).
-// More notes than the queue holds within that time (about 10 ms) merge into the gates already
-// on their way.
+// Notes beyond what the queue holds within that time (about 10 ms) are dropped: the gates already
+// on their way stand for them.
 void BeadsEngine::noteOn(float, float) {
   Impl& s = *impl_;
   if (s.seedQueued < kMaxQueuedSeeds) s.seedQueue[s.seedQueued++] = s.seedDelay[s.active];

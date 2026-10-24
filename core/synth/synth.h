@@ -193,6 +193,7 @@ class Synth {
   // different requested mode takes effect at the next prepare(): the plugin asks the host to
   // restart it.
   ConverterQuality preparedQuality() const { return preparedQuality_; }
+  // After a stateLoad while active it changes at the next beginBlock, not at once.
   ConverterQuality requestedQuality() const {
     return ConverterQuality(int(load(masterParamIndex(MasterParam::LatencyMode))));
   }

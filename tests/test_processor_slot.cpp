@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "stmlib/utils/random.h"
 #include "alloc_counter.h"
 #include "engine/engine_registry.h"
 #include "engine/warps_engine.h"
@@ -478,9 +479,13 @@ TEST_CASE("A Part FX ProcessorSlot pads every engine to the slot latency") {
 }
 
 TEST_CASE("A Part FX ProcessorSlot runs a host-rate-bypassed engine in whole native blocks") {
-  // The Resonator at 48 kHz is bypassed by its wrapper; only the slot's whole-block setting
-  // (SourceSpec::wholeBlocks, ruling G8) makes its output independent of the host slicing.
+  // Every Part FX engine at 48 kHz, where the Resonator and Granular Delay are bypassed by their
+  // wrappers; only the slot's whole-block setting (SourceSpec::wholeBlocks, ruling G8) makes the
+  // output independent of the host slicing. Each run draws from the same random sequence.
   const auto q = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  const int engine = GENERATE(int(PartFxEngine::Granular), int(PartFxEngine::GranularDelay),
+                              int(PartFxEngine::Resonator), int(PartFxEngine::Reverb));
+  INFO("engine " << engine);
   std::vector<float> noise(4800);
   unsigned state = 12345u;
   for (auto& x : noise) {
@@ -488,12 +493,14 @@ TEST_CASE("A Part FX ProcessorSlot runs a host-rate-bypassed engine in whole nat
     x = (float(state >> 8) / float(1u << 24) - 0.5f) * 0.5f;
   }
   auto render = [&](size_t chunk) {
+    stmlib::Random::Seed(1);
     ProcessorSlot slot(makeAllPartFx());
     slot.prepare(48000.0, 16, q);
-    slot.setEngine(int(PartFxEngine::Resonator));
+    slot.setEngine(engine);
     slot.reset();
-    ParamValues p = test::defaultParams(partFxEngineInfo(int(PartFxEngine::Resonator)));
-    p.p[0] = 1.0f;
+    ParamValues p = test::defaultParams(partFxEngineInfo(engine));
+    p.p[0] = engine == int(PartFxEngine::Resonator) ? 1.0f : 0.7f;  // mostly wet
+    p.p[4] = 0.8f;                                                   // Granular Density: grains at random
     std::vector<float> out(noise.size());
     for (size_t done = 0; done < noise.size(); done += chunk) {
       const int n = int(std::min(chunk, noise.size() - done));
@@ -507,7 +514,7 @@ TEST_CASE("A Part FX ProcessorSlot runs a host-rate-bypassed engine in whole nat
     return out;
   };
   const auto whole = render(16);
-  REQUIRE(*std::max_element(whole.begin(), whole.end()) > 0.0f);
+  REQUIRE(test::rms(whole, 1200, whole.size()) > 0.001);  // it sounds
   REQUIRE(render(7) == whole);
   REQUIRE(render(1) == whole);
 }
