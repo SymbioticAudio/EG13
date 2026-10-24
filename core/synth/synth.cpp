@@ -422,6 +422,7 @@ PartEngines Synth::partEngines(int part) const {
   e.filter = engine(SlotKind::Filter, part);
   e.shaper = engine(SlotKind::Shaper, part);
   for (int slot = 0; slot < kNumModSlots; ++slot) e.mod[slot] = engine(modSlotKind(slot), part);
+  e.partFx = engine(SlotKind::PartFx, part);
   for (int r = 0; r < kNumRoutes; ++r) e.routeDestination[r] = mainPatch_.routes[size_t(part)][size_t(r)].destination;
   return e;
 }

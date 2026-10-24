@@ -17,13 +17,14 @@ namespace eg13 {
 static_assert(kSourceParamCount <= size_t(kMaxSlotParams), "ParamValues must hold every Source P");
 static_assert(kShaperParamCount <= size_t(kMaxSlotParams), "ParamValues must hold every Shaper P");
 static_assert(kModSlotParamCount <= size_t(kMaxSlotParams), "ParamValues must hold every mod slot P");
+static_assert(kPartFxSlotParamCount <= size_t(kMaxSlotParams), "ParamValues must hold every Part FX P");
 
 namespace {
 
 const char* const kSlotModules[kNumSlotKinds][kNumParts] = {
     {"Part A/Source", "Part B/Source"}, {"Part A/Filter", "Part B/Filter"}, {"Part A/Shaper", "Part B/Shaper"},
     {"Part A/Mod 1", "Part B/Mod 1"},   {"Part A/Mod 2", "Part B/Mod 2"},   {"Part A/Mod 3", "Part B/Mod 3"},
-    {"Part A/Mod 4", "Part B/Mod 4"},
+    {"Part A/Mod 4", "Part B/Mod 4"},   {"Part A/Part FX", "Part B/Part FX"},
 };
 const char* const kPartModules[kNumParts] = {"Part A", "Part B"};
 const char* const kMatrixModules[kNumParts] = {"Part A/Matrix", "Part B/Matrix"};
@@ -65,17 +66,20 @@ const PartParamDef kPartDefs[kPartParamCount] = {
     {PartParam::CcB, "CC B", 0, 127, 4, true, ParamFormat::CcNumber},
     {PartParam::CcC, "CC C", 0, 127, 11, true, ParamFormat::CcNumber},
     {PartParam::CcD, "CC D", 0, 127, 16, true, ParamFormat::CcNumber},
+    // M5. Part FX Input: Part mix, Input, Part mix + Input (append-only: the maximum grows).
+    {PartParam::PartFxInput, "Part FX Input", 0, 2, 0, true, ParamFormat::PartFxInput},
 };
 
 params::Slot idSlot(SlotKind kind) {
   return kind == SlotKind::Source   ? params::Slot::Source
          : kind == SlotKind::Filter ? params::Slot::Filter
          : kind == SlotKind::Shaper ? params::Slot::Shaper
+         : kind == SlotKind::PartFx ? params::Slot::PartFx
                                     : params::Slot(uint32_t(params::Slot::Mod1) + uint32_t(modSlotIndex(kind)));
 }
 
 // Default engine per slot, part and plugin: the init patches (spec §6). EG13 FX's Part A is
-// Audio Input -> Analog Filter with an LFO in Mod 1; the instrument has the State Variable Filter
+// Audio Input -> Analog Filter with an LFO in Mod 1 and Granular in Part FX; the instrument has the State Variable Filter
 // (provisional ruling 28), envelopes in Mod 1 and 2 and an LFO in Mod 3. Everything else starts on
 // the slot's first engine (Macro Oscillator, Off).
 int defaultEngine(SlotKind kind, int part, PluginKind plugin) {
@@ -84,6 +88,7 @@ int defaultEngine(SlotKind kind, int part, PluginKind plugin) {
     if (kind == SlotKind::Source) return int(SourceEngine::AudioInput);
     if (kind == SlotKind::Filter) return int(FilterEngine::Analog);
     if (kind == SlotKind::Mod1) return int(ModEngineKind::Lfo);
+    if (kind == SlotKind::PartFx) return int(PartFxEngine::Granular);
     return 0;
   }
   if (kind == SlotKind::Filter) return int(FilterEngine::StateVariable);
@@ -158,6 +163,7 @@ float hostDefault(SlotKind kind, int part, int p, const EngineInfo& engine, Plug
     return p == 0 && plugin == PluginKind::Instrument ? kInstrumentCutoff : kFilterHostDefaults[p];
   }
   if (kind == SlotKind::Shaper) return kShaperHostDefaults[p];
+  if (kind == SlotKind::PartFx) return kPartFxHostDefaults[p];  // the same for every Part FX type
   if (isModSlot(kind)) return modHostDefault(plugin, part, modSlotIndex(kind), p);
   return p < engine.paramCount ? engine.params[p].defaultValue : 0.0f;  // Source: M2's rule
 }
@@ -169,6 +175,7 @@ float scopeDefault(PluginKind plugin, int part, int slot) {
 
 int engineFor(SlotKind kind, const PartEngines& e) {
   if (isModSlot(kind)) return e.mod[modSlotIndex(kind)];
+  if (kind == SlotKind::PartFx) return e.partFx;
   return kind == SlotKind::Source ? e.source : kind == SlotKind::Filter ? e.filter : e.shaper;
 }
 
@@ -176,6 +183,7 @@ ParamFormat selectorFormat(SlotKind kind) {
   return kind == SlotKind::Source   ? ParamFormat::SourceEngine
          : kind == SlotKind::Filter ? ParamFormat::FilterEngine
          : kind == SlotKind::Shaper ? ParamFormat::ShaperEngine
+         : kind == SlotKind::PartFx ? ParamFormat::PartFxEngine
                                     : ParamFormat::ModEngine;
 }
 
@@ -183,6 +191,7 @@ float selectorMax(SlotKind kind) {
   return float(kind == SlotKind::Source   ? kSourceEngineSelectorMax
                : kind == SlotKind::Filter ? kFilterEngineSelectorMax
                : kind == SlotKind::Shaper ? kShaperEngineSelectorMax
+               : kind == SlotKind::PartFx ? kPartFxEngineSelectorMax
                                           : kModEngineSelectorMax);
 }
 
@@ -197,6 +206,8 @@ const std::array<ParamSpec, kParamCount>& table() {
         const char* module = kSlotModules[k][part];
         // Engine selectors: a fixed range of 0..31 (unknown values select the slot's first
         // engine), so appending engines never changes the range or what a value means.
+        // RULE (Part FX Type): 0 Off, 1 Granular, 2 Granular Delay, 3 Resonator, 4 Reverb; new
+        // engines are appended, 0..4 keep their meaning, and a value with no engine reads as Off.
         t[slotEngineParamIndex(kind, part)] = {params::id(uint32_t(part), idSlot(kind), 0),
                                                kind == SlotKind::Source || isModSlot(kind) ? "Engine" : "Type",
                                                module, 0.0f, selectorMax(kind), float(instrument), float(effect),
@@ -300,6 +311,7 @@ int slotEngineCount(SlotKind kind) {
   return kind == SlotKind::Source   ? kNumSourceEngines
          : kind == SlotKind::Filter ? kNumFilterEngines
          : kind == SlotKind::Shaper ? kNumShaperEngines
+         : kind == SlotKind::PartFx ? kNumPartFxEngines
                                     : kNumModEngines;
 }
 
@@ -307,6 +319,7 @@ int slotEngineFromSelector(SlotKind kind, double value) {
   return kind == SlotKind::Source   ? sourceEngineFromSelector(value)
          : kind == SlotKind::Filter ? filterEngineFromSelector(value)
          : kind == SlotKind::Shaper ? shaperEngineFromSelector(value)
+         : kind == SlotKind::PartFx ? partFxEngineFromSelector(value)
                                     : modEngineFromSelector(value);
 }
 
@@ -314,6 +327,7 @@ const EngineInfo& slotEngineInfo(SlotKind kind, int engine) {
   return kind == SlotKind::Source   ? sourceEngineInfo(engine)
          : kind == SlotKind::Filter ? filterEngineInfo(engine)
          : kind == SlotKind::Shaper ? shaperEngineInfo(engine)
+         : kind == SlotKind::PartFx ? partFxEngineInfo(engine)
                                     : modEngineInfo(engine).engine;
 }
 
@@ -410,6 +424,7 @@ void formatParam(size_t index, double value, char* buf, size_t size, const PartE
   static const char* const kMpeModes[3] = {"Off", "Lower zone", "Upper zone"};
   static const char* const kVoiceGains[2] = {"-12 dB", "0 dB"};
   static const char* const kLatencyModes[2] = {"Live", "Studio"};  // ConverterQuality order
+  static const char* const kPartFxInputs[3] = {"Part mix", "Input", "Part mix + Input"};  // PartFxInput order
 
   const ParamSpec& s = paramSpec(index);
   const float v = clampParam(index, value);
@@ -437,6 +452,12 @@ void formatParam(size_t index, double value, char* buf, size_t size, const PartE
       break;
     case ParamFormat::ModEngine:
       std::snprintf(buf, size, "%s", modEngineInfo(modEngineFromSelector(v)).engine.displayName);
+      break;
+    case ParamFormat::PartFxEngine:
+      std::snprintf(buf, size, "%s", partFxEngineInfo(partFxEngineFromSelector(v)).displayName);
+      break;
+    case ParamFormat::PartFxInput:
+      std::snprintf(buf, size, "%s", pick(kPartFxInputs, 3, v));
       break;
     case ParamFormat::ModScope:
       std::snprintf(buf, size, "%s", pick(kScopes, 2, v));

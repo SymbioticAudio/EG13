@@ -30,12 +30,19 @@ constexpr size_t kModStashSize =
     size_t(kNumParts) * size_t(kNumModSlots) * size_t(kNumModEngines) * kModSlotParamCount;
 constexpr size_t kSlotStashSize = kSourceStashSize + kFilterStashSize + kShaperStashSize + kModStashSize;
 constexpr size_t kScopeStashSize = size_t(kNumParts) * size_t(kNumModSlots) * size_t(kNumModEngines);
-constexpr size_t kStashSize = kSlotStashSize + kScopeStashSize;
+// Part FX engines' P1..P16 per part (M5) come last, so every earlier index is unchanged.
+constexpr size_t kPartFxStashSize = size_t(kNumParts) * size_t(kNumPartFxEngines) * kPartFxSlotParamCount;
+constexpr size_t kStashSize = kSlotStashSize + kScopeStashSize + kPartFxStashSize;
 constexpr size_t stashIndex(int part, int engine, int p) {
   return (size_t(part) * size_t(kNumSourceEngines) + size_t(engine)) * kSourceParamCount + size_t(p);
 }
+constexpr size_t partFxStashIndex(int part, int engine, int p) {
+  return kSlotStashSize + kScopeStashSize +
+         (size_t(part) * size_t(kNumPartFxEngines) + size_t(engine)) * kPartFxSlotParamCount + size_t(p);
+}
 constexpr size_t slotStashIndex(SlotKind kind, int part, int engine, int p) {
   return kind == SlotKind::Source ? stashIndex(part, engine, p)
+         : kind == SlotKind::PartFx ? partFxStashIndex(part, engine, p)
          : kind == SlotKind::Filter
              ? kSourceStashSize +
                    (size_t(part) * size_t(kNumFilterEngines) + size_t(engine)) * kFilterParamCount + size_t(p)
@@ -66,8 +73,12 @@ static_assert(slotStashIndex(SlotKind::Shaper, kNumParts - 1, kNumShaperEngines 
                   kSourceStashSize + kFilterStashSize + kShaperStashSize - 1, "Shaper block size");
 static_assert(slotStashIndex(SlotKind::Mod4, kNumParts - 1, kNumModEngines - 1, int(kModSlotParamCount) - 1) ==
                   kSlotStashSize - 1, "Mod block size");
-static_assert(scopeStashIndex(kNumParts - 1, kNumModSlots - 1, kNumModEngines - 1) == kStashSize - 1,
+static_assert(scopeStashIndex(kNumParts - 1, kNumModSlots - 1, kNumModEngines - 1) == kSlotStashSize + kScopeStashSize - 1,
               "Scope block size");
+static_assert(slotStashIndex(SlotKind::PartFx, 0, 0, 0) == kSlotStashSize + kScopeStashSize,
+              "Part FX block starts after the scopes");
+static_assert(slotStashIndex(SlotKind::PartFx, kNumParts - 1, kNumPartFxEngines - 1, int(kPartFxSlotParamCount) - 1) ==
+                  kStashSize - 1, "Part FX block size");
 using EngineStash = std::array<float, kStashSize>;
 
 // Patch data (spec §7.1): what is saved with a project but is not a host parameter. Each part's
