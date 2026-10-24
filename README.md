@@ -7,7 +7,7 @@ the open-source Eurorack firmware by Émilie Gillet
 EG13 is not affiliated with or endorsed by Mutable Instruments. "Mutable Instruments" is a
 registered trademark; EG13 uses its own names for each engine.
 
-**Status:** M4 (modulation): two parts × 8 voices, each Source → Filter → Shaper → Amp → pan, with four mod slots per part (Envelope, LFO, Random / S&H, Function Generator; per voice or per part) and a 12-route modulation matrix (velocity, release velocity, keytrack, gate, random, MPE pressure / slide / per-note bend, mod wheel, pitch bend, channel pressure, four CCs, transport phase and the mod slots' outputs into any engine control, pitch, Amp, pan, part level and other mod slots). MPE (lower or upper zone per part), tempo sync, gain staging (−12 dB per voice, Source trims) and a master soft clipper. Sources: Macro Oscillator, Digital Oscillator, Modal Synth, Resonator, Audio Input. Filters: Analog Filter, Classic Filters (205 types), State Variable Filter. Shapers: Ring Mod / Vocoder and EQ. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design and `docs/manual/` for how EG13 behaves.
+**Status:** M5 (Part FX): each part ends in a Part FX slot (Off, Granular, Granular Delay, Resonator, Reverb) with a Latency Mode (Live / Studio) and an input selector. M4 (modulation): two parts × 8 voices, each Source → Filter → Shaper → Amp → pan, with four mod slots per part (Envelope, LFO, Random / S&H, Function Generator; per voice or per part) and a 12-route modulation matrix (velocity, release velocity, keytrack, gate, random, MPE pressure / slide / per-note bend, mod wheel, pitch bend, channel pressure, four CCs, transport phase and the mod slots' outputs into any engine control, pitch, Amp, pan, part level and other mod slots). MPE (lower or upper zone per part), tempo sync, gain staging (−12 dB per voice, Source trims) and a master soft clipper. Sources: Macro Oscillator, Digital Oscillator, Modal Synth, Resonator, Audio Input. Filters: Analog Filter, Classic Filters (205 types), State Variable Filter. Shapers: Ring Mod / Vocoder and EQ. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design and `docs/manual/` for how EG13 behaves.
 Pre-1.0: saved projects and presets may not load in later versions until the parameter layout is frozen.
 
 ## Formats
@@ -55,25 +55,43 @@ After installing or rebuilding the AU, quit and reopen Logic so it rescans
 plugins; if EG13 is still missing, use Logic Pro → Settings → Plug-in Manager →
 Reset & Rescan Selection.
 
-EG13 reports about 10.85 ms of latency at 48 kHz and EG13 FX about 16.48 ms: the Modal Synth's 32 kHz engine and the Ring Mod / Vocoder's 96 kHz engine set it, and every engine is padded to it so changing engines never shifts timing. Processed input lines up with Dry in EG13 FX; hosts compensate automatically. In the instrument, note onsets are aligned: sidechain input that excites the Resonator or Modal Synth arrives up to about 6 ms after Dry.
+EG13 has a **Latency Mode** (Live or Studio; see `docs/manual/latency.md`). The reported latency at 44.1 / 48 / 96 kHz:
 
-CPU, Apple M1 (base), 48 kHz, 128-sample blocks, 2 × 8 voices, no modulation (5 s per figure; repeats varied by about 0.1 point):
+| Mode | Plugin | 44.1 kHz | 48 kHz | 96 kHz |
+|---|---|---|---|---|
+| Live | EG13 | 462 samples (10.48 ms) | 531 samples (11.06 ms) | 798 samples (8.31 ms) |
+| Live | EG13 FX | 598 samples (13.56 ms) | 663 samples (13.81 ms) | 1062 samples (11.06 ms) |
+| Studio | EG13 | 918 samples (20.82 ms) | 1060 samples (22.08 ms) | 1578 samples (16.44 ms) |
+| Studio | EG13 FX | 1194 samples (27.07 ms) | 1330 samples (27.71 ms) | 2118 samples (22.06 ms) |
 
-- Heaviest mono-source chain: Macro Oscillator -> Analog Filter -> Vocoder: 48.36% of one core (budget 50%); Resonator -> Analog Filter -> Vocoder is within a point (47.55%)
-- Heaviest stereo chain: Modal Synth -> Analog Filter -> Vocoder: 83.80% of one core (for information; not held to the budget)
-- Heaviest mono-source chain with 1 side input in use (Modulator Input): 49.32% of one core
-- Heaviest mono-source chain with 2 side inputs in use (Carrier Source AUX, Modulator Input): 50.43% of one core
+The Modal Synth's 32 kHz engine, the Ring Mod / Vocoder's 96 kHz engine and the Part FX Granular's 32 kHz engine set it, and every engine is padded to it so changing engines never shifts timing. The Part FX slot takes 263 samples (5.48 ms) in Live and 539 (11.23 ms) in Studio at 48 kHz, whole-block wait included, and every part pays it even with Part FX Off (otherwise switching an effect would move the sound in time). Processed input lines up with Dry in EG13 FX; hosts compensate automatically. In the instrument, note onsets are aligned: sidechain input that excites the Resonator or Modal Synth arrives up to about 6 ms after Dry.
 
-Modulation, same setup (one run; earlier runs measured modulation at 7.1 to 7.5 points):
+CPU, Apple M1 (base), 48 kHz, 128-sample blocks, 2 × 8 voices, no modulation (5 s per figure; repeats vary by about one point):
 
-- Heaviest mono-source chain, no modulation: 48.36% of one core (the figure above)
-- Same with 4 per-voice LFO slots (Frequency outputs) and 12 routes per part: 55.72% of one core
-- Modulation at full load: 7.36% of one core (budget 10%)
-- EG13 init patch: 15.12% of one core; EG13 FX init patch: 7.30% (for information)
+- Heaviest mono-source chain: Resonator -> Analog Filter -> Vocoder: 49.46% of one core (budget 50%); Macro Oscillator -> Analog Filter -> Vocoder is within a point (48.96% in the modulation benchmark's run)
+- Heaviest stereo chain: Modal Synth -> Analog Filter -> Vocoder: 89.97% of one core (for information; not held to the budget)
+- Heaviest mono-source chain with 1 side input in use (Modulator Input): 50.38% of one core
+- Heaviest mono-source chain with 2 side inputs in use (Carrier Source AUX, Modulator Input): 51.37% of one core
 
-The 50 % budget applies to the voice chain with a mono Source and no modulation; modulation has its own budget of 10 % of a core with every mod slot of every voice in use.
+Modulation, same setup:
 
-The 50 % budget is met by the heaviest chain with a mono Source while the Ring Mod / Vocoder's Carrier and Modulator are the internal oscillator or the voice. With one side input carrying a signal (Source AUX, Input or Other part) the same chain stays just under it and with two it is just over, and stereo chains of the heaviest engines can use much more. Engines that run at their own sample rate convert a side input only while it carries a signal, and their right channel only while it differs from the left; the result is the same as converting everything.
+- Heaviest mono-source chain (Macro Oscillator), no modulation: 48.96% of one core
+- Same with 4 per-voice LFO slots (Frequency outputs) and 12 routes per part: 58.01% of one core
+- Modulation at full load: 9.05% of one core (budget 10%; earlier runs measured 7.1 to 7.5 points)
+- EG13 init patch: 14.32% of one core; EG13 FX init patch (Granular in Part A): 8.15% (for information)
+
+Part FX, same setup, both parts running the same Part FX setting, the share added over Part FX Off (Macro Oscillator, 2 × 8 voices; Off itself costs only the padding):
+
+- Budget: at most 5% of one core for both parts at their costliest Part FX setting, rate conversion included
+- Live: costliest is Granular Delay (Digital, Size 100%) at 2.66%; Granular (Spectral, 16-bit stereo) 2.20%; Resonator (4 voices, costliest Model String + Reverb) 1.84%; Reverb 0.24%
+- Studio: costliest is Granular (Spectral, 16-bit stereo) at 2.73%; Granular Delay 2.42%; Resonator 1.87%; Reverb 0.44%
+- Heaviest chain with modulation and the costliest Part FX in both parts (Resonator, 4 voices, String + Reverb): 59.94% of one core (for information; the same chain with modulation and Part FX Off: 58.01%)
+
+Memory: a Part with every voice engine takes 6.76 MB constructed plus 3.10 MB when prepared (48 kHz, 512-sample blocks). The Part FX engines add 1.53 MB per Part (8.58 MB for a Part with every Part FX engine against 7.06 MB with Off only); all of it is allocated when the plugin is created or prepared, none while playing.
+
+The 50 % budget applies to the voice chain with a mono Source and no modulation; modulation has its own budget of 10 % of a core with every mod slot of every voice in use, and Part FX has its own of 5 %.
+
+The 50 % budget is met by the heaviest chain with a mono Source while the Ring Mod / Vocoder's Carrier and Modulator are the internal oscillator or the voice, and only just (the figure moves by about a point between runs). With one side input carrying a signal (Source AUX, Input or Other part) the same chain is just over it, and stereo chains of the heaviest engines can use much more. Engines that run at their own sample rate convert a side input only while it carries a signal, and their right channel only while it differs from the left; the result is the same as converting everything.
 
 Plugins are written to `build/mac/plugins`. The first configure downloads the VST3 and
 AudioUnit SDKs.

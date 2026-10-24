@@ -13,7 +13,7 @@ The master setting **Latency Mode** chooses how the rate converters work. Every 
 
 The instrument starts in **Live**; EG13 FX starts in **Studio**. The setting is saved with your project. Hosts show it with the other parameters but can't automate it.
 
-Live can be up to 0.3 dB softer at the very top of each engine's range. That is around 7 kHz for engines that run at 24 kHz, 9 kHz at 32 kHz and 13 to 14 kHz at 48 kHz. Below that, Live and Studio sound the same.
+Live can be up to about 0.5 dB softer at the very top of each engine's range (measured against Studio, a sine through the converters and back, worst over 44.1, 48 and 96 kHz hosts). That is about 0.2 dB at 7 kHz for engines that run at 24 kHz, about 0.5 dB around 10 kHz at 32 kHz and about 0.5 dB at 14 kHz at 48 kHz. Below those frequencies Live and Studio sound the same.
 
 <!--
 Live candidate report (tests/test_converter_quality.cpp, `eg13_tests "[.converter]"`, 2026-10-23).
@@ -41,7 +41,18 @@ maxBlock-sample host blocks. 149.7 dB is the measurement floor (float buffers).
 | Studio | EG13 (note onsets aligned) | 918 samples (20.82 ms) | 1060 samples (22.08 ms) | 1578 samples (16.44 ms) |
 | Studio | EG13 FX (input aligned with Dry) | 1194 samples (27.07 ms) | 1330 samples (27.71 ms) | 2118 samples (22.06 ms) |
 
-Three engines set these figures: the Modal Synth's 32 kHz engine, the Ring Mod / Vocoder's 96 kHz engine, which runs in 60-sample blocks, and the Part FX Granular's 32 kHz engine. Every Shaper, Off included, is delayed to match the Ring Mod / Vocoder, so changing the Shaper never moves the sound in time. Every Part FX, Off included, is delayed to match Granular (Live 232 / 263 / 525 samples, Studio 472 / 539 / 1077 samples at 44.1 / 48 / 96 kHz), so the Part FX adds that delay even when it is Off, and changing it never moves the sound in time. This latency is the accepted cost for version 1 (owner decision, 2026-10-20). Filters add no latency. Each mode has its own fixed latency: within a mode, changing engines never moves the sound.
+Three engines set these figures: the Modal Synth's 32 kHz engine, the Ring Mod / Vocoder's 96 kHz engine, which runs in 60-sample blocks, and the Part FX Granular's 32 kHz engine. Every Shaper, Off included, is delayed to match the Ring Mod / Vocoder, so changing the Shaper never moves the sound in time.
+
+### Part FX
+
+Every part has a Part FX slot, and every Part FX, **Off included**, is delayed to match the slowest one (Granular; at 44.1 kHz in Live, Granular Delay by one sample). That is why the slot adds its delay even when you never use it: if Off were faster, switching a part's effect on or off would move its sound in time against the other part and against Dry. The delay includes the wait for whole blocks: the Part FX engines run in whole blocks of their own (Granular 32 samples at 32 kHz, Reverb 16 at 32 kHz, the Resonator 24 at 48 kHz, Granular Delay 12 at 48 kHz in its default Quality), so each one holds its input until a block is full, which is part of the figures below.
+
+| Mode | 44.1 kHz | 48 kHz | 96 kHz |
+|---|---|---|---|
+| Live | 232 samples (5.26 ms) | 263 samples (5.48 ms) | 525 samples (5.47 ms) |
+| Studio | 472 samples (10.70 ms) | 539 samples (11.23 ms) | 1077 samples (11.22 ms) |
+
+Alone, the other engines add less at 48 kHz (Live / Studio): Granular Delay 243 / 483 samples, Reverb 239 / 491 and the Resonator 24 / 24, and each is padded up to Granular's figure. This delay is part of the totals in the table above (EG13: Source + Shaper + Part FX; for example Live at 48 kHz: 107 + 161 + 263 = 531 samples; Studio: 221 + 300 + 539 = 1060). It is the accepted cost for version 1 (owner decision, 2026-10-20; the Part FX share, about 5.5 ms in Live and 11 ms in Studio, accepted 2026-10-23, to be tested by playing). Filters add no latency. Each mode has its own fixed latency: within a mode, changing engines never moves the sound.
 
 - **EG13** aligns note onsets. Sound that the Input excites through the Modal Synth or Resonator therefore arrives up to about 6 ms after the Dry signal.
 - **EG13 FX** aligns the processed Input exactly with Dry.

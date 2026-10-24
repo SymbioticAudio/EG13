@@ -7,7 +7,7 @@ Engines: **Off**, **Granular**, **Granular Delay**, **Resonator** and **Reverb**
 ## The Part FX slot
 
 - **Off** passes the part's sound unchanged, delayed like every effect (below). While Part FX is Off, the *Input* setting (below) is ignored, so Off never lets the Input leak into the part.
-- **Every effect, Off included, has the same delay**, the slowest effect's (Granular's rate conversion; a few milliseconds, see [Latency](latency.md)). The part's sound always leaves the part at the same moment, whichever effect is chosen, so changing the effect never moves the sound in time.
+- **Every effect, Off included, has the same delay**, the slowest effect's (Granular's rate conversion; about 5.5 ms in Live and 11 ms in Studio at 48 kHz, whole-block wait included, see [Latency](latency.md)). The part's sound always leaves the part at the same moment, whichever effect is chosen, so changing the effect never moves the sound in time.
 - P1 is the dry/wet **Mix** of every engine, so "Part FX P1" always means dry/wet. The other controls are named by the engine and show "(unused)" and "-" beyond the engine's own controls.
 - **Reset to default in the host** sets each P to one value whatever the *Type*: P1 to P4 50 %, P5 75 %, P6 50 %, P7 to P12 0 %, P13 to P16 50 %. Each engine's own defaults are these values, so resetting never changes an effect from its defaults.
 - Stepped choices inside an engine (Mode, Quality, Model and so on) are controls too: P's read in 16 fixed steps. Steps past the last option read as the last option, and new options are only ever added at the end. Switches such as Freeze are on at 50 % or more.
@@ -27,13 +27,13 @@ Each part has a *Part FX Input* setting:
 
 With nothing on the Input (no sidechain, or Other part in Single mode) the effect receives silence in *Input* mode, and the voices are still heard.
 
-The Input is delayed by the voices' own delay before it enters the effect, so the processed Input leaves the part exactly in time with the voices (and, in EG13 FX, with Dry).
+The Input is delayed by the voices' own delay before it enters the effect, so the processed Input leaves the part in time with the voices (and, in EG13 FX, with Dry): to the sample for notes, and to within about half a sample where an effect's own rate conversion adds a fraction (measured up to 0.43 of a sample at 44.1 kHz).
 
 Changing the *Input* setting while sound plays is smooth: what goes into the effect fades over 10 ms, and in *Input* mode the voices' path around the effect fades in step with it, after the effect's delay, so the voices are neither dropped nor doubled on the way. While Part FX is Off the setting has no effect; switching from Off to an effect in *Input* mode keeps the voices playing throughout, and only the effect fades in.
 
 ## Notes and triggers
 
-Every note the part plays is also sent to the Part FX: a voice trigger, not a legato glide, and on an Always-on part every key press. Notes that start within the same 16 samples (a chord) count as one trigger. Engines use it as follows:
+Every note the part plays is also sent to the Part FX: a voice trigger, not a legato glide, and on an Always-on part every key press. Notes that start in the same 16-sample step (a chord) count as one trigger; a chord split across a step boundary is two. Engines use it as follows:
 
 - **Granular:** each note is one trigger, as on the module's TRIG input (see [Granular](#granular)).
 - **Granular Delay:** with *Seed* set to *Notes*, each note is a seed and starts one grain (see [Granular Delay](#granular-delay)).
@@ -80,7 +80,7 @@ Beads, the granular delay, as its firmware runs it. It records its input into a 
 - **Density** (P5): how often grains start. With *Seed* on *Free*: below about 48 % at a steady rate, faster towards 0 %; above about 52 % at random moments, more of them towards 100 %; between 48 % and 52 % no grains start. That dead zone is why Density defaults to 75 % rather than the module's 50 %. With *Seed* on *Notes*, see below.
 - **Shape** (P6): the grains' envelope, from short, clicky attacks to smooth, overlapping swells.
 - **Feedback** (P7): how much of the processed sound goes back into the buffer.
-- **Reverb** (P8): Beads' own reverb on the output, dry sound included. In every Quality except *Digital* it rings longer, and in the two tape Qualities it is darker, as on the module.
+- **Reverb** (P8): Beads' own reverb on the output, dry sound included. In every Quality except *Digital* it rings longer and is darker (a lower brightness inside its loop), as on the module.
 - **Freeze** (P9): on (50 % or more), the buffer stops recording and the grains keep playing what it holds.
 - **Quality** (P10): the module's four recording qualities, in 16 fixed steps:
   - *Digital* (the default): 48 kHz, 16-bit, clean; a buffer of about 4 seconds.
@@ -93,13 +93,13 @@ Beads, the granular delay, as its firmware runs it. It records its input into a 
 - P12 is unused.
 - **Time Random**, **Size Random**, **Shape Random** and **Pitch Random** (P13 to P16): the module's four randomisation knobs, one per control, as they work with nothing patched into its CV inputs. 50 % (the default) is none. Above 50 % each grain takes a random value around the control's setting, spreading wider towards 100 %. Below 50 % only some grains are randomised, but by larger amounts, more often towards 0 %.
 
-**Changing Quality** fades the effect's output out over 10 ms, switches the module to the new Quality (which clears the buffer, as on the module), waits in silence while the new rate's sound comes through EG13's rate converters (the effect's delay, a few milliseconds), then fades back in over 10 ms. The effect's delay is the same in every Quality: the faster paths are delayed to match the slowest. The module itself mutes for a quarter of a second.
+**Changing Quality** fades the effect's output out over 10 ms, switches the module to the new Quality (which clears the buffer, as on the module), waits in silence while the new rate's sound comes through EG13's rate converters (the effect's delay: about 5.5 ms in Live and 11 ms in Studio at 48 kHz), then fades back in over 10 ms. In all, the output is silent for about 30 ms at 48 kHz in Studio (10 ms out, the delay, 10 ms in), and for about 25 ms in Live. The effect's delay is the same in every Quality: the faster paths are delayed to match the slowest. The module itself mutes for a quarter of a second.
 
 The module's automatic input level, its wavetable synth mode, its assignable CV input, its gate output and its mono buffer setting are left out; see [Known limitations](limitations.md).
 
 ## Resonator
 
-Based on Rings, the same resonator as the Resonator Source (see [Engines](engines.md)), with its Exciter fixed to *Input*: the sound going through the effect (the part's mix, or its Input, as the *Input* setting says) excites the resonator, which rings at the pitch of the part's notes. The left and right channels are added into one before they reach the resonator. It runs at the module's own rate of 48 kHz, so at a 48 kHz host nothing is lost and it adds only its 24-sample block (half a millisecond) of delay.
+Based on Rings, the same resonator as the Resonator Source (see [Engines](engines.md)), with its Exciter fixed to *Input*: the sound going through the effect (the part's mix, or its Input, as the *Input* setting says) excites the resonator, which rings at the pitch of the part's notes. The left and right channels are averaged into one (half their sum) before they reach the resonator, so a sound that is the same in both channels reaches it at its own level and a sound in anti-phase cancels. It runs at the module's own rate of 48 kHz, so at a 48 kHz host nothing is lost and it adds only its 24-sample block (half a millisecond) of delay.
 
 - **Mix** (P1): the dry sound against the resonator. 0 % is the dry sound only, 100 % the resonator only, 50 % (the default) an equal mix of the two. The mix is a straight crossfade and moves smoothly, without a click.
 - **Structure** (P2), **Brightness** (P3), **Damping** (P4) and **Position** (P6): as on the Resonator Source, and what they do depends on the Model. Brightness and Damping set how bright the sound is and how fast it dies away; Position is where the resonator is excited and listened to.
@@ -127,4 +127,17 @@ The reverb at the end of Elements (the module behind the Modal Synth), used on i
 - **Freeze** (P9): on (50 % or more), the reverb holds its current tail indefinitely and ignores new input, as Elements does at the top of its Space range. While frozen, Time and Brightness have no effect (the tail neither decays nor darkens); Amount still sets how much of the frozen tail you hear against the dry sound. Turning Freeze off lets the tail decay again with the current Time.
 - P5 to P8 and P10 to P16 are unused.
 
-On the module one *Space* knob moves the amount and the time together, and the diffusion and brightness are fixed by each patch. Here they are four separate controls, so any of them can be set or modulated on its own. The sound enters the reverb at the module's fixed input gain (0.2).
+On the module one *Space* knob moves the amount and the time together, and the diffusion and brightness are fixed by each patch. Here they are four separate controls, so any of them can be set or modulated on its own. The sound enters the reverb at the module's fixed input gain (0.2). The reverb's input is the sum of the left and right channels, as on the module, so a stereo sound in anti-phase between the channels cancels and does not reach the reverb (the dry part, which is mixed back in by Amount, is unaffected).
+
+## Levels
+
+Each effect is trimmed so that, at its default settings, it is about as loud as the part without an effect. Measured with one held note (Macro Oscillator, velocity 1, Part FX at its default settings; RMS level against Off, the same in Live and Studio apart from Granular's random grains):
+
+| Effect | Trim | Level against Off |
+|---|---|---|
+| Granular | +5.0 dB | about -0.3 to -0.8 dB (peaks up to about +3.9 dB; Granular's grains are spiky) |
+| Granular Delay | +5.0 dB | -0.03 dB |
+| Resonator | +0.5 dB | -0.4 dB |
+| Reverb | +2.0 dB | -0.7 dB |
+
+The trims are fixed and apply to the effect's whole output inside the slot, so they follow a Type change's crossfade. The reason for Granular's large trim is the module's own level law: at 0 % Blend it passes the dry sound about 9 dB quieter than it came in. Moving a control changes the level as it does on the module; for example Reverb's level depends on its Amount and Time, and the Resonator's on how much of the input excites it.

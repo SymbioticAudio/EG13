@@ -830,3 +830,27 @@ TEST_CASE("Live candidate report", "[.converter]") {
     }
   }
 }
+
+TEST_CASE("Live against Studio: round-trip level near the top of each engine's range", "[.converter]") {
+  // For the manual's Latency page: Live's level minus Studio's, a sine through the round trip
+  // (host -> native -> host), worst over the hosts 44.1 / 48 / 96 kHz, per native rate and frequency.
+  std::printf("Live minus Studio round-trip level (dB), worst over hosts 44.1 / 48 / 96 kHz:\n");
+  for (const Native& native : kEngineRates) {
+    std::printf("  native %6.0f Hz:", native.rate);
+    for (double f : {5000.0, 7000.0, 9000.0, 10000.0, 11000.0, 13000.0, 14000.0}) {
+      double worst = 0.0;
+      bool any = false;
+      for (double host : {44100.0, 48000.0, 96000.0}) {
+        if (bypassed(host, native.rate) || f >= native.rate / 2.0 * 0.95 || f >= host / 2.0) continue;
+        RoundTrip live(converterSpec(ConverterQuality::Live), host, native);
+        RoundTrip studio(converterSpec(ConverterQuality::Studio), host, native);
+        const double d = live.levelDb(f) - studio.levelDb(f);
+        if (!any || d < worst) worst = d;
+        any = true;
+      }
+      if (any) std::printf("  %5.0f Hz %+5.2f", f, worst);
+    }
+    std::printf("\n");
+  }
+  SUCCEED();
+}

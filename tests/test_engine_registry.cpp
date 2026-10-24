@@ -214,11 +214,17 @@ TEST_CASE("Part FX engine ids are permanent") {
   REQUIRE(partFxEngineFromSelector(std::numeric_limits<double>::quiet_NaN()) == 0);
 }
 
-TEST_CASE("Part FX trims start at unity") {
-  for (int e = -1; e < 8; ++e) {
+TEST_CASE("Part FX trims are the measured ones (M5 Task 14, ruling G11)") {
+  // Off and anything without an engine stay at unity; the others are measured in test_levels.cpp.
+  for (int e : {-1, 0, 5, 7}) {
     REQUIRE(partFxTrimDb(e) == 0.0f);
     REQUIRE(partFxTrim(e) == 1.0f);
   }
+  REQUIRE(partFxTrimDb(int(PartFxEngine::Granular)) == 5.0f);
+  REQUIRE(partFxTrimDb(int(PartFxEngine::GranularDelay)) == 5.0f);
+  REQUIRE(partFxTrimDb(int(PartFxEngine::Resonator)) == 0.5f);
+  REQUIRE(partFxTrimDb(int(PartFxEngine::Reverb)) == 2.0f);
+  REQUIRE(partFxTrim(int(PartFxEngine::Reverb)) == std::pow(10.0f, 2.0f / 20.0f));
 }
 
 TEST_CASE("makeAllPartFx builds every engine at its native rate and block") {

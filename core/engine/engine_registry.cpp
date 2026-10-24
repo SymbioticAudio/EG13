@@ -95,8 +95,16 @@ const EngineInfo& partFxEngineInfo(int engine) {
   return BypassEngine::staticInfo();
 }
 
-// Unity for every engine until Task 14 measures them.
-float partFxTrimDb(int) { return 0.0f; }
+float partFxTrimDb(int engine) {
+  switch (PartFxEngine(engine)) {
+    case PartFxEngine::Granular: return 5.0f;
+    case PartFxEngine::GranularDelay: return 5.0f;
+    case PartFxEngine::Resonator: return 0.5f;
+    case PartFxEngine::Reverb: return 2.0f;
+    case PartFxEngine::Off: break;
+  }
+  return 0.0f;
+}
 
 float partFxTrim(int engine) { return std::pow(10.0f, partFxTrimDb(engine) / 20.0f); }
 
