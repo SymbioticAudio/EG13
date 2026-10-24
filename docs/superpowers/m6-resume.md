@@ -1,4 +1,8 @@
-# M6 UI — paused (owner, 2026-10-20)
+# M6 UI — resumed (2026-10-24)
+
+Resumed as M6a (foundation and part editor): see `docs/superpowers/plans/2026-10-24-m6a-ui-foundation.md`. Spec §8 now holds the decisions below. The notes below are kept as history.
+
+## Original pause note (owner, 2026-10-20)
 
 UI work is paused until M6 comes up in normal milestone order, after M5. The plan has not been written yet. These notes hold the state to resume from.
 
