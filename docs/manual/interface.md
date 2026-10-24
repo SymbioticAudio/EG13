@@ -16,4 +16,4 @@ The part is laid out in columns: Source, Filter, Shaper and Part FX, then a Mods
 
 ## Bottom bar and meters
 
-The bottom bar holds the part settings, the master Dry and Out levels and the meters. *To be filled in by later M6a tasks.*
+The bottom bar holds the part settings, the master Dry and Out levels and the meters. The meters show each part's output after its level, pan and mute. *To be filled in by later M6a tasks.*

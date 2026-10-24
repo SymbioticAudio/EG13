@@ -249,9 +249,9 @@ void Synth::uiSnapshot(UiSnapshot* out) const {  // main thread
   for (size_t i = 0; i < kParamCount; ++i) out->values[i] = pending ? pendingValues_[i] : load(i);
   for (int p = 0; p < kNumParts; ++p) {
     for (int ch = 0; ch < 2; ++ch) out->partPeak[p][ch] = partPeak_[p][ch].exchange(0.0f, std::memory_order_relaxed);
-    out->activeVoices[p] = activeVoiceCount(p);
+    out->activeVoices[p] = activeVoices_[p].load(std::memory_order_relaxed);
   }
-  out->engineGeneration = engineGeneration_.load(std::memory_order_relaxed);
+  out->engineGeneration = engineGeneration_.load(std::memory_order_acquire);
 }
 
 ParamSnapshot Synth::snapshot() const {
@@ -298,7 +298,7 @@ void Synth::adoptEngines(const ParamSnapshot& values) {
   }
   // A load while active only takes effect here, on the audio thread: bump again so an editor that
   // saw the load's first bump re-reads the engines once they have actually changed.
-  engineGeneration_.fetch_add(1, std::memory_order_relaxed);
+  engineGeneration_.fetch_add(1, std::memory_order_release);
 }
 
 PatchData Synth::defaultPatch(PluginKind kind) {
@@ -313,7 +313,7 @@ void Synth::loadParams(const ParamSnapshot& values, const EngineStash* stash, co
   ParamSnapshot clamped{};
   for (size_t i = 0; i < kParamCount; ++i) clamped[i] = clampParam(i, double(values[i]));
   const EngineStash s = stash ? *stash : defaultStash();
-  engineGeneration_.fetch_add(1, std::memory_order_relaxed);  // a load may switch any engine
+  engineGeneration_.fetch_add(1, std::memory_order_release);  // a load may switch any engine
   mainPatch_ = patch ? *patch : defaultPatch(kind_);
   if (!active_.load(std::memory_order_acquire)) {  // no audio thread can run
     store(clamped);
@@ -482,7 +482,7 @@ void Synth::switchEngine(SlotKind kind, int part, int next) {
   }
   current = next;
   engineChanged_.store(true, std::memory_order_release);
-  engineGeneration_.fetch_add(1, std::memory_order_relaxed);
+  engineGeneration_.fetch_add(1, std::memory_order_release);
 }
 
 void Synth::queueHostUpdate(const HostUpdate& update) {
@@ -647,14 +647,8 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
     inputs.input = hasInput ? partIn : nullptr;
     inputs.other = other;
     part.process(inputs, out, params, n);
-    for (int ch = 0; ch < 2; ++ch) {  // the part's peak after level and pan, once per chunk
-      float peak = 0.0f;
-      for (int i = 0; i < n; ++i) peak = std::max(peak, std::fabs(out[ch][i]));
-      float stored = partPeak_[p][ch].load(std::memory_order_relaxed);
-      while (peak > stored &&
-             !partPeak_[p][ch].compare_exchange_weak(stored, peak, std::memory_order_relaxed)) {
-      }
-    }
+    // Published for the editor's main-thread read (Voice::active_ is plain, audio-thread only).
+    activeVoices_[p].store(part.activeVoiceCount(), std::memory_order_relaxed);
     const int output = part.settings().output;
     heard[p] = output != 2;  // Other part only: feeds the other part, not heard
     toBus2[p] = bus2Out != nullptr && output == 1;
@@ -670,13 +664,16 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
   feedPos_ = (feedPos_ + size_t(n)) % ringSize;
 
   const bool softClipOn = load(masterParamIndex(MasterParam::SoftClip)) >= 0.5f;
+  float peak[kNumParts][2] = {};  // what is heard of each part: after level, pan and the B mute
   for (int i = 0; i < n; ++i) {
     float main[2] = {0.0f, 0.0f};
     float bus[2] = {0.0f, 0.0f};
     const float bMute = partBMute_.next();
     for (int p = 0; p < kNumParts; ++p) {
-      if (!heard[p]) continue;
       const float mute = p == 0 ? 1.0f : bMute;
+      peak[p][0] = std::max(peak[p][0], std::fabs(partOut_[p][0][size_t(i)] * mute));
+      peak[p][1] = std::max(peak[p][1], std::fabs(partOut_[p][1][size_t(i)] * mute));
+      if (!heard[p]) continue;
       float* target = toBus2[p] ? bus : main;
       target[0] += partOut_[p][0][size_t(i)] * mute;
       target[1] += partOut_[p][1][size_t(i)] * mute;
@@ -703,6 +700,14 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
       // The master soft clipper (owner decision 2), on both outputs after Dry.
       mainOut[ch][i] = softClipOn ? softClip(m) : m;
       if (bus2Out != nullptr) bus2Out[ch][i] = softClipOn ? softClip(b) : b;
+    }
+  }
+  for (int p = 0; p < kNumParts; ++p) {  // raise each held peak once per chunk
+    for (int ch = 0; ch < 2; ++ch) {
+      float stored = partPeak_[p][ch].load(std::memory_order_relaxed);
+      while (peak[p][ch] > stored &&
+             !partPeak_[p][ch].compare_exchange_weak(stored, peak[p][ch], std::memory_order_relaxed)) {
+      }
     }
   }
 }

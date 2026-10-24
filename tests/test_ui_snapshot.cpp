@@ -47,6 +47,44 @@ TEST_CASE("Part peaks report each part's output peak and reset on read") {
   synth.setActive(false);
 }
 
+TEST_CASE("A muted Part B reads zero while it plays") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  UiSnapshot snap;
+  synth.setParam(idOf(masterParamIndex(MasterParam::Mode)), double(PartMode::Layer));
+  synth.noteOn(0, 60, 1.0f);  // both parts play
+  runBlocks(synth, 100);
+  synth.uiSnapshot(&snap);
+  CHECK(snap.partPeak[1][0] > 0.0f);
+  synth.setParam(idOf(masterParamIndex(MasterParam::Mode)), double(PartMode::Single));  // mutes B
+  runBlocks(synth, 200);  // the mute ramp ends
+  synth.uiSnapshot(&snap);  // resets the peaks
+  runBlocks(synth, 5);
+  synth.uiSnapshot(&snap);
+  CHECK(snap.activeVoices[1] > 0);  // B is still playing
+  CHECK(snap.partPeak[1][0] == 0.0f);
+  CHECK(snap.partPeak[1][1] == 0.0f);
+  CHECK(snap.partPeak[0][0] > 0.0f);
+  synth.setActive(false);
+}
+
+TEST_CASE("Part peaks hold the maximum until read") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  UiSnapshot snap;
+  synth.noteOn(0, 60, 1.0f);
+  runBlocks(synth, 100);
+  synth.uiSnapshot(&snap);  // reset
+  runBlocks(synth, 1);      // one loud block
+  synth.allNotesOff();
+  runBlocks(synth, 400);    // then silence; the last chunks read 0
+  synth.uiSnapshot(&snap);
+  CHECK(snap.partPeak[0][0] > 0.0f);
+  synth.setActive(false);
+}
+
 TEST_CASE("Snapshot values follow setParam and loadParams") {
   Synth synth(PluginKind::Instrument);
   synth.prepare(kRate, kBlock);

@@ -251,7 +251,8 @@ class Synth {
   int hostUpdateCount_ = 0;
   std::atomic<bool> engineChanged_{false};
   std::atomic<uint32_t> engineGeneration_{0};  // bumped wherever an engine switch is committed
-  // Per part and channel: the absolute peak of the part's output (after level and pan) since the
+  std::atomic<int> activeVoices_[kNumParts] = {};  // published once per chunk for uiSnapshot
+  // Per part and channel: the absolute peak of the part's output (after level, pan and the B mute) since the
   // last uiSnapshot. The audio thread raises it once per chunk; uiSnapshot reads and zeroes it.
   mutable std::atomic<float> partPeak_[kNumParts][2] = {};
   std::vector<float> partIn_[kNumParts][2];
