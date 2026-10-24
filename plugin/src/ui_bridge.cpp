@@ -72,6 +72,10 @@ void UiBridge::push(const UiEvent& event) {
   requestFlush();
 }
 
+// The flag is a read-modify-write on both sides (acq_rel), so drain's clear and a push's
+// request are totally ordered: either the push sees the clear and asks again, or drain's
+// clear synchronizes with the push and its pops see the event. If a host ignores a
+// request, the flag stays set until the next drain; the next process call drains anyway.
 void UiBridge::requestFlush() {
   if (!flushPending_.exchange(true, std::memory_order_acq_rel) && requestFlush_) requestFlush_();
 }
@@ -86,7 +90,7 @@ void UiBridge::pump() {
 }
 
 void UiBridge::drain(const clap_output_events_t* out) {
-  flushPending_.store(false, std::memory_order_release);  // events pushed from now on ask again
+  flushPending_.exchange(false, std::memory_order_acq_rel);  // events pushed from now on ask again
   UiEvent e;
   while (queue_.pop(e)) {
     const int index = paramIndex(e.id);
