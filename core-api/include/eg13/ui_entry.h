@@ -20,6 +20,10 @@ bool eg13_ui_attach(void* handle, void* parent);
 void eg13_ui_set_size(void* handle, uint32_t width, uint32_t height);
 void eg13_ui_set_visible(void* handle, bool visible);
 
+/* Proves the Swift runtime, SwiftUI and the package dependencies are linked and usable:
+ * builds a hosting view that uses each package module and returns 1. Used by tests only. */
+int32_t eg13_ui_link_check(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,4 +1,0 @@
-module EG13CBridge [system] {
-  header "../../../core-api/include/eg13/core_api.h"
-  export *
-}

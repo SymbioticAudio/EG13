@@ -7,9 +7,7 @@ final class EG13FakeCore: EG13Core {
         case begin(UInt32)
         case edit(UInt32, Double)
         case end(UInt32)
-        case noteOn(channel: Int, key: Int, velocity: Double)
-        case noteOff(channel: Int, key: Int)
-        case zoom(Double)
+        case resize(UInt32, UInt32)
     }
 
     var descriptors: [EG13ParamDescriptor]
@@ -54,13 +52,13 @@ final class EG13FakeCore: EG13Core {
     func paramText(at index: Int, value: Double) -> String {
         descriptors[index].isStepped ? "\(Int(value))" : "\(Int((value * 100).rounded()))%"
     }
-    func engineCount(slot: UInt32) -> Int { slot == EG13ParamID.sourceSlot ? engines.count : 0 }
+    func engineCount(slot: UInt32) -> Int { slot == EG13ParamID.sourceKind ? engines.count : 0 }
+    func engineParamCount(slot: UInt32, engine: Int) -> Int { 8 }
+    func currentEngine(slot: UInt32, part: Int) -> Int { 0 }
     func engineName(slot: UInt32, engine: Int) -> String { engines[engine] }
     func beginEdit(_ id: UInt32) { calls.append(.begin(id)) }
     func edit(_ id: UInt32, value: Double) { calls.append(.edit(id, value)) }
     func endEdit(_ id: UInt32) { calls.append(.end(id)) }
-    func noteOn(channel: Int, key: Int, velocity: Double) { calls.append(.noteOn(channel: channel, key: key, velocity: velocity)) }
-    func noteOff(channel: Int, key: Int) { calls.append(.noteOff(channel: channel, key: key)) }
     func displayFrame() -> EG13DisplayFrame { EG13DisplayFrame(values: values, partPeaks: peaks) }
-    func requestZoom(_ zoom: Double) { calls.append(.zoom(zoom)) }
+    func requestResize(width: UInt32, height: UInt32) { calls.append(.resize(width, height)) }
 }

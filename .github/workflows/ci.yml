@@ -36,6 +36,10 @@ jobs:
         run: cmake --build --preset mac --target EG13_all eg13_tests
       - name: Test
         run: ctest --preset mac
+      - name: Test the Swift UI
+        run: swift test --package-path ui/EG13UI
+      - name: Check Objective-C class prefixes
+        run: scripts/check-objc-prefix.sh build/mac/plugins/EG13.clap
       - name: Validate plugins
         run: scripts/validate.sh build/mac
       - name: Zip bundles

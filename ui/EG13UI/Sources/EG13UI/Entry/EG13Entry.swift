@@ -1,6 +1,5 @@
 import AppKit
 import EG13CBridge
-import Keyboard
 import SwiftUI
 import SymbioticIcons
 import SymbioticTokens
@@ -24,7 +23,6 @@ public func eg13UILinkCheck() -> Int32 {
         let view = NSHostingView(rootView: VStack {
             Icon(.slotSource, size: 16)                                            // SymbioticIcons
             Text("EG13").font(EG13Theme.theme.type.body.font)                       // SymbioticTokens
-            Keyboard(layout: .piano(pitchRange: Pitch(60)...Pitch(72)))             // Keyboard + Tonic
             EG13FlatKnob(configuration: EG13KnobOptions.eg13.configuration(
                 normalized: 0.5, origin: 0, look: EG13Palette.look(for: .teal, part: 0),
                 size: .hero, isFocused: false), colors: EG13Palette.controls)       // EG13UI

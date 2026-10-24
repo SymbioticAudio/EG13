@@ -23,6 +23,12 @@ target_link_libraries(eg13_vcv_flagged_reference PRIVATE eg13_vcv)
 target_compile_options(eg13_vcv_flagged_reference PRIVATE -Wall -Wextra -Werror -O3 -funsafe-math-optimizations)
 target_sources(eg13_tests PRIVATE $<TARGET_OBJECTS:eg13_vcv_flagged_reference>)
 
+# The Swift UI link check (the same library and link flags the plugin bundles use).
+if(EG13_HAS_UI)
+  target_sources(eg13_tests PRIVATE ui_link.cpp)
+  target_link_libraries(eg13_tests PRIVATE eg13_ui_swift)
+endif()
+
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/third_party/Catch2/extras)
 include(Catch)
 catch_discover_tests(eg13_tests)

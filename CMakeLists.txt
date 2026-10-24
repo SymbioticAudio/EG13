@@ -11,6 +11,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(EG13_DISPLAY_NAME "EG13" CACHE STRING "Plugin display name shown in hosts")
 option(EG13_BUILD_PLUGIN "Build CLAP/AU/VST3/Standalone (macOS)" ${APPLE})
 option(EG13_BUILD_TESTS "Build the test suite" ON)
+option(EG13_BUILD_UI "Build the SwiftUI editor (ui/EG13UI) into the plugin" ${APPLE})
 
 include(cmake/eurorack.cmake)
 include(cmake/r8brain.cmake)
@@ -36,6 +37,14 @@ target_include_directories(eg13_core_api PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plug
   ${CMAKE_CURRENT_SOURCE_DIR}/core-api/include)
 target_link_libraries(eg13_core_api PUBLIC eg13_ui_bridge eg13_core)
 target_compile_options(eg13_core_api PRIVATE -Wall -Wextra)
+
+# The SwiftUI editor (macOS only): the eg13_ui target and the eg13_ui_swift link interface.
+if(EG13_BUILD_UI)
+  if(NOT APPLE)
+    message(FATAL_ERROR "EG13_BUILD_UI needs macOS")
+  endif()
+  include(cmake/eg13_ui.cmake)
+endif()
 
 if(EG13_BUILD_TESTS)
   enable_testing()

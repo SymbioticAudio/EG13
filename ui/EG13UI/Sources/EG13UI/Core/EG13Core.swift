@@ -4,16 +4,14 @@ import Foundation
 public struct EG13ParamDescriptor: Equatable, Sendable {
     public var id: UInt32
     public var isStepped: Bool
-    public var isHidden: Bool
     public var minValue: Double
     public var maxValue: Double
     public var defaultValue: Double
 
-    public init(id: UInt32, isStepped: Bool, isHidden: Bool = false,
+    public init(id: UInt32, isStepped: Bool,
                 minValue: Double, maxValue: Double, defaultValue: Double) {
         self.id = id
         self.isStepped = isStepped
-        self.isHidden = isHidden
         self.minValue = minValue
         self.maxValue = maxValue
         self.defaultValue = defaultValue
@@ -43,13 +41,13 @@ public protocol EG13Core: AnyObject {
     func paramText(at index: Int, value: Double) -> String
     func engineCount(slot: UInt32) -> Int
     func engineName(slot: UInt32, engine: Int) -> String
-    /// The engine's stable id (EngineInfo.id), e.g. "plaits".
-    func engineID(slot: UInt32, engine: Int) -> String
+    /// How many of the slot's P parameters the engine uses.
+    func engineParamCount(slot: UInt32, engine: Int) -> Int
+    /// The engine selected in the part's slot.
+    func currentEngine(slot: UInt32, part: Int) -> Int
     func beginEdit(_ id: UInt32)
     func edit(_ id: UInt32, value: Double)
     func endEdit(_ id: UInt32)
-    func noteOn(channel: Int, key: Int, velocity: Double)
-    func noteOff(channel: Int, key: Int)
     func displayFrame() -> EG13DisplayFrame
-    func requestZoom(_ zoom: Double)
+    func requestResize(width: UInt32, height: UInt32)
 }

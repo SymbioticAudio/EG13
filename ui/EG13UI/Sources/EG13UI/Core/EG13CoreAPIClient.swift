@@ -26,8 +26,7 @@ public final class EG13CoreAPIClient: EG13Core {
         return EG13ParamDescriptor(
             id: info.id,
             isStepped: info.flags & UInt32(EG13_PARAM_STEPPED) != 0,
-            isHidden: info.flags & UInt32(EG13_PARAM_HIDDEN) != 0,
-            minValue: info.min_value, maxValue: info.max_value, defaultValue: info.default_value)
+            minValue: info.min, maxValue: info.max, defaultValue: info.def)
     }
 
     public func paramName(at index: Int) -> String {
@@ -44,21 +43,17 @@ public final class EG13CoreAPIClient: EG13Core {
         string { api.pointee.engine_name(context, slot, UInt32(engine), $0, $1) }
     }
 
-    public func engineID(slot: UInt32, engine: Int) -> String {
-        string { api.pointee.engine_id(context, slot, UInt32(engine), $0, $1) }
+    public func engineParamCount(slot: UInt32, engine: Int) -> Int {
+        Int(api.pointee.engine_param_count(context, slot, UInt32(engine)))
+    }
+
+    public func currentEngine(slot: UInt32, part: Int) -> Int {
+        Int(api.pointee.current_engine(context, slot, UInt32(part)))
     }
 
     public func beginEdit(_ id: UInt32) { api.pointee.begin_edit(context, id) }
     public func edit(_ id: UInt32, value: Double) { api.pointee.edit(context, id, value) }
     public func endEdit(_ id: UInt32) { api.pointee.end_edit(context, id) }
-
-    public func noteOn(channel: Int, key: Int, velocity: Double) {
-        api.pointee.note_on(context, Int32(channel), Int32(key), velocity)
-    }
-
-    public func noteOff(channel: Int, key: Int) {
-        api.pointee.note_off(context, Int32(channel), Int32(key))
-    }
 
     public func displayFrame() -> EG13DisplayFrame {
         var snapshot = EG13Snapshot()
@@ -70,5 +65,7 @@ public final class EG13CoreAPIClient: EG13Core {
                                 partPeaks: [[peaks.0.0, peaks.0.1], [peaks.1.0, peaks.1.1]])
     }
 
-    public func requestZoom(_ zoom: Double) { api.pointee.request_zoom(context, zoom) }
+    public func requestResize(width: UInt32, height: UInt32) {
+        api.pointee.request_resize(context, width, height)
+    }
 }

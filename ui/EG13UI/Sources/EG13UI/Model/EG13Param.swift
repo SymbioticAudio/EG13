@@ -30,7 +30,6 @@ public final class EG13Param {
     }
 
     public var id: UInt32 { descriptor.id }
-    public var isHidden: Bool { descriptor.isHidden }
 
     /// 0...1 across the parameter's range.
     public var normalized: Double {

@@ -1,4 +1,3 @@
-import EG13CBridge
 import Testing
 @testable import EG13UI
 
@@ -11,11 +10,11 @@ struct EG13ParamTests {
         return EG13Param(core: core, index: i, descriptor: core.descriptors[i], value: core.values[i])
     }
 
-    @Test func idsMirrorTheCAPI() {
-        #expect(EG13PartParam.level.rawValue == Int(EG13_PART_LEVEL))
-        #expect(EG13PartParam.voiceCount.rawValue == Int(EG13_PART_VOICE_COUNT))
-        #expect(EG13PartParam.output.rawValue == Int(EG13_PART_OUTPUT))
-        #expect(EG13MasterParam.splitNote.rawValue == Int(EG13_MASTER_SPLIT_NOTE))
+    @Test func idsMirrorTheParamTable() {
+        #expect(EG13PartParam.level.rawValue == 1)
+        #expect(EG13PartParam.voiceCount.rawValue == 10)
+        #expect(EG13PartParam.output.rawValue == 14)
+        #expect(EG13MasterParam.splitNote.rawValue == 3)
         #expect(EG13ParamID.master(.level) == 0xFF0000)
         #expect(EG13ParamID.part(1, .level) == 0x10001)
         #expect(EG13ParamID.source(0, 1) == 257)

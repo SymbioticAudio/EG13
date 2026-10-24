@@ -1,7 +1,7 @@
 import Observation
 
 /// The editor's model of one plugin instance: every host parameter, the part shown,
-/// meters, and the on-screen keyboard's notes. Reads the plugin at display rate.
+/// meters, and the . Reads the plugin at display rate.
 @MainActor
 @Observable
 public final class EG13Synth {
@@ -12,13 +12,12 @@ public final class EG13Synth {
     public private(set) var meters = [EG13MeterBallistics(), EG13MeterBallistics()]
     /// The part the window shows (A/B tabs). Editor state only, not saved.
     public var selectedPart = 0
-    public var keyboardVisible = true
+    public var keyboardVisible = false
     /// Patch name; presets arrive in M7.
     public let patchName = "Init"
 
     @ObservationIgnored private unowned let core: any EG13Core
     @ObservationIgnored private var byID: [UInt32: EG13Param] = [:]
-    @ObservationIgnored private var heldNotes: [Int: Int] = [:]  // key -> MIDI channel
     @ObservationIgnored private var engineValues: [Double?] = [nil, nil]
 
     public init(core: any EG13Core, kind: Kind) {
@@ -47,11 +46,12 @@ public final class EG13Synth {
 
     /// P1–P8 of a part's Source that the selected engine uses.
     public func sourceParams(part: Int) -> [EG13Param] {
-        (1...8).compactMap { byID[EG13ParamID.source(part, $0)] }.filter { !$0.isHidden }
+        let used = core.engineParamCount(slot: EG13ParamID.sourceKind, engine: sourceEngine(part: part))
+        return (1...8).filter { $0 <= used }.compactMap { byID[EG13ParamID.source(part, $0)] }
     }
 
     public var sourceEngineNames: [String] {
-        let slot = EG13ParamID.sourceSlot
+        let slot = EG13ParamID.sourceKind
         return (0..<core.engineCount(slot: slot)).map { core.engineName(slot: slot, engine: $0) }
     }
 
@@ -63,20 +63,14 @@ public final class EG13Synth {
 
     /// The selected Source engine's index (0 when the plugin has no selector).
     public func sourceEngine(part: Int) -> Int {
-        let count = core.engineCount(slot: EG13ParamID.sourceSlot)
-        let selected = Int(engineSelector(part: part)?.value ?? 0)
+        let count = core.engineCount(slot: EG13ParamID.sourceKind)
+        let selected = core.currentEngine(slot: EG13ParamID.sourceKind, part: part)
         return selected >= 0 && selected < count ? selected : 0
     }
 
-    public func sourceEngineID(part: Int) -> String {
-        core.engineID(slot: EG13ParamID.sourceSlot, engine: sourceEngine(part: part))
-    }
-
-    /// How a Source knob stands out, from the engine's emphasis metadata.
-    public func emphasis(of param: EG13Param, part: Int) -> EG13ParamEmphasis {
-        let p = Int(param.id & 0xFF) - 1
-        return EG13Emphasis.emphasis(engineID: sourceEngineID(part: part), paramIndex: p)
-    }
+    /// How a Source knob stands out. The C API has no stable engine id yet, so every knob is
+    /// plain until the emphasis metadata is rekeyed (Tasks 7-9 rewrite the cards).
+    public func emphasis(of param: EG13Param, part: Int) -> EG13ParamEmphasis { .plain }
 
     public var mode: EG13Mode { EG13Mode(rawValue: Int(masterParam(.mode)?.value ?? 0)) ?? .single }
 
@@ -116,43 +110,16 @@ public final class EG13Synth {
         }
     }
 
-    // MARK: Keyboard
-
-    /// MIDI channel (0–15) that reaches a part: its channel, or 0 when it is Omni.
-    public func midiChannel(part: Int) -> Int {
-        let setting = Int(partParam(part, .midiChannel)?.value ?? 0)
-        return setting <= 0 ? 0 : setting - 1
-    }
-
-    public func noteOn(key: Int, velocity: Double) {
-        guard (0...127).contains(key), heldNotes[key] == nil else { return }
-        let part = keyMap.parts(forKey: key).first ?? (mode == .multi ? selectedPart : 0)
-        let channel = midiChannel(part: part)
-        heldNotes[key] = channel
-        core.noteOn(channel: channel, key: key, velocity: min(max(velocity, 0), 1))
-    }
-
-    /// Uses the channel the note started on, so mode or part changes never strand it.
-    public func noteOff(key: Int) {
-        guard let channel = heldNotes.removeValue(forKey: key) else { return }
-        core.noteOff(channel: channel, key: key)
-    }
-
-    public var heldKeys: Set<Int> { Set(heldNotes.keys) }
-
-    public func releaseAllNotes() {
-        for key in heldNotes.keys.sorted() { noteOff(key: key) }
-    }
-
     public func endAllGestures() {
         for param in params where param.isEditing { param.endEdit() }
     }
 
-    /// The editor is closing: no gesture or note may stay open.
-    public func shutdown() {
-        releaseAllNotes()
-        endAllGestures()
-    }
+    /// The editor is closing: no gesture may stay open.
+    public func shutdown() { endAllGestures() }
 
-    public func requestZoom(_ zoom: Double) { core.requestZoom(zoom) }
+    /// Asks the host for an editor window of zoom times the base size.
+    public func requestZoom(_ zoom: Double) {
+        core.requestResize(width: UInt32((EG13Layout.baseSize.width * zoom).rounded()),
+                           height: UInt32((EG13Layout.baseSize.height * zoom).rounded()))
+    }
 }

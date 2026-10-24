@@ -4,6 +4,9 @@ add_library(eg13-impl STATIC
   src/entry_impl.cpp)
 target_include_directories(eg13-impl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(eg13-impl PUBLIC clap clap-wrapper-extensions eg13_core eg13_ui_bridge eg13_core_api)
+if(EG13_HAS_UI)
+  target_link_libraries(eg13-impl PUBLIC eg13_ui_swift)
+endif()
 target_compile_definitions(eg13-impl PRIVATE
   EG13_VERSION="${PROJECT_VERSION}"
   EG13_DISPLAY_NAME="${EG13_DISPLAY_NAME}")

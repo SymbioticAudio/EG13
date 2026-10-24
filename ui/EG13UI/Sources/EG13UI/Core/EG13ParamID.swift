@@ -1,7 +1,6 @@
 import EG13CBridge
 
-/// Part settings by parameter index within the Part slot. Mirrors core_api.h (EG13_PART_*);
-/// EG13ParamIDTests checks every case against the C constants.
+/// Part settings by parameter index within the Part slot. Mirrors core/params/param_ids.h.
 public enum EG13PartParam: Int, CaseIterable, Sendable {
     case level = 1, pan, glide, transpose, baseNote, midiChannel, keyLow, keyHigh
     case voiceMode, voiceCount, trigger, bendRange, mono, output
@@ -31,16 +30,16 @@ public enum EG13ParamID {
     public static let parts = Int(EG13_NUM_PARTS)
 
     public static func part(_ part: Int, _ param: EG13PartParam) -> UInt32 {
-        eg13_param_id(UInt32(part), UInt32(EG13_SLOT_PART), UInt32(param.rawValue))
+        eg13_param_id(UInt32(part), UInt32(EG13_SLOT_PART.rawValue), UInt32(param.rawValue))
     }
 
     public static func master(_ param: EG13MasterParam) -> UInt32 {
-        eg13_param_id(UInt32(EG13_MASTER_PART), UInt32(EG13_SLOT_PART), UInt32(param.rawValue))
+        eg13_param_id(UInt32(EG13_MASTER_PART), UInt32(EG13_SLOT_PART.rawValue), UInt32(param.rawValue))
     }
 
     /// p: 1...8 for P1–P8, 0 for the engine selector.
     public static func source(_ part: Int, _ p: Int) -> UInt32 {
-        eg13_param_id(UInt32(part), UInt32(EG13_SLOT_SOURCE), UInt32(p))
+        eg13_param_id(UInt32(part), UInt32(EG13_SLOT_SOURCE.rawValue), UInt32(p))
     }
 
     /// 0 or 1 for a part's parameters, nil for master parameters.
@@ -49,5 +48,6 @@ public enum EG13ParamID {
         return part < parts ? part : nil
     }
 
-    public static var sourceSlot: UInt32 { UInt32(EG13_SLOT_SOURCE) }
+    /// The Source engine slot, for the engine functions of the C API.
+    public static var sourceKind: UInt32 { UInt32(EG13_SLOT_KIND_SOURCE.rawValue) }
 }
