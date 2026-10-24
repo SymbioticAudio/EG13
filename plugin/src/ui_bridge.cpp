@@ -40,8 +40,9 @@ bool pushValue(const clap_output_events_t* out, uint32_t id, double value) {
 
 }  // namespace
 
-UiBridge::UiBridge(Synth& synth, std::function<void()> requestFlush)
-    : synth_(synth), requestFlush_(std::move(requestFlush)) {}
+UiBridge::UiBridge(Synth& synth, std::function<void()> requestFlush,
+                   std::function<void()> requestPump)
+    : synth_(synth), requestFlush_(std::move(requestFlush)), requestPump_(std::move(requestPump)) {}
 
 UiBridge::~UiBridge() { closeAllGestures(); }
 
@@ -67,9 +68,12 @@ void UiBridge::closeAllGestures() {
 }
 
 void UiBridge::push(const UiEvent& event) {
-  pump();
+  moveBacklog();
   if (!overflow_.empty() || !queue_.push(event)) overflow_.push_back(event);
   requestFlush();
+  if (!overflow_.empty() && requestPump_ && !pumpPending_.exchange(true, std::memory_order_acq_rel)) {
+    requestPump_();  // nothing else would retry the backlog if no further edit comes
+  }
 }
 
 // The flag is a read-modify-write on both sides (acq_rel), so drain's clear and a push's
@@ -80,13 +84,21 @@ void UiBridge::requestFlush() {
   if (!flushPending_.exchange(true, std::memory_order_acq_rel) && requestFlush_) requestFlush_();
 }
 
-void UiBridge::pump() {
+void UiBridge::moveBacklog() {
   bool moved = false;
   while (!overflow_.empty() && queue_.push(overflow_.front())) {
     overflow_.pop_front();
     moved = true;
   }
   if (moved) requestFlush();  // the moved events (maybe an END) wait for a drain
+}
+
+void UiBridge::pump() {
+  pumpPending_.store(false, std::memory_order_release);
+  moveBacklog();
+  if (!overflow_.empty() && requestPump_ && !pumpPending_.exchange(true, std::memory_order_acq_rel)) {
+    requestPump_();  // the queue is still full: try again after the audio thread drains
+  }
 }
 
 void UiBridge::drain(const clap_output_events_t* out) {

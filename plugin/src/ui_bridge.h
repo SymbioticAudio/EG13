@@ -35,7 +35,10 @@ class UiBridge {
   // requestFlush runs on the main thread when events are waiting: the plugin asks the host
   // for a params flush when it is not processing. At most one request is pending until the
   // next drain.
-  explicit UiBridge(Synth& synth, std::function<void()> requestFlush);
+  // requestPump (optional) runs when events overflowed into the main-thread backlog: the owner
+  // arranges a main-thread call to pump(). At most one request is pending until pump() runs.
+  explicit UiBridge(Synth& synth, std::function<void()> requestFlush,
+                    std::function<void()> requestPump = {});
   // Closes any gesture still open (closeAllGestures). The end events only reach the host if a
   // drain follows, so the owner closes gestures and flushes before it destroys the bridge.
   ~UiBridge();
@@ -62,10 +65,13 @@ class UiBridge {
 
  private:
   void push(const UiEvent& event);
+  void moveBacklog();  // overflow_ into the queue as far as it fits
   void requestFlush();
 
   Synth& synth_;
   std::function<void()> requestFlush_;
+  std::function<void()> requestPump_;
+  std::atomic<bool> pumpPending_{false};  // set by push on overflow, cleared by pump
   std::atomic<bool> flushPending_{false};  // set by requestFlush, cleared by drain
   std::atomic<size_t> dropped_{0};
   SpscQueue<UiEvent, kQueueSize> queue_;

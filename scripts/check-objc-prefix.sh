@@ -38,7 +38,7 @@ COUNT=0
 while IFS= read -r name; do
   [ -n "$name" ] || continue
   COUNT=$((COUNT + 1))
-  if [[ "$name" =~ ^(EG13|_TtC[0-9]+EG13|wrapAsAUV2_[a-z]+_cocoaUI_com_symbioticaudio_eg13) ]]; then
+  if [[ "$name" =~ ^(EG13|_TtC[0-9]+EG13)|^(wrapAsAUV2_[a-z]+_cocoaUI_com_symbioticaudio_eg13(_fx)?(_nsview)?$) ]]; then
     :
   else
     BAD="$BAD$name"$'\n'

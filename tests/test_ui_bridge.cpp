@@ -239,3 +239,25 @@ TEST_CASE("Refused host events are counted") {
   bridge.drain(&refuse);
   REQUIRE(bridge.droppedHostEvents() == 1);
 }
+
+TEST_CASE("Overflow asks for one pump, and asks again while a backlog remains") {
+  eg13::Synth synth(eg13::PluginKind::Instrument);
+  int pumpRequests = 0;
+  UiBridge bridge(synth, {}, [&pumpRequests] { ++pumpRequests; });
+  const uint32_t a = idAt(0);
+  for (int i = 0; i < 2000; ++i) bridge.edit(a, 0.0);
+  REQUIRE(bridge.overflowSize() > 0);
+  CHECK(pumpRequests == 1);  // coalesced: not one per event
+
+  FakeOut fake;
+  bridge.pump();  // the queue is still full: the pump asks again
+  CHECK(pumpRequests == 2);
+  bridge.drain(&fake.out);
+  bridge.pump();
+  bridge.drain(&fake.out);
+  bridge.pump();
+  CHECK(bridge.overflowSize() == 0);
+  const int settled = pumpRequests;
+  bridge.pump();
+  CHECK(pumpRequests == settled);
+}

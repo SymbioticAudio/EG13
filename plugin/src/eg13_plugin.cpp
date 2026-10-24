@@ -356,6 +356,9 @@ bool pluginInit(const clap_plugin_t* p) {
     if (plugin->hostParams && plugin->hostParams->request_flush) {
       plugin->hostParams->request_flush(plugin->host);  // thread-safe (clap/ext/params.h)
     }
+  }, [plugin] {
+    // Events overflowed the queue: have the host call on_main_thread, which pumps them in.
+    plugin->host->request_callback(plugin->host);  // thread-safe (clap/host.h)
   });
   plugin->uiBridge.store(plugin->bridge.get(), std::memory_order_release);
   plugin->coreContext = std::make_unique<CoreApiContext>(CoreApiContext{
@@ -490,7 +493,8 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
 #if EG13_HAS_UI
 // ---- gui ------------------------------------------------------------------------------
 
-Gui& guiOf(const clap_plugin_t* p) { return *self(p)->gui; }
+// Null before init (CLAP forbids gui calls then; a misbehaving host fails the call instead).
+Gui* guiOf(const clap_plugin_t* p) { return self(p)->gui.get(); }
 
 bool guiApiOk(const char* api, bool isFloating) {
   return api != nullptr && std::strcmp(api, CLAP_WINDOW_API_COCOA) == 0 && !isFloating;
@@ -505,13 +509,18 @@ bool guiGetPreferredApi(const clap_plugin_t*, const char** api, bool* isFloating
   return true;
 }
 bool guiCreate(const clap_plugin_t* p, const char* api, bool isFloating) {
-  return guiApiOk(api, isFloating) && guiOf(p).create();
+  Gui* gui = guiOf(p);
+  return gui && guiApiOk(api, isFloating) && gui->create();
 }
-void guiDestroy(const clap_plugin_t* p) { guiOf(p).destroy(); }
+void guiDestroy(const clap_plugin_t* p) {
+  if (Gui* gui = guiOf(p)) gui->destroy();
+}
 bool guiSetScale(const clap_plugin_t*, double) { return false; }  // Cocoa works in points
 bool guiGetSize(const clap_plugin_t* p, uint32_t* width, uint32_t* height) {
-  *width = guiOf(p).width();
-  *height = guiOf(p).height();
+  const Gui* gui = guiOf(p);
+  if (!gui) return false;
+  *width = gui->width();
+  *height = gui->height();
   return true;
 }
 bool guiCanResize(const clap_plugin_t*) { return true; }
@@ -528,20 +537,27 @@ bool guiAdjustSize(const clap_plugin_t*, uint32_t* width, uint32_t* height) {
   return true;
 }
 bool guiSetSize(const clap_plugin_t* p, uint32_t width, uint32_t height) {
-  guiOf(p).setSize(width, height);
+  Gui* gui = guiOf(p);
+  if (!gui) return false;
+  gui->setSize(width, height);  // clamps like adjust_size
   return true;
 }
 bool guiSetParent(const clap_plugin_t* p, const clap_window_t* window) {
-  return window != nullptr && window->cocoa != nullptr && guiOf(p).setParent(window->cocoa);
+  Gui* gui = guiOf(p);
+  return gui && window != nullptr && window->cocoa != nullptr && gui->setParent(window->cocoa);
 }
 bool guiSetTransient(const clap_plugin_t*, const clap_window_t*) { return false; }
 void guiSuggestTitle(const clap_plugin_t*, const char*) {}
 bool guiShow(const clap_plugin_t* p) {
-  guiOf(p).setVisible(true);
+  Gui* gui = guiOf(p);
+  if (!gui) return false;
+  gui->setVisible(true);
   return true;
 }
 bool guiHide(const clap_plugin_t* p) {
-  guiOf(p).setVisible(false);
+  Gui* gui = guiOf(p);
+  if (!gui) return false;
+  gui->setVisible(false);
   return true;
 }
 

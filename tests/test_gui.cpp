@@ -110,3 +110,15 @@ TEST_CASE("Closing the editor ends its open gestures, and the bridge outlives it
   CHECK(types[0] == CLAP_EVENT_PARAM_GESTURE_BEGIN);
   CHECK(types[1] == CLAP_EVENT_PARAM_GESTURE_END);
 }
+
+TEST_CASE("set_size clamps an out-of-range size", "[gui]") {
+  Fixture f;
+  eg13::Gui gui(f.api, 0, f.bridge, {});
+  REQUIRE(gui.create());
+  gui.setSize(0, 0);
+  CHECK(gui.width() == 900);
+  CHECK(gui.height() == 570);
+  gui.setSize(9999, 9999);
+  CHECK(gui.width() == 2400);
+  CHECK(gui.height() == 1520);
+}

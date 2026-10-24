@@ -37,7 +37,8 @@ class Gui {
   bool create();   // false when the editor could not be built; true if it already exists
   // Ends open gestures (closeAllGestures), destroys the editor, then asks the host to flush.
   // The bridge stays: its queued END events drain through process or flush.
-  void destroy();
+  // flushAfter false skips the host flush request (the plugin itself is going away).
+  void destroy(bool flushAfter = true);
   bool exists() const { return handle_ != nullptr; }
 
   bool setParent(void* nsView);

@@ -20,7 +20,7 @@ void adjustGuiSize(uint32_t& width, uint32_t& height) {
 Gui::Gui(const EG13CoreAPI& api, int32_t kind, UiBridge& bridge, std::function<void()> requestFlush)
     : api_(api), kind_(kind), bridge_(bridge), requestFlush_(std::move(requestFlush)) {}
 
-Gui::~Gui() { destroy(); }
+Gui::~Gui() { destroy(false); }
 
 bool Gui::create() {
   if (handle_ != nullptr) return true;
@@ -30,12 +30,12 @@ bool Gui::create() {
   return handle_ != nullptr;
 }
 
-void Gui::destroy() {
+void Gui::destroy(bool flushAfter) {
   if (handle_ == nullptr) return;
   bridge_.closeAllGestures();
   eg13_ui_destroy(handle_);
   handle_ = nullptr;
-  if (requestFlush_) requestFlush_();
+  if (flushAfter && requestFlush_) requestFlush_();
 }
 
 bool Gui::setParent(void* nsView) {
@@ -43,6 +43,8 @@ bool Gui::setParent(void* nsView) {
 }
 
 void Gui::setSize(uint32_t width, uint32_t height) {
+  // The host should have called adjust_size, but set_size may come with any size.
+  adjustGuiSize(width, height);
   width_ = width;
   height_ = height;
   if (handle_ != nullptr) eg13_ui_set_size(handle_, width, height);
