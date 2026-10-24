@@ -41,9 +41,15 @@ uint32_t shaperTypeId(int part) { return paramSpec(shaperEngineParamIndex(part))
 uint32_t filterId(int part, int p) { return paramSpec(filterParamIndex(part, p)).id; }
 uint32_t shaperId(int part, int p) { return paramSpec(shaperParamIndex(part, p)).id; }
 
-// The exact pass-through tests below predate the Filter: they run it Off.
+uint32_t partFxTypeId(int part) { return paramSpec(partFxEngineParamIndex(part)).id; }
+uint32_t partFxId(int part, int p) { return paramSpec(partFxParamIndex(part, p)).id; }
+
+// The exact pass-through tests below predate the Filter and the Part FX: they run both Off.
 void filtersOff(Synth& synth) {
-  for (int part = 0; part < kNumParts; ++part) synth.setParam(filterTypeId(part), 0);
+  for (int part = 0; part < kNumParts; ++part) {
+    synth.setParam(filterTypeId(part), 0);
+    synth.setParam(partFxTypeId(part), 0);
+  }
 }
 
 struct Stereo {
@@ -329,6 +335,7 @@ TEST_CASE("All notes off (CC 123) silences held notes") {
 
 TEST_CASE("An Always-on part sounds with no MIDI") {
   Synth synth(PluginKind::Effect, sine);
+  synth.setParam(partFxTypeId(0), 0);
   synth.setParam(partId(0, PartParam::Trigger), 1);
   synth.setParam(masterId(MasterParam::Dry), 0.0);
   synth.prepare(kRate, kBlock);
@@ -892,6 +899,7 @@ TEST_CASE("process before prepare outputs silence") {
 
 TEST_CASE("EG13 FX init patch runs Audio Input through the open Analog Filter") {
   Synth synth(PluginKind::Effect);
+  synth.setParam(partFxTypeId(0), 0);  // the Filter alone; the full init patch is tested below
   REQUIRE(synth.engine(SlotKind::Filter, 0) == int(FilterEngine::Analog));
   REQUIRE(synth.engine(SlotKind::Filter, 1) == int(FilterEngine::Off));
   REQUIRE(synth.engine(SlotKind::Shaper, 0) == int(ShaperEngine::Off));
@@ -1900,4 +1908,217 @@ TEST_CASE("Learning skips MPE member channels and reserved controllers, and stay
   REQUIRE(synth.param(partId(0, PartParam::CcB)) == 4.0);  // still the default
   synth.controlChange(0, 33, 127);  // the master channel
   REQUIRE(synth.param(partId(0, PartParam::CcB)) == 33.0);
+}
+
+// ---- M5: the Synth runs Part FX ----
+
+namespace {
+
+constexpr int kGranular = int(PartFxEngine::Granular);
+constexpr int kReverb = int(PartFxEngine::Reverb);
+
+// A mono sine burst (the reverb listens to left + right): `burst` samples of 220 Hz at 0.5, then
+// silence, up to n.
+Stereo burstInput(size_t n, size_t burst, double rate) {
+  Stereo s = sineInput(n, rate);
+  for (size_t i = 0; i < n; ++i) s.r[i] = s.l[i] = i < burst ? s.l[i] : 0.0f;
+  return s;
+}
+
+double diffRms(const std::vector<float>& a, const std::vector<float>& b, size_t from, size_t to) {
+  double sum = 0.0;
+  for (size_t i = from; i < to; ++i) sum += double(a[i] - b[i]) * double(a[i] - b[i]);
+  return std::sqrt(sum / double(to - from));
+}
+
+}  // namespace
+
+TEST_CASE("Switching Part FX keeps each engine's settings") {
+  Synth synth(PluginKind::Effect);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  runBlocks(synth, 1);
+  REQUIRE(synth.engine(SlotKind::PartFx, 0) == kGranular);
+  synth.setParam(partFxId(0, 1), 0.2);  // Granular P2
+  HostUpdate updates[kMaxHostUpdates];
+  synth.takeHostUpdates(updates, int(kMaxHostUpdates));  // clear
+
+  synth.setParam(partFxTypeId(0), kReverb);
+  runBlocks(synth, 1);
+  REQUIRE(synth.engine(SlotKind::PartFx, 0) == kReverb);
+  const EngineInfo& reverb = partFxEngineInfo(kReverb);
+  REQUIRE(synth.param(partFxId(0, 1)) == double(reverb.params[1].defaultValue));
+  const int count = synth.takeHostUpdates(updates, int(kMaxHostUpdates));
+  REQUIRE(count == int(kPartFxSlotParamCount));  // exactly the 16 Part FX P's, no other part
+  for (int p = 0; p < int(kPartFxSlotParamCount); ++p) {
+    REQUIRE(updates[p].id == partFxId(0, p));
+    REQUIRE(updates[p].value == (p < reverb.paramCount ? reverb.params[p].defaultValue : 0.0f));
+  }
+  // The engine stash holds Granular's P2 while Reverb is current.
+  REQUIRE(synth.engineStash()[partFxStashIndex(0, kGranular, 1)] == 0.2f);
+
+  synth.setParam(partFxId(0, 1), 0.7);  // Reverb P2
+  synth.setParam(partFxTypeId(0), kGranular);
+  runBlocks(synth, 1);
+  REQUIRE(synth.param(partFxId(0, 1)) == double(0.2f));
+  REQUIRE(synth.engineStash()[partFxStashIndex(0, kReverb, 1)] == 0.7f);
+  // Part B's Part FX is its own slot.
+  REQUIRE(synth.engine(SlotKind::PartFx, 1) == int(PartFxEngine::Off));
+  REQUIRE(synth.engineStash()[partFxStashIndex(1, kGranular, 1)] != 0.2f);
+  synth.setActive(false);
+}
+
+TEST_CASE("A route into Part FX P1 changes the Granular blend") {
+  auto render = [](bool route, int wheel) {
+    Synth synth(PluginKind::Effect);
+    test::m3Patch(synth);  // Part FX Off, no routes
+    synth.setParam(filterTypeId(0), 0);
+    synth.setParam(partFxTypeId(0), kGranular);
+    synth.setParam(partFxId(0, 0), 0.0);  // Mix: dry
+    if (route) {
+      synth.setRoute(0, 0, Route{kSrcModWheel, uint16_t(kDestPartFxP), kSrcNone});
+      synth.setParam(paramSpec(routeAmountParamIndex(0, 0)).id, 1.0);
+    }
+    synth.prepare(kRate, kBlock);
+    synth.controlChange(0, 1, wheel);
+    const Stereo in = sineInput(24000, kRate);
+    Stereo out(24000);
+    run(synth, out, 0, 24000, &in);
+    return out.l;
+  };
+  const auto plain = render(false, 0);
+  const auto wheelDown = render(true, 0);
+  const auto wheelUp = render(true, 127);
+  REQUIRE(diffRms(plain, wheelDown, 0, 24000) < 1e-6);  // the route adds nothing at 0
+  const double moved = diffRms(plain, wheelUp, 9600, 24000);
+  INFO("RMS change with the wheel up " << moved);
+  REQUIRE(moved > 0.05);  // Mix 0 -> 100 % wet: a different sound
+}
+
+TEST_CASE("Other part hears the post-FX output") {
+  // Part A: Audio Input, Reverb fully wet, heard only by Part B. Part B takes A as its Input.
+  auto tailRms = [](int typeA) {
+    Synth synth(PluginKind::Effect);
+    test::m3Patch(synth);
+    synth.setParam(filterTypeId(0), 0);
+    synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+    synth.setParam(partId(0, PartParam::Output), 2);
+    synth.setParam(partFxTypeId(0), typeA);
+    synth.setParam(partFxId(0, 0), 1.0);  // Mix: wet
+    synth.setParam(engineId(1), 4);       // Part B: Audio Input
+    synth.setParam(partId(1, PartParam::Trigger), 1);
+    synth.setParam(partId(1, PartParam::InputSource), 1);  // Other part
+    synth.prepare(kRate, kBlock);
+    const size_t total = 24000;
+    const Stereo in = burstInput(total, 4800, kRate);
+    Stereo out(total);
+    run(synth, out, 0, total, &in);
+    return test::rms(out.l, 14400, total);  // long after the burst and every latency
+  };
+  const double reverbTail = tailRms(kReverb);
+  const double offTail = tailRms(int(PartFxEngine::Off));
+  INFO("tail with Reverb " << reverbTail << ", with Off " << offTail);
+  REQUIRE(offTail < 1e-4);
+  REQUIRE(reverbTail > 1e-3);
+}
+
+TEST_CASE("Two parts feeding each other through Granular stay bounded") {
+  Synth synth(PluginKind::Effect);
+  synth.setParam(masterId(MasterParam::Mode), double(PartMode::Layer));
+  synth.setParam(masterId(MasterParam::SoftClip), 0.0);  // the master clipper would bound it for us
+  for (int part = 0; part < kNumParts; ++part) {
+    synth.setParam(engineId(part), 0);  // Macro Oscillator, always on: the loop has energy
+    synth.setParam(partId(part, PartParam::Trigger), 1);
+    synth.setParam(filterTypeId(part), 0);
+    synth.setParam(partFxTypeId(part), kGranular);
+    synth.setParam(partId(part, PartParam::PartFxInput), 1);   // Input
+    synth.setParam(partId(part, PartParam::InputSource), 1);   // Other part
+    synth.setParam(partFxId(part, 0), 1.0);                    // Mix: wet
+    synth.setParam(partFxId(part, 6), 1.0);                    // Feedback 1
+  }
+  synth.prepare(32000.0, 512);
+  const size_t total = 32000 * 60;
+  const size_t block = 512;
+  std::vector<float> outL(block), outR(block);
+  float peak = 0.0f;
+  bool finite = true;
+  for (size_t done = 0; done < total; done += block) {
+    float* out[2] = {outL.data(), outR.data()};
+    synth.process(nullptr, out, nullptr, int(block));
+    for (size_t i = 0; i < block; ++i) {
+      finite = finite && std::isfinite(outL[i]) && std::isfinite(outR[i]);
+      peak = std::max({peak, std::fabs(outL[i]), std::fabs(outR[i])});
+    }
+  }
+  INFO("peak " << peak);
+  REQUIRE(finite);
+  REQUIRE(peak < 4.0f);
+  REQUIRE(peak > 0.05f);  // the loop was alive
+}
+
+TEST_CASE("Reported latency includes the Part FX slot, Off included") {
+  const auto quality = GENERATE(ConverterQuality::Live, ConverterQuality::Studio);
+  for (PluginKind kind : {PluginKind::Instrument, PluginKind::Effect}) {
+    for (double rate : {44100.0, 48000.0, 96000.0}) {
+      for (int type : {int(PartFxEngine::Off), kGranular, kReverb}) {
+        Synth synth(kind);
+        synth.setParam(masterId(MasterParam::LatencyMode), double(int(quality)));
+        synth.setParam(partFxTypeId(0), type);
+        synth.setParam(partFxTypeId(1), type);
+        synth.prepare(rate, kBlock);
+        const Part& a = synth.part(0);
+        const Part& b = synth.part(1);
+        INFO("kind " << int(kind) << " rate " << rate << " type " << type);
+        REQUIRE(synth.latencySamples() == a.latencySamples());
+        REQUIRE(a.latencySamples() == b.latencySamples());
+        REQUIRE(synth.latencySamples() == a.voiceLatencySamples() + a.partFx().latencySamples());
+        REQUIRE(a.partFx().latencySamples() > 0);  // reported even with Part FX Off
+        REQUIRE(a.partFx().latencySamples() == b.partFx().latencySamples());
+      }
+    }
+  }
+}
+
+TEST_CASE("EG13 FX: the Input through Part FX lines up with Dry") {
+  for (double rate : {44100.0, 48000.0}) {
+    Synth synth(PluginKind::Effect);
+    test::m3Patch(synth);
+    synth.setParam(filterTypeId(0), 0);
+    synth.setParam(partId(0, PartParam::Trigger), 0);  // no voice sound: only the Input through the FX
+    synth.setParam(partFxTypeId(0), kReverb);
+    synth.setParam(partId(0, PartParam::PartFxInput), 1);  // Input
+    synth.setParam(partFxId(0, 0), 0.0);                   // Amount 0: the effect passes its input
+    synth.setParam(masterId(MasterParam::Dry), 0.0);
+    synth.prepare(rate, kBlock);
+    const size_t latency = size_t(synth.latencySamples());
+    const Stereo in = sineInput(9600, rate);
+    Stereo out(9600);
+    run(synth, out, 0, 9600, &in);
+    // The processed Input is the Input delayed by the reported latency (what Dry carries).
+    double worst = 0.0;
+    for (size_t i = latency + 2400; i < 9600; ++i) worst = std::max(worst, double(std::fabs(out.l[i] - in.l[i - latency])));
+    INFO("rate " << rate << " latency " << latency << " worst error " << worst);
+    REQUIRE(worst < 0.02);
+  }
+}
+
+TEST_CASE("EG13 FX init patch processes Input through Granular with no MIDI") {
+  auto render = [](bool granular) {
+    Synth synth(PluginKind::Effect);
+    if (!granular) synth.setParam(partFxTypeId(0), 0);
+    synth.prepare(kRate, kBlock);
+    const Stereo in = sineInput(48000, kRate);
+    Stereo out(48000);
+    run(synth, out, 0, 48000, &in);
+    for (float x : out.l) REQUIRE(std::isfinite(x));
+    return out.l;
+  };
+  Synth init(PluginKind::Effect);
+  REQUIRE(init.engine(SlotKind::PartFx, 0) == kGranular);
+  REQUIRE(init.engine(SlotKind::PartFx, 1) == int(PartFxEngine::Off));
+  const auto withFx = render(true);
+  const auto without = render(false);
+  REQUIRE(test::rms(withFx, 24000, 48000) > 0.01);  // it sounds with no MIDI
+  INFO("RMS difference from Part FX Off " << diffRms(withFx, without, 24000, 48000));
+  REQUIRE(diffRms(withFx, without, 24000, 48000) > 0.01);  // and Granular is in the chain
 }

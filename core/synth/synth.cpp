@@ -534,6 +534,8 @@ PartSettings Synth::readPartSettings(int part) const {
   s.filterEngine = slotEngineFromSelector(SlotKind::Filter, load(filterEngineParamIndex(part)));
   s.shaperEngine = slotEngineFromSelector(SlotKind::Shaper, load(shaperEngineParamIndex(part)));
   s.inputSource = int(v(PartParam::InputSource));
+  s.partFxEngine = slotEngineFromSelector(SlotKind::PartFx, load(partFxEngineParamIndex(part)));
+  s.partFxInput = std::clamp(int(v(PartParam::PartFxInput)), 0, 2);
   // MPE zones (provisional ruling 11): the lower zone's master is channel 1, the upper zone's 16;
   // a zone has 15 member channels, or 7 each when the other part uses the other zone.
   s.mpe = int(v(PartParam::MpeMode));
@@ -609,6 +611,7 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
     for (int i = 0; i < int(kSourceParamCount); ++i) params.slots.source.p[i] = load(sourceParamIndex(p, i));
     for (int i = 0; i < int(kFilterParamCount); ++i) params.slots.filter.p[i] = load(filterParamIndex(p, i));
     for (int i = 0; i < int(kShaperParamCount); ++i) params.slots.shaper.p[i] = load(shaperParamIndex(p, i));
+    for (int i = 0; i < int(kPartFxSlotParamCount); ++i) params.partFx.p[i] = load(partFxParamIndex(p, i));
     for (int slot = 0; slot < kNumModSlots; ++slot) {
       for (int i = 0; i < int(kModSlotParamCount); ++i) params.mod.slot[slot].p[i] = load(modParamIndex(p, slot, i));
       params.mod.shapes[slot] = patch_.shapes[size_t(p)][size_t(slot)];

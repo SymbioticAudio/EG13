@@ -94,10 +94,10 @@ struct HostUpdate {
   float value;
 };
 // Host-update queue capacity, coalesced per id: per part every slot P, each mod slot's Scope, and
-// the four learnable CC numbers (M4).
+// the four learnable CC numbers (M4), and the Part FX P's (M5).
 constexpr size_t kMaxHostUpdates =
     size_t(kNumParts) * (kSourceParamCount + kFilterParamCount + kShaperParamCount +
-                         size_t(kNumModSlots) * (kModSlotParamCount + 1) + 4);
+                         size_t(kNumModSlots) * (kModSlotParamCount + 1) + kPartFxSlotParamCount + 4);
 
 // Two parts, MIDI routing by mode, main and Bus 2 outputs, Dry input and
 // atomic parameter snapshots.
