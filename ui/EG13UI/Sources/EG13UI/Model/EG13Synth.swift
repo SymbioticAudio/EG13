@@ -15,6 +15,11 @@ public final class EG13Synth {
     public enum Kind: Int32, Sendable { case instrument = 0, effect = 1 }
 
     public static let slotKindCount = 8
+    /// Ticks a one-shot edit is held while the snapshot has not caught up (~0.5 s at 30 Hz).
+    public static let pendingTicks = 15
+    private static let pendingEpsilon = 1e-6
+    private static let placeholder = EG13ParamDescriptor(id: .max, isStepped: false, minValue: 0, maxValue: 1,
+                                                         defaultValue: 0)
 
     public let kind: Kind
     public private(set) var params: [EG13Param] = []
@@ -34,6 +39,9 @@ public final class EG13Synth {
     private var names: [String] = []
     /// The user's value for each parameter being dragged.
     private var overrides: [UInt32: Double] = [:]
+    /// The last value of a gesture that ended, held until the snapshot shows it (the edit
+    /// reaches the snapshot only after the host drains the bridge) or pendingTicks pass.
+    private var pending: [UInt32: (value: Double, age: Int)] = [:]
     private var slots: [EG13Slot] = []
 
     @ObservationIgnored private unowned let core: any EG13Core
@@ -55,15 +63,15 @@ public final class EG13Synth {
         let frame = core.displayFrame()
         engineGeneration = frame.engineGeneration
         for index in 0..<core.paramCount() {
-            guard let descriptor = core.paramDescriptor(at: index) else { continue }
-            // Indices stay table indices: a missing descriptor leaves a harmless placeholder.
-            while descriptors.count < index { descriptors.append(descriptor) }
+            // Arrays stay aligned with the table: a missing descriptor leaves an unindexed placeholder.
+            let descriptor = core.paramDescriptor(at: index) ?? Self.placeholder
             descriptors.append(descriptor)
-            indexByID[descriptor.id] = index
+            if descriptor.id != Self.placeholder.id { indexByID[descriptor.id] = index }
             values.append(index < frame.values.count ? frame.values[index] : descriptor.defaultValue)
         }
         names = (0..<descriptors.count).map { core.paramName(at: $0) }
-        params = descriptors.indices.map { EG13Param(synth: self, index: $0) }
+        params = descriptors.indices.filter { descriptors[$0].id != Self.placeholder.id }
+            .map { EG13Param(synth: self, index: $0) }
         paramByID = Dictionary(params.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         rebuildSlots()
         activeVoices = frame.activeVoices
@@ -74,6 +82,7 @@ public final class EG13Synth {
     /// The value a control shows: the user's while its gesture is open, else the snapshot's.
     public func value(_ id: UInt32) -> Double {
         if let user = overrides[id] { return user }
+        if let held = pending[id] { return held.value }
         guard let index = indexByID[id], index < values.count else { return 0 }
         return values[index]
     }
@@ -104,6 +113,7 @@ public final class EG13Synth {
 
     public func begin(_ id: UInt32) {
         guard openGestures.insert(id).inserted else { return }
+        pending[id] = nil
         core.beginEdit(id)
     }
 
@@ -112,16 +122,15 @@ public final class EG13Synth {
         let opened = !openGestures.contains(id)
         if opened { begin(id) }
         overrides[id] = newValue
-        // Until the next snapshot says otherwise, the edit is the value: a one-shot edit
-        // does not flick back to the old value for a frame once its override ends.
-        if let index = indexByID[id], index < values.count { values[index] = newValue }
         core.edit(id, value: newValue)
         if opened { end(id) }
     }
 
-    /// Ends the gesture and hands the knob back to the snapshot. A no-op when none is open.
+    /// Ends the gesture. The knob keeps the user's last value until the snapshot catches up
+    /// (see `pending`), then follows the snapshot. A no-op when none is open.
     public func end(_ id: UInt32) {
         guard openGestures.remove(id) != nil else { return }
+        if let last = overrides[id] { pending[id] = (last, 0) }
         overrides[id] = nil
         core.endEdit(id)
     }
@@ -190,8 +199,20 @@ public final class EG13Synth {
         var updated = values
         for index in 0..<min(updated.count, frame.values.count) { updated[index] = frame.values[index] }
         if updated != values { values = updated }  // an unchanged array must not invalidate views
+        expirePending()
         if frame.activeVoices != activeVoices { activeVoices = frame.activeVoices }
         updateMeters(frame.partPeaks, dt: dt)
+    }
+
+    /// Drops held values the snapshot now shows, or that waited long enough.
+    private func expirePending() {
+        guard !pending.isEmpty else { return }
+        var next = pending
+        for (id, held) in pending {
+            let seen = indexByID[id].map { $0 < values.count && abs(values[$0] - held.value) <= Self.pendingEpsilon } ?? true
+            if seen || held.age + 1 >= Self.pendingTicks { next[id] = nil } else { next[id] = (held.value, held.age + 1) }
+        }
+        pending = next
     }
 
     private func updateMeters(_ peaks: [[Float]], dt: Double) {

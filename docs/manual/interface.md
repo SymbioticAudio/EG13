@@ -29,9 +29,9 @@ The part is laid out in columns: Source, Filter, Shaper and Part FX, then a Mods
 
 ## Bottom bar and meters
 
-The bottom bar holds the part settings, the master Dry and Out levels and the meters. The meters show each part's output after its level, pan and mute, refreshed 30 times a second. A meter rises instantly to a new peak and falls to silence in 300 ms. A thin hold marker stays at the highest recent peak for 1.5 seconds, then falls the same way. A meter turns pink at 0 dBFS or above.
+The bottom bar holds the part settings, the master Dry and Out levels and the meters. The meters show each part's output after its level, pan and mute, refreshed 30 times a second. A meter rises instantly to a new peak and falls in dB, in a straight line on the meter, from the peak down to silence in 300 ms. A thin hold marker stays at the highest recent peak for 1.5 seconds, then falls the same way. A meter turns pink at 0 dBFS or above.
 
-While you drag a knob, it shows the value you are setting even if the host or automation is moving the same parameter; when you let go it follows the host again. The editor never sends edits of its own: only your gestures reach the host.
+While you drag a knob, it shows the value you are setting even if the host or automation is moving the same parameter; when you let go it keeps your value until the host reports it (at most half a second), then follows the host again. The editor never sends edits of its own: only your gestures reach the host.
 
 ## Automation
 

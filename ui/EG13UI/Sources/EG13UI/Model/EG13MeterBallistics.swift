@@ -1,8 +1,9 @@
 import Foundation
 
-/// Peak meter ballistics for one channel, in linear amplitude. Instant attack; the level
-/// falls from full scale to silence in `decayTime`; the peak hold stays for `holdTime`,
-/// then falls at the same rate. Time is passed in, so tests need no clock.
+/// Peak meter ballistics for one channel. The meter draws in dB, so it falls in dB: from a
+/// new peak's level down to the floor in `decayTime`, a straight line on the meter. Instant
+/// attack. The peak hold stays for `holdTime`, then falls at the same rate. Levels are
+/// linear amplitude. Time is passed in, so tests need no clock.
 public struct EG13MeterBallistics: Equatable, Sendable {
     public static let decayTime: Double = 0.3
     public static let holdTime: Double = 1.5
@@ -10,20 +11,37 @@ public struct EG13MeterBallistics: Equatable, Sendable {
 
     public private(set) var level: Float = 0
     public private(set) var hold: Float = 0
+    private var levelDB = floorDB
+    private var holdDB = floorDB
+    private var fallRate: Double = 0  // dB per second, set by the last peak
+    private var holdRate: Double = 0
     private var holdAge: Double = 0
 
     public init() {}
 
     /// peak: the largest |sample| since the previous call. dt: seconds since the previous call.
     public mutating func update(peak: Float, dt: Double) {
-        let step = Float(max(0, dt) / Self.decayTime)
-        level = max(max(0, peak), level - step)
+        let step = max(0, dt)
+        if Self.decibels(peak) > Self.floorDB, peak >= level {
+            level = peak
+            levelDB = Self.decibels(peak)
+            fallRate = (levelDB - Self.floorDB) / Self.decayTime
+        } else {
+            levelDB = max(Self.floorDB, levelDB - fallRate * step)
+            level = levelDB <= Self.floorDB ? 0 : Float(pow(10, levelDB / 20))
+        }
         if level >= hold {
             hold = level
+            holdDB = levelDB
+            holdRate = fallRate
             holdAge = 0
         } else {
-            holdAge += max(0, dt)
-            if holdAge > Self.holdTime { hold = max(level, hold - step) }
+            holdAge += step
+            if holdAge > Self.holdTime {
+                holdDB = max(Self.floorDB, holdDB - holdRate * step)
+                let fallen: Float = holdDB <= Self.floorDB ? 0 : Float(pow(10, holdDB / 20))
+                hold = max(level, fallen)
+            }
         }
     }
 

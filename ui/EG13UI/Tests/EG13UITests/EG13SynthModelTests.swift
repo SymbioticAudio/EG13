@@ -69,6 +69,8 @@ struct EG13SynthModelTests {
         #expect(synth.value(level) == 0.2)
         #expect(synth.text(level) == "20%")
         synth.end(level)
+        #expect(synth.value(level) == 0.2)  // held: the host has not echoed the edit yet
+        for _ in 0..<EG13Synth.pendingTicks { synth.tick() }
         #expect(synth.value(level) == 0.9)
         #expect(core.calls == [.begin(level), .edit(level, 0.2), .end(level)])
 
@@ -81,6 +83,7 @@ struct EG13SynthModelTests {
         synth.tick()
         #expect(synth.value(level) != 0.7)
         knob.cancel()
+        for _ in 0..<EG13Synth.pendingTicks { synth.tick() }
         #expect(synth.value(level) == 0.7)
         #expect(core.calls.filter { $0 == .begin(level) }.count == 2)
         #expect(core.calls.filter { $0 == .end(level) }.count == 2)
@@ -102,9 +105,11 @@ struct EG13SynthModelTests {
         #expect(synth.meterHolds[0] == [1, 0.5])
         #expect(synth.meters[1] == [0, 0])
 
-        advance(frames: 5)  // 167 ms: the level has fallen by 167/300 of full scale
-        #expect(abs(synth.meters[0][0] - (1 - 5.0 / 9)) < 0.001)
-        #expect(synth.meters[0][1] < 0.01)
+        advance(frames: 5)  // 167 ms
+        // dB-linear: full scale to the -60 dB floor in 300 ms, so 5 frames is -33.3 dB.
+        #expect(abs(EG13MeterBallistics.decibels(synth.meters[0][0]) - (-200.0 * 5 / 30)) < 0.01)
+        // The -6 dB peak falls from its own level to the floor in 300 ms: 180 dB/s.
+        #expect(abs(EG13MeterBallistics.decibels(synth.meters[0][1]) - (-6.0206 - 180 * 5.0 / 30)) < 0.05)
         #expect(synth.meterHolds[0] == [1, 0.5])
 
         advance(frames: 37)  // 1.4 s after the peak: still held
@@ -116,5 +121,51 @@ struct EG13SynthModelTests {
 
         advance(frames: 12)  // 2.1 s: gone
         #expect(synth.meterHolds[0] == [0, 0])
+    }
+
+    @Test("a stale snapshot does not change a value after end until it catches up")
+    func staleSnapshotHeldAfterEnd() {
+        let level = EG13ParamID.part(0, .level)
+        let i = core.index(of: level)
+        synth.begin(level)
+        synth.edit(level, 0.2)
+        synth.end(level)
+        core.values[i] = 1  // the host has not applied the edit yet
+        for _ in 0..<5 { synth.tick() }
+        #expect(synth.value(level) == 0.2)
+        core.values[i] = 0.2  // caught up
+        synth.tick()
+        #expect(synth.value(level) == 0.2)
+        core.values[i] = 0.6  // pending cleared: the host is followed again
+        synth.tick()
+        #expect(synth.value(level) == 0.6)
+        #expect(core.calls == [.begin(level), .edit(level, 0.2), .end(level)])
+    }
+
+    @Test("a pending value expires after the timeout")
+    func pendingValueExpires() {
+        let level = EG13ParamID.part(0, .level)
+        synth.begin(level)
+        synth.edit(level, 0.2)
+        synth.end(level)
+        core.values[core.index(of: level)] = 0.9  // the host never applies it
+        for _ in 0..<(EG13Synth.pendingTicks - 1) { synth.tick() }
+        #expect(synth.value(level) == 0.2)
+        synth.tick()
+        #expect(synth.value(level) == 0.9)
+    }
+
+    @Test("a one-shot edit holds like a drag end, and a new begin replaces the pending value")
+    func oneShotEditHolds() {
+        let level = EG13ParamID.part(0, .level)
+        let i = core.index(of: level)
+        synth.param(level)!.setValue(0.4)  // no drag: wrapped in its own gesture
+        core.values[i] = 1
+        synth.tick()
+        #expect(synth.value(level) == 0.4)
+        synth.begin(level)  // a new gesture drops the old pending value
+        #expect(synth.value(level) == 1)
+        synth.end(level)
+        #expect(synth.value(level) == 1)
     }
 }
