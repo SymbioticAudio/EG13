@@ -11,7 +11,7 @@ struct EG13BottomBar: View {
 
     var body: some View {
         let part = synth.selectedPart
-        let plain = EG13Palette.look(for: .plain, part: part)
+        let plain = EG13Palette.knobStyle(for: .plain, part: part)
         HStack(spacing: theme.spacing.s) {
             Text(EG13PartName.letter(part))
                 .font(theme.type.title.font.weight(.heavy))
@@ -34,8 +34,8 @@ struct EG13BottomBar: View {
             knob(synth.partParam(part, .pan), plain)
             Spacer(minLength: 0)
             Rectangle().fill(theme.surface.separator.color).frame(width: 1, height: 52)
-            knob(synth.masterParam(.dry), EG13Palette.masterLook)
-            knob(synth.masterParam(.level), EG13Palette.masterLook)
+            knob(synth.masterParam(.dry), EG13Palette.masterKnobStyle())
+            knob(synth.masterParam(.level), EG13Palette.masterKnobStyle())
             EG13MeterView(meters: synth.meters)
         }
         .padding(.horizontal, EG13Layout.outerPadding)
@@ -47,14 +47,14 @@ struct EG13BottomBar: View {
     @ViewBuilder
     private func stepper(_ part: Int, _ p: EG13PartParam, _ label: String) -> some View {
         if let param = synth.partParam(part, p) {
-            EG13Stepper(param: param, label: label)
+            EG13Stepped(param: param, label: label)
         }
     }
 
     @ViewBuilder
-    private func knob(_ param: EG13Param?, _ look: EG13KnobLook) -> some View {
+    private func knob(_ param: EG13Param?, _ style: EG13KnobStyle) -> some View {
         if let param {
-            EG13Knob(param: param, look: look, size: .bar)
+            EG13Knob(param: param, style: style, size: .bar)
         }
     }
 
@@ -74,7 +74,6 @@ struct EG13BottomBar: View {
         }
         .padding(theme.spacing.l)
         .background(theme.surface.panel.color)
-        .environment(\.eg13ControlStyle, EG13Theme.controlStyle)
         .symbioticTheme(EG13Theme.theme)
     }
 }

@@ -43,7 +43,7 @@ struct EG13HeaderView: View {
         HStack(spacing: theme.spacing.xs) {
             Button {} label: { Icon(.presetPrevious, size: 12) }.disabled(true)
                 .accessibilityLabel("Previous patch")
-            EG13LCDText(text: synth.patchName, colors: EG13Palette.controls)
+            EG13LCDText(text: synth.patchName)
                 .frame(width: 160, height: 26)
                 .accessibilityLabel("Patch \(synth.patchName)")
             Button {} label: { Icon(.presetNext, size: 12) }.disabled(true)

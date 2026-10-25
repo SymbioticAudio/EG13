@@ -15,36 +15,29 @@ struct EG13SourceCard: View {
             engineSelector
         } hero: {
             if let hero = params.first {
-                EG13Knob(param: hero, look: look(hero), size: .hero, showsMotionChip: true)
+                EG13Knob(param: hero, style: style(hero), size: .hero, showsMotionChip: true)
             }
         } detail: {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: theme.spacing.xs),
                                      count: EG13Layout.detailColumns),
                       spacing: theme.spacing.s) {
                 ForEach(params.dropFirst(), id: \.id) { param in
-                    EG13Knob(param: param, look: look(param), size: .detail, showsMotionChip: true)
+                    EG13Knob(param: param, style: style(param), size: .detail, showsMotionChip: true)
                 }
             }
         }
     }
 
-    private func look(_ param: EG13Param) -> EG13KnobLook {
-        EG13Palette.look(for: synth.emphasis(of: param, part: part), part: part)
+    private func style(_ param: EG13Param) -> EG13KnobStyle {
+        EG13Palette.knobStyle(for: synth.emphasis(of: param, part: part), part: part)
     }
 
     @ViewBuilder
     private var engineSelector: some View {
         let names = synth.sourceEngineNames
         if let selector = synth.engineSelector(part: part), names.count > 1 {
-            Picker("Source engine", selection: Binding(
-                get: { synth.sourceEngine(part: part) },
-                set: { selector.setValue(Double($0)) })) {
-                ForEach(names.indices, id: \.self) { Text(names[$0]).tag($0) }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .fixedSize()
-            .accessibilityLabel("\(EG13PartName.name(part)) Source engine")
+            EG13EnginePicker(names: names, selector: selector, selected: synth.sourceEngine(part: part),
+                             accessibilityName: "\(EG13PartName.name(part)) Source engine")
         }
     }
 }

@@ -40,7 +40,7 @@ public enum EG13Palette {
     /// Part A teal, Part B pink.
     public static func part(_ part: Int) -> Pair { part == 0 ? teal : pink }
 
-    /// The colours EG13's controls are drawn in (EG13ControlStyle.flat).
+    /// The colours EG13's controls are drawn in (EG13Palette.controls, injected through the environment).
     public static var controls: EG13ControlColors {
         EG13ControlColors(
             track: white.color.opacity(0.14),
@@ -58,21 +58,35 @@ public enum EG13Palette {
             focus: teal.ink.color)
     }
 
-    /// A knob's colours from its emphasis (owner, 2026-10-20): an accent cap has an arc in
-    /// the accent's bright colour and an ink chip; a plain white cap has an arc in the
-    /// part's colour; a dark cap (master knobs, small black knobs) has a light grey arc.
-    public static func look(for emphasis: EG13ParamEmphasis, part: Int) -> EG13KnobLook {
+    /// A knob's style from its emphasis (owner, 2026-10-20): an accent cap has its arc in the
+    /// accent's bright colour and an ink chip; a white cap has an arc in the part's colour;
+    /// a black cap (master knobs, small black knobs) has a light grey arc.
+    public static func knobStyle(for emphasis: EG13ParamEmphasis, part: Int, base: EG13KnobStyle = .default) -> EG13KnobStyle {
+        var style = base
         switch emphasis.cap {
         case .plain:
-            return EG13KnobLook(cap: .plain, arc: self.part(part).bright.color)
+            style.cap = .white
+            style.accent = self.part(part).bright.color
+            style.accentInk = self.part(part).ink.color
         case .accent(let role):
             let pair = accent(role)
-            return EG13KnobLook(cap: .filled(pair.bright.color), arc: pair.bright.color, chip: pair.ink.color)
+            style.cap = .accent
+            style.accent = pair.bright.color
+            style.accentInk = pair.ink.color
+            style.label = .chip
         case .black:
-            return EG13KnobLook(cap: .dark, arc: panel.color)
+            style.cap = .black
+            style.accent = panel.color
+            style.accentInk = groupChip.color
         }
+        return style
     }
 
-    /// Master Dry and Out: dark caps, light grey arcs.
-    public static var masterLook: EG13KnobLook { EG13KnobLook(cap: .dark, arc: panel.color) }
+    /// Master Dry and Out: black caps, light grey arcs.
+    public static func masterKnobStyle(base: EG13KnobStyle = .default) -> EG13KnobStyle {
+        knobStyle(for: .black, part: 0, base: base)
+    }
 }
+
+/// The accent of a part: 0 is teal, 1 is pink.
+public func partAccent(_ part: Int) -> Color { EG13Palette.part(part).bright.color }

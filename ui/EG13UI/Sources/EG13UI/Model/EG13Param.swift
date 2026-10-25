@@ -125,3 +125,15 @@ public final class EG13Param {
         text = core.paramText(at: index, value: value)
     }
 }
+
+extension EG13Param {
+    /// The shared control behaviour over this parameter: gestures go to the host as
+    /// beginEdit, setValue and endEdit.
+    public func makeInteraction() -> EG13ControlInteraction {
+        EG13ControlInteraction(
+            minValue: descriptor.minValue, maxValue: descriptor.maxValue, defaultValue: descriptor.defaultValue,
+            isStepped: descriptor.isStepped,
+            current: { [self] in value }, begin: { [self] in beginEdit() },
+            edit: { [self] in setValue($0) }, end: { [self] in endEdit() })
+    }
+}

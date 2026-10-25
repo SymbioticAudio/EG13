@@ -31,7 +31,6 @@ public struct EG13RootView: View {
         .frame(width: EG13Layout.baseSize.width, height: EG13Layout.baseSize.height)
         .background(theme.surface.window.color)
         .symbioticTheme(theme)
-        .environment(\.eg13ControlStyle, EG13Theme.controlStyle)
     }
 }
 
