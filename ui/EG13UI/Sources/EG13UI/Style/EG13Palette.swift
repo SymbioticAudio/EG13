@@ -46,7 +46,6 @@ public enum EG13Palette {
             track: white.color.opacity(0.14),
             tick: legend.color.opacity(0.6),
             skirt: black.color,
-            innerRing: window.color,
             plainCap: white.color,
             darkCap: black.color,
             indicator: black.color,

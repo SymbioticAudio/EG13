@@ -25,14 +25,14 @@ struct EG13ControlsPage: View {
     let demo: EG13ControlsDemo
     @Environment(\.symbioticTheme) private var theme
 
-    static let size = CGSize(width: 1240, height: 800)
+    static let size = CGSize(width: 1240, height: 640)
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.spacing.m) {
             HStack(alignment: .firstTextBaseline) {
-                Text("EG13 controls, round 2")
+                Text("EG13 controls, round 3 (approved)")
                     .font(.system(size: 22, weight: .light))
-                Text("approved defaults, the open inner-ring choice, sizes, engine picker and steppers, in each part accent.")
+                Text("the approved controls, sizes, engine picker and steppers, in each part accent.")
                     .font(theme.type.caption.font)
                 Spacer()
             }
@@ -73,18 +73,12 @@ private struct EG13PartGallery: View {
                     .font(theme.type.caption.font.weight(.bold))
                 Spacer()
             }
-            row("APPROVED DEFAULTS (round 1): arc in the skirt band, no ticks", [
+            row("APPROVED CONTROLS: arc in the skirt band, no ticks", [
                 ("default: white cap, plain label", base),
                 ("emphasised: accent cap + chip", with { $0.cap = .accent; $0.label = .chip }),
                 ("secondary: black cap, part arc", with { $0.cap = .black }),
                 ("default, arc at minimum", base),
             ], values: [0.45, 0.6, 0.75, 0.0])
-            row("INNER RING: OPEN CHOICE (owner decides on or off)", [
-                ("white cap, ring off", base),
-                ("white cap, ring on", with { $0.innerRing = true }),
-                ("black cap, ring off", with { $0.cap = .black }),
-                ("black cap, ring on", with { $0.cap = .black; $0.innerRing = true }),
-            ], values: [0.5, 0.5, 0.5, 0.5])
             sizes
             controls
         }

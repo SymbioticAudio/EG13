@@ -12,7 +12,6 @@ public struct EG13ControlColors: Sendable, Equatable {
     public var track: Color            // faint band under the value arc
     public var tick: Color
     public var skirt: Color            // black outer ring
-    public var innerRing: Color        // optional ring on the cap's edge
     public var plainCap: Color         // white cap
     public var darkCap: Color          // black cap
     public var indicator: Color        // on white and accent caps
@@ -23,13 +22,12 @@ public struct EG13ControlColors: Sendable, Equatable {
     public var lcdText: Color
     public var focus: Color
 
-    public init(track: Color, tick: Color, skirt: Color, innerRing: Color, plainCap: Color, darkCap: Color,
+    public init(track: Color, tick: Color, skirt: Color, plainCap: Color, darkCap: Color,
                 indicator: Color, indicatorOnDark: Color, label: Color, chipText: Color,
                 lcdBackground: Color, lcdText: Color, focus: Color) {
         self.track = track
         self.tick = tick
         self.skirt = skirt
-        self.innerRing = innerRing
         self.plainCap = plainCap
         self.darkCap = darkCap
         self.indicator = indicator
@@ -73,7 +71,6 @@ public struct EG13KnobStyle: Sendable, Equatable {
 
     public var arc: Bool
     public var arcPlacement: ArcPlacement
-    public var innerRing: Bool
     public var ticks: Bool
     public var cap: Cap
     public var label: LabelStyle
@@ -82,12 +79,10 @@ public struct EG13KnobStyle: Sendable, Equatable {
     /// The label chip fill: the accent's ink, dark enough for white text.
     public var accentInk: Color
 
-    public init(arc: Bool = true, arcPlacement: ArcPlacement = .skirtBand, innerRing: Bool = false,
-                ticks: Bool = false, cap: Cap = .white, label: LabelStyle = .plain, accent: Color,
-                accentInk: Color? = nil) {
+    public init(arc: Bool = true, arcPlacement: ArcPlacement = .skirtBand, ticks: Bool = false,
+                cap: Cap = .white, label: LabelStyle = .plain, accent: Color, accentInk: Color? = nil) {
         self.arc = arc
         self.arcPlacement = arcPlacement
-        self.innerRing = innerRing
         self.ticks = ticks
         self.cap = cap
         self.label = label
@@ -168,7 +163,7 @@ struct EG13Ticks: Shape {
 
 /// Draws a knob, from outside in: optional ticks; the black skirt; the value arc over a
 /// faint track (in the skirt band, outside the skirt or hugging the cap); an optional
-/// inner ring; the cap; a bold indicator line. Flat: no gradients, shading or assets.
+/// the cap; a bold indicator line. Flat: no gradients, shading or assets.
 /// Pure drawing: it takes a value and answers no input.
 public struct EG13KnobShape: View {
     let normalized: Double
@@ -221,11 +216,6 @@ public struct EG13KnobShape: View {
                                 style: StrokeStyle(lineWidth: arcWidth, lineCap: .butt))
                     EG13SweepArc(from: low, to: max(high, low + 0.002), inset: arcInset)
                         .stroke(style.accent, style: StrokeStyle(lineWidth: arcWidth, lineCap: .butt))
-                }
-                if style.innerRing {
-                    // A clearly contrasting thin ring on the cap's edge, inside the cap.
-                    Circle().strokeBorder(colors.innerRing, lineWidth: max(1.5, d * 0.03))
-                        .frame(width: cap, height: cap)
                 }
                 Circle().fill(capColor).frame(width: cap, height: cap)
                 Capsule()

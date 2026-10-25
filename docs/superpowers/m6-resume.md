@@ -78,3 +78,17 @@ Changed in round 2:
 - The Controls page shows the approved defaults (default, emphasised, secondary), the inner ring on and off for white and black caps, sizes (hero, detail, bar, bipolar, stepped), the engine picker and the steppers, in both part accents.
 
 Open question for the owner: inner ring on or off. It is visible on black caps and subtle on white ones; compare the second row.
+
+## Round 3 / approval (2026-10-24): controls approved by the owner; inner ring dropped
+
+The owner approved the round 2 controls ("it all looks pretty good") with one change: drop the inner ring entirely, because it could not be seen on white or black caps. `innerRing` is removed from `EG13KnobStyle` and the drawing. Screenshots: `docs/superpowers/m6-design/controls-r3/` (75, 100 and 200 %).
+
+Final choices:
+
+- An arc in the skirt band over a faint track, with no ticks and no inner ring.
+- A white cap by default.
+- Emphasis shown by an accent cap with an accent chip.
+- A black cap with the part-colour arc for secondary knobs.
+- Minus and plus steppers.
+- The engine picker drawn as an LCD (#AFD22C on #383838).
+- Bold LCD text, at least 12 pt.
