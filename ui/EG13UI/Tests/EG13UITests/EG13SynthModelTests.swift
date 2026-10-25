@@ -123,6 +123,19 @@ struct EG13SynthModelTests {
         #expect(synth.meterHolds[0] == [0, 0])
     }
 
+    @Test("a steady signal below the last peak never reads under itself")
+    func meterHoldsASteadySignalBelowThePeak() {
+        var meter = EG13MeterBallistics()
+        meter.update(peak: 1, dt: 1.0 / 30)
+        // -12 dB steady: the decay passes it after a few frames, and from then on the meter
+        // must read the signal, never a frame below it.
+        for _ in 0..<30 {
+            meter.update(peak: 0.25, dt: 1.0 / 30)
+            #expect(meter.level >= 0.25)
+        }
+        #expect(meter.level == 0.25)
+    }
+
     @Test("a stale snapshot does not change a value after end until it catches up")
     func staleSnapshotHeldAfterEnd() {
         let level = EG13ParamID.part(0, .level)

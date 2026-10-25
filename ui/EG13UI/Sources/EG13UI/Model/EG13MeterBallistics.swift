@@ -22,12 +22,15 @@ public struct EG13MeterBallistics: Equatable, Sendable {
     /// peak: the largest |sample| since the previous call. dt: seconds since the previous call.
     public mutating func update(peak: Float, dt: Double) {
         let step = max(0, dt)
-        if Self.decibels(peak) > Self.floorDB, peak >= level {
+        // Decay first, then attack against the decayed level, so a steady signal below the
+        // last peak holds the meter at that signal instead of dipping under it for a frame.
+        levelDB = max(Self.floorDB, levelDB - fallRate * step)
+        let peakDB = Self.decibels(peak)
+        if peakDB > Self.floorDB, peakDB >= levelDB {
             level = peak
-            levelDB = Self.decibels(peak)
+            levelDB = peakDB
             fallRate = (levelDB - Self.floorDB) / Self.decayTime
         } else {
-            levelDB = max(Self.floorDB, levelDB - fallRate * step)
             level = levelDB <= Self.floorDB ? 0 : Float(pow(10, levelDB / 20))
         }
         if level >= hold {
