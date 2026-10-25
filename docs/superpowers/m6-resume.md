@@ -192,4 +192,4 @@ Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-editor
 4. **Fallback engines (no replica panel): white caps, main controls large.** Audio Input (Gain large), Envelope (Attack, Decay, Sustain, Release large in the panel table, medium in a mod), Function Generator (Attack, Rate), Reverb (Amount, Time), Digital Oscillator and Shelves EQ have a panel but no size difference (all medium). Pink or teal added only by analogy: Classic Filters and State Variable Filter take Liquid Filter's pink Resonance (small); Granular Delay takes Clouds' pink Time (as Position) and teal Size. Mods: white throughout.
 5. Matrix row stays; the part tab names (from round 2) are now shown for the selected part only.
 
-Status: awaiting owner feedback (round 3 is not approved).
+Status: **approved by the owner on 2026-10-25** ("round 3 approved"), with the open choices accepted as shown: white-knob arc #E6E6E6, black-cap arc #A8A8A5, blue panel knobs shown teal, and the fallback engines as listed.

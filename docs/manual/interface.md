@@ -8,9 +8,9 @@ The window is 1200 × 760 points at 100 %. You can resize it from 75 % (900 × 5
 
 The window works in points, so on a Retina display it is drawn sharp at every size and EG13 ignores the host's own scale setting. Closing the window and opening it again starts at 100 %.
 
-## Layout (round 3: not approved yet)
+## Layout
 
-The layout below is the owner's chosen arrangement (Mods in a column on the right) with round 3's knob colours. It is not approved yet.
+The layout below is the owner's chosen arrangement (Mods in a column on the right) with round 3's knob colours.
 
 ## Header
 
