@@ -16,20 +16,31 @@ struct EG13ControlSurface: NSViewRepresentable {
     func updateNSView(_ view: EG13ControlSurfaceView, context: Context) {
         view.interaction = interaction
     }
+
+    /// The surface goes away: end any open gesture, whatever state SwiftUI still holds.
+    static func dismantleNSView(_ view: EG13ControlSurfaceView, coordinator: ()) {
+        view.endGesture()
+    }
 }
 
 final class EG13ControlSurfaceView: NSView {
-    var interaction: Binding<EG13ControlInteraction>?
+    var interaction: Binding<EG13ControlInteraction>? {
+        didSet { if let gesture = interaction?.wrappedValue.gesture { self.gesture = gesture } }
+    }
+    /// The gesture is owned here too, so ending it never depends on SwiftUI's @State.
+    private var gesture: EG13Gesture?
     private var lastY: CGFloat = 0
 
     /// A control that leaves the window mid-gesture (the editor closes, the view is
     /// replaced) ends its gesture, so no touch stays open in the host.
     override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil { interaction?.wrappedValue.cancel() }
+        if newWindow == nil { endGesture() }
         super.viewWillMove(toWindow: newWindow)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    func endGesture() { gesture?.close() }
 
     private func localY(_ event: NSEvent) -> CGFloat {
         let y = convert(event.locationInWindow, from: nil).y

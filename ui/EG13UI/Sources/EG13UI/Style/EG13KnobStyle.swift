@@ -283,7 +283,7 @@ public struct EG13LCDText: View {
 struct EG13ControlLabel: View {
     let text: String
     let style: EG13KnobStyle.LabelStyle
-    let chip: Color
+    var chip: Color?
     let font: Font
     @Environment(\.eg13ControlColors) private var colors
 
@@ -292,7 +292,7 @@ struct EG13ControlLabel: View {
         case .chip:
             Text(text.uppercased()).font(font.weight(.bold)).foregroundStyle(colors.chipText).lineLimit(1)
                 .padding(.horizontal, 5)
-                .background(RoundedRectangle(cornerRadius: 2).fill(chip))
+                .background(RoundedRectangle(cornerRadius: 2).fill(chip ?? colors.label))
         case .plain:
             Text(text.uppercased()).font(font.weight(.bold)).foregroundStyle(colors.label).lineLimit(1)
         }

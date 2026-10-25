@@ -44,9 +44,9 @@ private struct EG13SteppedBody: View {
                                                 valueText: param.text, focus: $isFocused))
                 stepButton(1, icon: .editAdd, name: "Increase")
             }
-            EG13ControlLabel(text: label, style: .plain, chip: colors.label, font: theme.type.caption.font)
+            EG13ControlLabel(text: label, style: .plain, font: theme.type.caption.font)
         }
-        .onChange(of: param.descriptor) { _, _ in interaction = param.makeInteraction() }
+        .onChange(of: param.descriptor) { _, _ in interaction.cancel(); interaction = param.makeInteraction() }
     }
 
     private func stepButton(_ steps: Int, icon: IconRole, name: String) -> some View {

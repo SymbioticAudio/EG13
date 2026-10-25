@@ -81,7 +81,7 @@ private struct EG13KnobBody: View {
                 EG13MotionChip(paramName: param.name)
             }
         }
-        .onChange(of: param.descriptor) { _, _ in interaction = param.makeInteraction() }
+        .onChange(of: param.descriptor) { _, _ in interaction.cancel(); interaction = param.makeInteraction() }
     }
 }
 

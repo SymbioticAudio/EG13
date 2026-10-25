@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import Testing
 @testable import EG13UI
 
@@ -201,5 +203,76 @@ struct EG13ControlInteractionTests {
         knob.mouseUp()
         #expect(abs(param.value - 0.75) < 1e-9)
         #expect(core.calls == [.begin(param.id), .edit(param.id, 0.75), .end(param.id)])
+    }
+
+    @Test func dragClampsAtTheMinimumAndSteppedDoubleClickResets() {
+        let r = Recorder(value: 0.1)
+        var knob = r.interaction()
+        knob.mouseDown(clickCount: 1)
+        knob.mouseDragged(deltaY: -400, fine: false)
+        #expect(r.value == 0)
+        knob.mouseDragged(deltaY: 20, fine: false)
+        #expect(abs(r.value - 0.1) < 1e-9)
+        knob.mouseUp()
+        let v = Recorder(value: 3)
+        var voices = v.interaction(min: 1, max: 8, defaultValue: 8, stepped: true)
+        voices.mouseDown(clickCount: 2)
+        voices.mouseUp()
+        #expect(v.events == [.begin, .edit(8), .end])
+    }
+
+    @Test func scrollPhasesWithoutABeginStillEditInsideAGesture() {
+        let r = Recorder(value: 0.5)
+        var knob = r.interaction()
+        knob.scroll(lines: 1, fine: false, phase: .changed)
+        knob.scroll(lines: 1, fine: false, phase: .ended)
+        #expect(r.begins == 1 && r.ends == 1)
+        #expect(r.events.first == .begin && r.events.last == .end)
+    }
+
+    @Test func replacingAnInteractionMidGestureEndsTheOldOne() {
+        // What the knob does when the parameter's descriptor changes (an engine switch).
+        let r = Recorder(value: 0.5)
+        var old = r.interaction()
+        old.mouseDown(clickCount: 1)
+        old.mouseDragged(deltaY: 10, fine: false)
+        old.cancel()
+        old = r.interaction()
+        #expect(r.begins == 1 && r.ends == 1)
+        #expect(!old.isInGesture)
+    }
+
+    @Test func tearingDownTheSurfaceMidDragEndsTheGestureEvenWithStaleState() {
+        let r = Recorder(value: 0.5)
+        let live = r.interaction()
+        // A binding whose state is already gone: reads give a fresh copy, writes are lost.
+        let stale = Binding<EG13ControlInteraction>(get: { live }, set: { _ in })
+        let view = EG13ControlSurfaceView(frame: NSRect(x: 0, y: 0, width: 40, height: 40))
+        view.interaction = stale
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 40),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView?.addSubview(view)
+        let down = NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 20, y: 20), modifierFlags: [],
+                                      timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                      eventNumber: 0, clickCount: 1, pressure: 1)!
+        view.mouseDown(with: down)
+        #expect(r.begins == 1 && r.ends == 0)
+        view.removeFromSuperview()
+        #expect(r.begins == 1 && r.ends == 1)
+        // A second teardown path (SwiftUI's dismantle) does not end it twice.
+        EG13ControlSurface.dismantleNSView(view, coordinator: ())
+        #expect(r.ends == 1)
+    }
+
+    @Test func dismantlingTheSurfaceMidDragEndsTheGesture() {
+        let r = Recorder(value: 0.5)
+        let live = r.interaction()
+        let view = EG13ControlSurfaceView(frame: .zero)
+        view.interaction = Binding(get: { live }, set: { _ in })
+        let down = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                      windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        view.mouseDown(with: down)
+        EG13ControlSurface.dismantleNSView(view, coordinator: ())
+        #expect(r.begins == 1 && r.ends == 1)
     }
 }

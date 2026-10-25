@@ -5,6 +5,30 @@ public enum EG13ScrollPhase: Sendable {
     case discrete
 }
 
+/// Whether a control's gesture is open, and how to end it. A reference shared by every
+/// copy of an interaction, so whoever holds it (the input surface included) can end the
+/// gesture without going through SwiftUI state, which may already be gone at teardown.
+@MainActor
+public final class EG13Gesture {
+    public private(set) var isOpen = false
+    private let end: () -> Void
+
+    init(end: @escaping () -> Void) { self.end = end }
+
+    func open(_ begin: () -> Void) {
+        guard !isOpen else { return }
+        isOpen = true
+        begin()
+    }
+
+    /// Ends the gesture if one is open; does nothing otherwise.
+    public func close() {
+        guard isOpen else { return }
+        isOpen = false
+        end()
+    }
+}
+
 /// The behaviour every EG13 control shares, independent of how it is drawn: drag and fine
 /// drag (shift), double-click to default, scroll, keyboard and VoiceOver increments. A
 /// pure value type: it reads the current value and reports every change through the
@@ -33,7 +57,8 @@ public struct EG13ControlInteraction {
     private let edit: (Double) -> Void
     private let end: () -> Void
 
-    private var gestureOpen = false
+    /// Shared by copies; the input surface ends it if the control is torn down mid-gesture.
+    public let gesture: EG13Gesture
     private var ignoringDrag = false
     private var dragAnchor: Double = 0
     private var dragOffset: Double = 0
@@ -50,6 +75,7 @@ public struct EG13ControlInteraction {
         self.begin = begin
         self.edit = edit
         self.end = end
+        gesture = EG13Gesture(end: end)
     }
 
     // MARK: Value mapping
@@ -71,19 +97,11 @@ public struct EG13ControlInteraction {
 
     // MARK: Gesture
 
-    public var isInGesture: Bool { gestureOpen }
+    public var isInGesture: Bool { gesture.isOpen }
 
-    private mutating func open() {
-        guard !gestureOpen else { return }
-        gestureOpen = true
-        begin()
-    }
+    private func open() { gesture.open(begin) }
 
-    private mutating func close() {
-        guard gestureOpen else { return }
-        gestureOpen = false
-        end()
-    }
+    private func close() { gesture.close() }
 
     private func send(_ value: Double) {
         if value != current() { edit(value) }
@@ -109,7 +127,7 @@ public struct EG13ControlInteraction {
 
     /// deltaY in points, positive upwards.
     public mutating func mouseDragged(deltaY: Double, fine: Bool) {
-        guard !ignoringDrag, gestureOpen else { return }
+        guard !ignoringDrag, gesture.isOpen else { return }
         dragOffset += deltaY * (fine ? Self.fineFactor : 1) / Self.pointsForFullRange
         // Keep the offset inside the range so reversing direction responds at once.
         dragOffset = min(max(dragOffset, -dragAnchor), 1 - dragAnchor)
@@ -121,8 +139,8 @@ public struct EG13ControlInteraction {
         close()
     }
 
-    /// The drag or scroll is abandoned (the surface left the window, the app resigned
-    /// active): the gesture ends where it is, so no touch stays open in the host.
+    /// The drag or scroll is abandoned (the surface left the window, or the control
+    /// was replaced): the gesture ends where it is, so no touch stays open in the host.
     public mutating func cancel() {
         ignoringDrag = false
         scrollRemainder = 0
@@ -140,12 +158,14 @@ public struct EG13ControlInteraction {
             open()
             applyScroll(lines, fine: fine)
         case .changed:
+            open()  // a phase routed to us mid-flight still edits inside a gesture
             applyScroll(lines, fine: fine)
         case .ended:
+            open()
             applyScroll(lines, fine: fine)
             close()
         case .discrete:
-            let wasOpen = gestureOpen
+            let wasOpen = gesture.isOpen
             open()
             applyScroll(lines, fine: fine)
             if !wasOpen { close() }
@@ -170,7 +190,7 @@ public struct EG13ControlInteraction {
     /// Keyboard arrows and VoiceOver: one step (stepped) or 1/100 of the range (continuous;
     /// a tenth of that when fine). Inside a gesture it joins it; outside, it is its own.
     public mutating func increment(by steps: Int, fine: Bool = false) {
-        let wasOpen = gestureOpen
+        let wasOpen = gesture.isOpen
         let target: Double
         if isStepped {
             target = current() + Double(steps)
