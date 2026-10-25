@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import SymbioticTokens
 
@@ -52,8 +53,8 @@ extension EnvironmentValues {
     }
 }
 
-/// Knob sizes: one hero knob per module card, small knobs elsewhere.
-public enum EG13KnobSize: Sendable, Equatable { case hero, detail, bar }
+/// Knob sizes (owner, 2026-10-25): large, medium and small, as on the real module panels.
+public enum EG13KnobSize: Sendable, Equatable, CaseIterable { case large, medium, small }
 
 /// The knob design's options (owner, 2026-10-20). Colours are always injected.
 public struct EG13KnobStyle: Sendable, Equatable {
@@ -103,12 +104,12 @@ public struct EG13KnobStyle: Sendable, Equatable {
     }
 
     static func capRatio(for size: EG13KnobSize) -> Double {
-        size == .hero ? 23.0 / 34.0 : 10.5 / 17.0
+        size == .large ? 23.0 / 34.0 : 10.5 / 17.0
     }
 
     func tickCount(for size: EG13KnobSize) -> Int {
         guard ticks else { return 0 }
-        return size == .hero ? 11 : 7
+        return size == .large ? 11 : 7
     }
 }
 
@@ -271,26 +272,63 @@ public struct EG13LCDText: View {
     }
 }
 
+/// Where a knob label breaks. Labels never shrink and are never cut: one line if the text fits the
+/// label width at the label font, otherwise it wraps at its spaces, up to two lines. `fits` is false
+/// when even that is not enough (a single word too wide); EG13LayoutTests asserts it is true for
+/// every label of every engine.
+public enum EG13LabelFit {
+    /// The font a label is set in: the theme's caption, bold.
+    public static var font: NSFont {
+        NSFont.systemFont(ofSize: EG13Theme.theme.type.caption.size, weight: .bold)
+    }
+
+    public static func width(_ text: String) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: font]).width)
+    }
+
+    public static func lines(_ text: String, width limit: CGFloat) -> (lines: [String], fits: Bool) {
+        let text = text.uppercased()
+        if self.width(text) <= limit { return ([text], true) }
+        let words = text.split(separator: " ").map(String.init)
+        guard words.count > 1 else { return ([text], false) }
+        // Break at the space that leaves the shorter longest line.
+        var best: (lines: [String], widest: CGFloat)?
+        for split in 1..<words.count {
+            let lines = [words[..<split].joined(separator: " "), words[split...].joined(separator: " ")]
+            let widest = lines.map(width).max() ?? 0
+            if best == nil || widest < best!.widest { best = (lines, widest) }
+        }
+        return (best!.lines, best!.widest <= limit)
+    }
+}
+
 /// A control's name in uppercase: plain, or on a chip with white text.
 struct EG13ControlLabel: View {
     let text: String
     let style: EG13KnobStyle.LabelStyle
     var chip: Color?
     let font: Font
+    /// The most width the text may take; nil for one natural line.
+    var width: CGFloat?
     @Environment(\.eg13ControlColors) private var colors
-    /// A long name in a narrow cell shrinks to this fraction of the type size before it is cut.
-    static let shrink: CGFloat = 0.65
 
     var body: some View {
+        let lines = width.map { EG13LabelFit.lines(text, width: $0).lines } ?? [text.uppercased()]
+        let label = VStack(spacing: 0) {
+            ForEach(lines.indices, id: \.self) { index in
+                Text(lines[index])
+                    .font(font.weight(.bold))
+                    .foregroundStyle(style == .chip ? colors.chipText : colors.label)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .padding(.horizontal, 3)
         switch style {
         case .chip:
-            Text(text.uppercased()).font(font.weight(.bold)).foregroundStyle(colors.chipText).lineLimit(1)
-                .minimumScaleFactor(Self.shrink)
-                .padding(.horizontal, 5)
-                .background(RoundedRectangle(cornerRadius: 2).fill(chip ?? colors.label))
+            label.background(RoundedRectangle(cornerRadius: 2).fill(chip ?? colors.label))
         case .plain:
-            Text(text.uppercased()).font(font.weight(.bold)).foregroundStyle(colors.label).lineLimit(1)
-                .minimumScaleFactor(Self.shrink)
+            label
         }
     }
 }

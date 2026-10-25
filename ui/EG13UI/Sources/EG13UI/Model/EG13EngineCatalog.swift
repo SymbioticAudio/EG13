@@ -1,20 +1,20 @@
 /// One engine of a slot, as the core reports it: display name and the names of the P's it uses.
-struct EG13PreviewEngine {
-    let name: String
-    let params: [String]
-    init(_ name: String, _ params: [String]) {
+public struct EG13CatalogEngine: Sendable {
+    public let name: String
+    public let params: [String]
+    public init(_ name: String, _ params: [String]) {
         self.name = name
         self.params = params
     }
 }
 
-/// The plugin's engine tables, mirrored for the preview so the cards show real engine names and
+/// The plugin's engine tables, mirrored (preview and tests use it; the plugin reads the live names from the core) so the cards show real engine names and
 /// P names (names the core marks "(unused)" stay in the middle of an engine's range, as in the
 /// plugin). Copied from slotEngineInfo() in core/synth/param_table.cpp (EngineInfo::displayName
 /// and params[].name); update both together when an engine is added.
-enum EG13PreviewEngines {
+public enum EG13EngineCatalog {
     /// Mirrors the source engine table (core/engine, EngineInfo: display name and P names).
-    static let source: [EG13PreviewEngine] = [
+    public static let source: [EG13CatalogEngine] = [
         .init("Macro Oscillator", ["Model", "Harmonics", "Timbre", "Morph", "Frequency", "Decay", "LPG Colour", "Aux Mix"]),
         .init("Digital Oscillator", ["Shape", "Timbre", "Color", "Frequency", "Signature", "Bit Depth", "Sample Rate"]),
         .init("Modal Synth", ["Model", "Contour", "Bow", "Blow", "Strike", "Flow", "Mallet", "Bow Timbre", "Blow Timbre", "Strike Timbre", "Geometry", "Brightness", "Damping", "Position", "Space", "Ext In"]),
@@ -23,7 +23,7 @@ enum EG13PreviewEngines {
     ]
 
     /// Mirrors the filter engine table (core/engine, EngineInfo: display name and P names).
-    static let filter: [EG13PreviewEngine] = [
+    public static let filter: [EG13CatalogEngine] = [
         .init("Off", []),
         .init("Analog Filter", ["Frequency", "Resonance", "Mode"]),
         .init("Classic Filters", ["Cutoff", "Resonance", "Model", "Character"]),
@@ -31,14 +31,14 @@ enum EG13PreviewEngines {
     ]
 
     /// Mirrors the shaper engine table (core/engine, EngineInfo: display name and P names).
-    static let shaper: [EG13PreviewEngine] = [
+    public static let shaper: [EG13CatalogEngine] = [
         .init("Off", []),
         .init("Ring Mod / Vocoder", ["Algorithm", "Timbre", "Carrier Level", "Mod Level", "Carrier", "Modulator", "Osc Pitch", "Osc Shape", "Mode"]),
         .init("EQ", ["High Freq", "High Gain", "Mid 1 Freq", "Mid 1 Gain", "Mid 1 Q", "Mid 2 Freq", "Mid 2 Gain", "Mid 2 Q", "Low Freq", "Low Gain", "Input Pad", "Output"]),
     ]
 
     /// Mirrors the mod1 engine table (core/engine, EngineInfo: display name and P names).
-    static let mod: [EG13PreviewEngine] = [
+    public static let mod: [EG13CatalogEngine] = [
         .init("Off", []),
         .init("Envelope", ["Mode", "Attack", "Attack Shape", "Decay", "Decay Shape", "Sustain", "Sustain Time", "Release", "Release Shape", "Seg 5 A", "Seg 5 B", "Seg 6 A", "Seg 6 B"]),
         .init("LFO", ["Mode", "Sync", "Frequency", "Shape", "Slope", "Shift", "Smoothness", "(unused)", "(unused)", "Output", "Range"]),
@@ -47,7 +47,7 @@ enum EG13PreviewEngines {
     ]
 
     /// Mirrors the partFx engine table (core/engine, EngineInfo: display name and P names).
-    static let partFx: [EG13PreviewEngine] = [
+    public static let partFx: [EG13CatalogEngine] = [
         .init("Off", []),
         .init("Granular", ["Blend", "Position", "Size", "Pitch", "Density", "Texture", "Feedback", "Reverb", "Freeze", "Mode", "Quality", "Spread", "In Gain"]),
         .init("Granular Delay", ["Dry/Wet", "Time", "Size", "Pitch", "Density", "Shape", "Feedback", "Reverb", "Freeze", "Quality", "Seed", "(unused)", "Time Random", "Size Random", "Shape Random", "Pitch Random"]),
@@ -55,4 +55,17 @@ enum EG13PreviewEngines {
         .init("Reverb", ["Amount", "Time", "Diffusion", "Brightness", "(unused)", "(unused)", "(unused)", "(unused)", "Freeze"]),
     ]
 
+}
+
+extension EG13EngineCatalog {
+    /// The engines of each slot kind (EG13SlotKind raw order: Source, Filter, Shaper, Mod 1-4, Part FX).
+    public static func engines(kind: Int) -> [EG13CatalogEngine] {
+        switch kind {
+        case 0: return source
+        case 1: return filter
+        case 2: return shaper
+        case 7: return partFx
+        default: return mod
+        }
+    }
 }

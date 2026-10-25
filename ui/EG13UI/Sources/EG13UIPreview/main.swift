@@ -13,9 +13,11 @@ private struct EG13PreviewRoot: View {
     @State private var page: Page
     @State private var zoom = 1.0
     let demo: EG13ControlsDemo
+    @State private var variant: EG13EditorVariant
     let synth: EG13Synth
 
-    init(core: EG13PreviewCore, page: Page) {
+    init(core: EG13PreviewCore, page: Page, variant: EG13EditorVariant) {
+        _variant = State(initialValue: variant)
         _page = State(initialValue: page)
         demo = EG13ControlsDemo(core: core)
         synth = EG13Synth(core: core, kind: .instrument)
@@ -32,6 +34,10 @@ private struct EG13PreviewRoot: View {
                     Text("75%").tag(0.75); Text("100%").tag(1.0); Text("200%").tag(2.0)
                 }
                 .pickerStyle(.segmented).frame(width: 220).labelsHidden()
+                Picker("Variant", selection: $variant) {
+                    ForEach(EG13EditorVariant.allCases, id: \.self) { Text("Mods \($0.rawValue)").tag($0) }
+                }
+                .pickerStyle(.segmented).frame(width: 160).labelsHidden()
                 Spacer()
             }
             .padding(8)
@@ -39,7 +45,7 @@ private struct EG13PreviewRoot: View {
                 Group {
                     switch page {
                     case .controls: EG13ControlsPage(demo: demo)
-                    case .editor: EG13RootView(synth: synth)
+                    case .editor: EG13RootView(synth: synth, variant: variant)
                     }
                 }
                 .scaleEffect(zoom, anchor: .topLeading)
@@ -76,8 +82,9 @@ MainActor.assumeIsolated {
 
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
+    let variant: EG13EditorVariant = arguments.contains("--variant-b") ? .modsPage : .modsColumn
     let page: EG13PreviewRoot.Page = arguments.contains("--editor") ? .editor : .controls
-    let host = NSHostingView(rootView: EG13PreviewRoot(core: .standard(), page: page))
+    let host = NSHostingView(rootView: EG13PreviewRoot(core: .standard(), page: page, variant: variant))
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 900),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)

@@ -123,3 +123,45 @@ Open choices:
 9. **Control tweaks:** the stepper well is 88 pt wide (was 64) so "Per voice", "Other part" and "Part mix" fit; knob names may shrink to 65 %; a knob can take a label, a smaller diameter and no value text (`EG13KnobLayout`). The knob drawing is unchanged.
 
 Status: awaiting owner feedback (round 1 is not approved).
+
+## Layout design log, round 2 (2026-10-25): horizontal module cards
+
+Run: `swift run --package-path ui/EG13UI EG13UIPreview --editor` (add `--variant-b` for B; the page has an A / B switch). Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-editor docs/superpowers/m6-design/layout-r2` writes `editor-a-A.png`, `editor-b-A.png`, `editor-a-75-A.png` (variant A), the same three ending `-B`, `editor-a-mods-B.png` (B's Mods page), `master.png` (header close-up), `part-settings.png`, `worst-case-A.png` (the tallest engines in every slot, to show A's scroll) and the five `*-engines.png` contact sheets (every engine of a slot, one card under another, so the varying heights show).
+
+### Owner's round-1 feedback, as decisions
+
+1. The layout was crowded and small, with unused space and cut names. Fixed by horizontal cards and short labels that never cut.
+2. Q1, emphasis: match the real modules (the VCV Rack Audible Instruments replicas), and the emphasis colour is always the shown part's accent. This is review finding I1 (P1 teal and P2 pink were hard-coded); fixed in this commit: `EG13ParamEmphasis.accent` has no colour, and `EG13Palette.knobStyle` resolves it to the shown part's accent. Test: `emphasisColourIsPartAccent`.
+3. Q4: the master settings move to the header, in a labelled MASTER group (Mode, Latency, Split, Gain, Clip). The cog keeps only window size and About.
+4. Q5: the Mode LCD segments are approved.
+5. Q2 and Q3 (long names, dense mod cards) were not approved; they are solved by the new layout, not by a choice.
+6. **Knob sizes (owner, 2026-10-25, replacing "2 basic sizes"): three sizes, large, medium and small, following the real panels.** First round 2 pass had two sizes; the owner changed it to three before review.
+
+### What changed
+
+- **Layout:** horizontal cards (header strip with the slot name and the LCD engine menu, then knob rows). Height follows content: one row for up to about 10 knobs in A's slot cards (13 in B), two rows for more; an Off engine is the header strip alone. Rows are balanced (16 knobs are 2 rows of 8) and a cell is at most 96 pt wide, so few knobs pack to the left. Mods are the same card, compact.
+  - **A:** Mods in a 470 pt right-hand column of mini-cards; slot cards 698 pt wide. Typical states fit (editor-a-A.png). With four 16-knob engines the columns exceed the strip and scroll (worst-case-A.png).
+  - **B:** slot cards full width (1176 pt, one row each); a VOICE / MODS switch in the header swaps to four full-width Mods cards. Never scrolls; the strip has spare height. The cost: Mods and slot cards are never on screen together.
+  - Same views, one enum (`EG13EditorVariant`).
+- **Header:** 56 pt (was 44) to give the MASTER group a label row. The part tabs lost the Source engine name (A and B only) to make room; the name is on the Source card.
+- **Matrix row and bottom bar:** unchanged. A needs more height in the worst case; a possible proposal is to drop the matrix row's own strip and put the 12 route knobs in a 2-row block under the Mods column. Not done; owner call.
+- **Knob sizes:** large 48 pt, medium 38 pt, small 28 pt (scaled from the panels' 52, 40-43 and 18 px components so a small knob is still usable). Every knob shows its value, mod knobs too. Mixed sizes in a row share a label line (each knob sits centred in a box as tall as the row's largest).
+- **Labels:** one table, `EG13ParamLabels` (short name per parameter name; the full name is the tooltip and the VoiceOver label). A two-word label wraps to two lines before it shrinks or cuts; `EG13LabelFit` decides, and `labelsFit` measures every label of every engine at the narrowest cell of its card (slot 64 pt, mod 50 pt). Bar and matrix labels sit in wide cells.
+- **Engine menu:** 190 pt wide so "State Variable Filter" is not cut (test `engineNamesFit`). The menu is now drawn from the card's engine control spec, so a card that drops the spec drops the menu (round-1 review minor), and the reachability list holds the menu.
+- **Stepper well** is 64 pt again by default (round-1 review minor 1); the wider well (88 pt) is only for "Per voice", "Part mix" and the like.
+- **Part settings** popover and part bar use the wide stepper.
+
+### Emphasis and size per engine (data: `EG13PanelLayout`)
+
+Rule: size = the real panel's knob component for that parameter (Rogan 3 and 6 large; Rogan 1 and 2 medium; trimmers and buttons small), except where the owner pointed at a panel (Liquid Filter: large Freq, small Res; Random Sampler: large Rate and Spread, medium the rest). Emphasis (accent cap and chip, the part's accent) = the panel's large knobs. A mod's sizes drop one step (owner: mods use small or medium). Modules: Macro Oscillator = Plaits, Digital Oscillator = Braids, Modal Synth = Elements, Resonator (Source and Part FX) = Rings, Analog Filter = Ripples (Liquid Filter), Ring Mod / Vocoder = Warps (Meta Modulator), EQ = Shelves, LFO = Tides 2, Random / S&H = Marbles (Random Sampler), Granular = Clouds (Texture Synthesizer). Details are in the report. Fallbacks (no replica panel, or a panel with equal knobs) are listed there and in the `EG13PanelLayout` comment: Audio Input, Classic Filters, State Variable Filter, Envelope, Function Generator, Granular Delay, Reverb, Digital Oscillator and EQ.
+
+Not mapped: Frames (Keyframer/Mixer) and Veils (Quad VCA): EG13 has no engine derived from them.
+
+### Open choices for the owner
+
+1. **A or B first** (see above). B is calmer; A shows Mods and voice together but scrolls with four big engines.
+2. Whether emphasis should be "large knobs" (now) or "coloured knobs on the panel" (Plaits has none; Clouds has five). Size and colour are independent here.
+3. Matrix row: keep, or fold into A's Mods column.
+4. The part tabs without the engine name.
+
+Status: awaiting owner feedback (round 2 is not approved).

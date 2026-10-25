@@ -3,7 +3,7 @@ import EG13UI
 
 /// A fake plugin for the preview: parameters live in memory, nothing needs a DAW. It has the
 /// plugin's whole table (158 parameters per part, 7 master) with the real ids, and the real
-/// engine and P names (EG13PreviewEngines). The tests have their own recording fake
+/// engine and P names (EG13EngineCatalog). The tests have their own recording fake
 /// (EG13FakeCore, test target only).
 @MainActor
 final class EG13PreviewCore: EG13Core {
@@ -23,13 +23,13 @@ final class EG13PreviewCore: EG13Core {
     static let latencyModes = ["Live", "Studio"]
 
     /// The engines of each slot kind (EG13SlotKind order).
-    static func engines(_ kind: Int) -> [EG13PreviewEngine] {
+    static func engines(_ kind: Int) -> [EG13CatalogEngine] {
         switch kind {
-        case 0: return EG13PreviewEngines.source
-        case 1: return EG13PreviewEngines.filter
-        case 2: return EG13PreviewEngines.shaper
-        case 7: return EG13PreviewEngines.partFx
-        default: return EG13PreviewEngines.mod
+        case 0: return EG13EngineCatalog.source
+        case 1: return EG13EngineCatalog.filter
+        case 2: return EG13EngineCatalog.shaper
+        case 7: return EG13EngineCatalog.partFx
+        default: return EG13EngineCatalog.mod
         }
     }
 

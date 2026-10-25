@@ -14,8 +14,6 @@ public enum EG13Palette {
         public let ink: ThemeColor
     }
 
-    public enum AccentRole: Sendable, Equatable { case teal, pink }
-
     public static let teal = Pair(bright: ThemeColor(hex: 0x00A1A7FF), ink: ThemeColor(hex: 0x007F8AFF))
     public static let pink = Pair(bright: ThemeColor(hex: 0xDA4061FF), ink: ThemeColor(hex: 0xC42C4EFF))
 
@@ -34,8 +32,6 @@ public enum EG13Palette {
     public static let lcdSegment = ThemeColor(hex: 0xAFD22CFF)
     /// Spare.
     public static let peach = ThemeColor(hex: 0xDFC0ACFF)
-
-    public static func accent(_ role: AccentRole) -> Pair { role == .teal ? teal : pink }
 
     /// Part A teal, Part B pink.
     public static func part(_ part: Int) -> Pair { part == 0 ? teal : pink }
@@ -57,8 +53,15 @@ public enum EG13Palette {
             focus: teal.ink.color)
     }
 
+    /// The controls in the rack-grey header: labels and the stepper buttons in white.
+    public static var headerControls: EG13ControlColors {
+        var colors = controls
+        colors.label = white.color
+        return colors
+    }
+
     /// A knob's style from its emphasis (owner, 2026-10-20): an accent cap has its arc in the
-    /// accent's bright colour and an ink chip; a white cap has an arc in the part's colour;
+    /// part's bright colour and an ink chip; a white cap has an arc in the part's colour;
     /// a black cap (secondary knobs, master knobs) has an arc in the part's colour.
     public static func knobStyle(for emphasis: EG13ParamEmphasis, part: Int, base: EG13KnobStyle = .default) -> EG13KnobStyle {
         var style = base
@@ -67,11 +70,11 @@ public enum EG13Palette {
             style.cap = .white
             style.accent = self.part(part).bright.color
             style.accentInk = self.part(part).ink.color
-        case .accent(let role):
-            let pair = accent(role)
+        case .accent:
+            // Always the shown part's accent: a size or an engine never picks a colour.
             style.cap = .accent
-            style.accent = pair.bright.color
-            style.accentInk = pair.ink.color
+            style.accent = self.part(part).bright.color
+            style.accentInk = self.part(part).ink.color
             style.label = .chip
         case .black:
             style.cap = .black

@@ -33,26 +33,21 @@ public struct EG13Knob: View {
             .id(ObjectIdentifier(param))
     }
 
-    public static func diameter(_ size: EG13KnobSize) -> CGFloat {
-        switch size {
-        case .hero: return EG13Layout.heroKnobDiameter
-        case .detail: return EG13Layout.detailKnobDiameter
-        case .bar: return EG13Layout.barKnobDiameter
-        }
-    }
+    public static func diameter(_ size: EG13KnobSize) -> CGFloat { EG13Layout.knobDiameter(size) }
 }
 
-/// Layout-only options of a knob: where a card is dense the knob can shrink and drop its
-/// value text (the value stays in the help tooltip and for VoiceOver).
+/// Layout-only options of a knob: a label other than the short name, the width its label may
+/// take (longer labels wrap), and the height of the box the knob sits centred in, so knobs of
+/// different sizes in one row share a label line. The knob's drawing is the approved design.
 public struct EG13KnobLayout: Equatable, Sendable {
-    public var diameter: CGFloat?
-    public var showsValue = true
     public var label: String?
+    public var labelWidth: CGFloat?
+    public var boxHeight: CGFloat?
 
-    public init(diameter: CGFloat? = nil, showsValue: Bool = true, label: String? = nil) {
-        self.diameter = diameter
-        self.showsValue = showsValue
+    public init(label: String? = nil, labelWidth: CGFloat? = nil, boxHeight: CGFloat? = nil) {
         self.label = label
+        self.labelWidth = labelWidth
+        self.boxHeight = boxHeight
     }
 }
 
@@ -77,29 +72,26 @@ private struct EG13KnobBody: View {
     }
 
     var body: some View {
-        let diameter = layout.diameter ?? EG13Knob.diameter(size)
+        let diameter = EG13Knob.diameter(size)
         VStack(spacing: theme.spacing.xxs) {
             VStack(spacing: theme.spacing.xxs) {
                 EG13KnobShape(normalized: param.normalized, origin: param.isBipolar ? 0.5 : 0,
                               style: style, size: size, isFocused: isFocused)
                     .frame(width: diameter, height: diameter)
                     .eg13ControlInput($interaction)
-                EG13ControlLabel(text: layout.label ?? param.name, style: style.label, chip: style.accentInk,
-                                 font: theme.type.caption.font)
-                if size == .hero {
-                    EG13LCDText(text: param.text)
-                        .frame(width: EG13Layout.heroReadoutWidth, height: 20)
-                } else if layout.showsValue {
-                    Text(param.text)
-                        .font(theme.type.caption.font)
-                        .foregroundStyle(colors.label)
-                        .lineLimit(1)
-                        .monospacedDigit()
-                }
+                    .frame(height: max(diameter, layout.boxHeight ?? diameter))
+                EG13ControlLabel(text: layout.label ?? EG13ParamLabels.short(param.name), style: style.label,
+                                 chip: style.accentInk, font: theme.type.caption.font, width: layout.labelWidth)
+                Text(param.text)
+                    .font(theme.type.caption.font)
+                    .foregroundStyle(colors.label)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .monospacedDigit()
             }
             .modifier(EG13ControlAccess(interaction: $interaction, label: param.accessibilityLabel,
                                         valueText: param.text, focus: $isFocused))
-            .help(layout.showsValue ? "" : "\(param.name): \(param.text)")
+            .help("\(param.name): \(param.text)")
             if showsMotionChip {
                 EG13MotionChip(paramName: param.name)
             }

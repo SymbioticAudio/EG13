@@ -5,14 +5,16 @@ import EG13CBridge
 /// parameter with no spec has no control on screen.
 public struct EG13ControlSpec: Equatable, Identifiable, Sendable {
     public enum Kind: Equatable, Sendable {
-        /// A knob. Slot P's are `.detail`; the bottom bar and the matrix use `.bar`.
+        /// A knob in one of the three sizes.
         case knob(EG13KnobSize)
-        /// The compact knob of a mod card: smaller, and no value text under it.
-        case compactKnob
         /// A minus / LCD / plus stepper.
         case stepped
+        /// The same with a wider well, for "Per voice", "Other part", "Part mix".
+        case wideStepped
+        /// A mod card's Scope: a wide stepper with no label under it.
+        case scope
         /// A slot's engine menu (the selector parameter).
-        case enginePicker
+        case enginePicker(EG13SlotKind)
         /// The master Mode segmented control.
         case segmented
     }
@@ -37,9 +39,8 @@ public struct EG13SlotControls: Equatable, Sendable {
 /// Every control of the editor for the shown part, by region.
 public struct EG13EditorControls: Equatable, Sendable {
     public var part: Int
-    /// The master Mode control in the header, and the master settings popover.
+    /// The master settings in the header: Mode, Latency Mode, Split Note, Voice Gain, Soft Clip.
     public var header: [EG13ControlSpec]
-    public var masterSettings: [EG13ControlSpec]
     /// Source, Filter, Shaper and Part FX, in column order.
     public var cards: [EG13SlotControls]
     /// The four mod slots.
@@ -54,7 +55,7 @@ public struct EG13EditorControls: Equatable, Sendable {
     public var partSettings: [EG13ControlSpec]
 
     public var all: [EG13ControlSpec] {
-        header + masterSettings + cards.flatMap(\.all) + mods.flatMap(\.all) + matrix + partBar + masterBar
+        header + cards.flatMap(\.all) + mods.flatMap(\.all) + matrix + partBar + masterBar
             + partSettings
     }
 }
@@ -64,16 +65,16 @@ extension EG13Synth {
     func slotControls(_ kind: EG13SlotKind, part: Int) -> EG13SlotControls {
         let slot = slot(kind, part: part)
         let isMod = EG13ParamID.isModSlot(kind)
-        let picker = slot.engineNames.isEmpty || param(slot.selectorID) == nil
-            ? nil : EG13ControlSpec(id: slot.selectorID, kind: .enginePicker)
+        let picker = slot.engineNames.count < 2 || param(slot.selectorID) == nil
+            ? nil : EG13ControlSpec(id: slot.selectorID, kind: .enginePicker(kind))
         let params = slot.descriptors.enumerated().compactMap { index, descriptor -> EG13ControlSpec? in
             guard param(descriptor.id) != nil, name(descriptor.id) != EG13Slot.unusedName else { return nil }
-            return EG13ControlSpec(
-                id: descriptor.id, kind: isMod ? .compactKnob : .knob(.detail),
-                emphasis: EG13Emphasis.slotParam(kind: kind, engine: slot.engine, p: index + 1))
+            let knob = EG13PanelLayout.knob(kind: kind, engine: slot.engineName, p: index + 1)
+            return EG13ControlSpec(id: descriptor.id, kind: .knob(knob.size),
+                                   emphasis: knob.emphasised ? .accent : .plain)
         }
         let scopeID = EG13ParamID.modScope(part, kind)
-        let scope = isMod && param(scopeID) != nil ? EG13ControlSpec(id: scopeID, kind: .stepped) : nil
+        let scope = isMod && param(scopeID) != nil ? EG13ControlSpec(id: scopeID, kind: .scope) : nil
         return EG13SlotControls(kind: kind, engine: picker, params: params, scope: scope)
     }
 
@@ -84,38 +85,39 @@ extension EG13Synth {
             param(id) == nil ? nil : EG13ControlSpec(id: id, kind: kind, emphasis: emphasis, label: label)
         }
         func steppers(_ params: [EG13PartParam]) -> [EG13ControlSpec] {
-            params.compactMap { spec(EG13ParamID.part(shown, $0), .stepped) }
+            params.compactMap { spec(EG13ParamID.part(shown, $0), .wideStepped) }
         }
         let cardKinds: [EG13SlotKind] = [EG13_SLOT_KIND_SOURCE, EG13_SLOT_KIND_FILTER, EG13_SLOT_KIND_SHAPER,
                                          EG13_SLOT_KIND_PART_FX]
         let modKinds: [EG13SlotKind] = [EG13_SLOT_KIND_MOD1, EG13_SLOT_KIND_MOD2, EG13_SLOT_KIND_MOD3,
                                         EG13_SLOT_KIND_MOD4]
-        // Part Level is the bar's main control (accent); Dry and Out are secondary (black).
+        // Part Level is the bar's main control (accent, in the shown part's colour); Dry and Out are
+        // secondary (black).
         let partBar: [EG13ControlSpec] = [
-            spec(EG13ParamID.part(shown, .level), .knob(.bar), .teal),
-            spec(EG13ParamID.part(shown, .pan), .knob(.bar)),
-            spec(EG13ParamID.part(shown, .glide), .knob(.bar)),
-            spec(EG13ParamID.part(shown, .voiceMode), .stepped),
-            spec(EG13ParamID.part(shown, .voiceCount), .stepped),
+            spec(EG13ParamID.part(shown, .level), .knob(.medium), .accent),
+            spec(EG13ParamID.part(shown, .pan), .knob(.medium)),
+            spec(EG13ParamID.part(shown, .glide), .knob(.medium)),
+            spec(EG13ParamID.part(shown, .voiceMode), .wideStepped),
+            spec(EG13ParamID.part(shown, .voiceCount), .wideStepped),
         ].compactMap { $0 }
         return EG13EditorControls(
             part: shown,
-            header: [spec(EG13ParamID.master(.mode), .segmented)].compactMap { $0 },
-            masterSettings: [
-                spec(EG13ParamID.master(.splitNote), .stepped),
-                spec(EG13ParamID.master(.voiceGain), .stepped),
-                spec(EG13ParamID.master(.softClip), .stepped),
-                spec(EG13ParamID.master(.latencyMode), .stepped),
+            header: [
+                spec(EG13ParamID.master(.mode), .segmented),
+                spec(EG13ParamID.master(.latencyMode), .stepped, label: "Latency"),
+                spec(EG13ParamID.master(.splitNote), .stepped, label: "Split"),
+                spec(EG13ParamID.master(.voiceGain), .stepped, label: "Gain"),
+                spec(EG13ParamID.master(.softClip), .stepped, label: "Clip"),
             ].compactMap { $0 },
             cards: cardKinds.map { slotControls($0, part: shown) },
             mods: modKinds.map { slotControls($0, part: shown) },
             matrix: (0..<EG13ParamID.routeCount).compactMap {
-                spec(EG13ParamID.routeAmount(shown, $0), .knob(.bar), .black, label: "Route \($0 + 1)")
+                spec(EG13ParamID.routeAmount(shown, $0), .knob(.small), .black, label: "Route \($0 + 1)")
             },
             partBar: partBar,
             masterBar: [
-                spec(EG13ParamID.master(.dry), .knob(.bar), .black),
-                spec(EG13ParamID.master(.level), .knob(.bar), .black, label: "Out"),
+                spec(EG13ParamID.master(.dry), .knob(.medium), .black),
+                spec(EG13ParamID.master(.level), .knob(.medium), .black, label: "Out"),
             ].compactMap { $0 },
             partSettings: steppers([.transpose, .baseNote, .midiChannel, .keyLow, .keyHigh, .trigger,
                                     .bendRange, .mono, .output, .inputSource, .partFxInput,

@@ -8,21 +8,30 @@ The window is 1200 × 760 points at 100 %. You can resize it from 75 % (900 × 5
 
 The window works in points, so on a Retina display it is drawn sharp at every size and EG13 ignores the host's own scale setting. Closing the window and opening it again starts at 100 %.
 
+## Layout (round 2: not approved yet)
+
+The layout below is a design proposal in two variants, **A** and **B**, for the owner to choose between; the unchosen one will be removed. Both draw the same cards. They differ only in where the four Mods go.
+
 ## Header
 
-The header strip holds, from the left, the EG13 name, the A and B part tabs, and on the right the master **Mode** (Single, Layer, Split or Multi), the **master settings** button and the About button.
+The header strip holds, from the left, the EG13 name, the A and B part tabs, and on the right the **MASTER** group and the settings button.
 
-- The **A and B tabs** choose which part the window shows. Part A is teal, Part B is pink. Each tab names the part's Source engine. The shown tab is filled with the part's colour. Switching tabs changes every card, the matrix, the part settings and the bottom bar to that part; the master controls stay as they are.
-- **Master settings** (the cog) holds the master settings that are not Mode, Dry or Out: **Split Note**, **Voice Gain**, **Soft Clip** and **Latency Mode**, and the window size (75 %, 100 %, 125 %, 150 %, 200 %; the host may keep the window as it is).
+- The **A and B tabs** choose which part the window shows. Part A is teal, Part B is pink. The shown tab is filled with the part's colour. Switching tabs changes every card, the matrix, the part settings and the bottom bar to that part; the master controls stay as they are.
+- The **MASTER** group holds the plugin-wide settings, each with a small label under it: **Mode** (Single, Layer, Split or Multi), **Latency** (Live or Studio), **Split** (the split note), **Gain** (voice gain) and **Clip** (soft clip). Master **Dry** and **Out** stay in the bottom bar. The group is the same on both tabs.
+- In variant B, a **VOICE / MODS** switch sits between the tabs and the MASTER group. VOICE shows the Source, Filter, Shaper and Part FX cards; MODS shows the four Mods cards.
+- The **cog** opens a small panel with the **window size** (75 %, 100 %, 125 %, 150 %, 200 %; the host may keep the window as it is) and **About**.
 
-## Columns and cards
+## Cards
 
-The shown part is laid out in columns: **Source**, **Filter**, **Shaper** and **Part FX**, then a **Mods** column, with the **matrix** below them.
+The shown part is laid out as horizontal cards, one under another: **Source**, **Filter**, **Shaper** and **Part FX**, and the four **Mods**. The **matrix** row sits under them, and the bottom bar under that.
 
-- Each card has a header strip with its name in small capitals, the engine's name in lowercase, and an **engine menu** (a green-on-grey LCD well). Below it is a grid of knobs, four to a row: one for each parameter the selected engine uses, named as the engine names it (the Granular Part FX calls its fifth knob Density, the Resonator calls it Spread). A knob the engine does not use is hidden, so a card with the engine Off shows only its menu. A card never shows a knob that does nothing.
-- A card shows up to 16 knobs (Source), 4 (Filter), 12 (Shaper) and 16 (Part FX). Long names are shown a little smaller, and cut with an ellipsis when they still do not fit; hover or the VoiceOver label gives the whole name.
-- Knobs come in three looks. **Emphasised** knobs have an accent cap and a coloured name tag: the first two knobs of each Source, Filter, Shaper and Part FX card, which are the engine's main controls (the first is teal, the second pink), and the part's **Level**. **Secondary** knobs have a black cap with the part's colour in the arc: master **Dry** and **Out** and the matrix routes. Every other knob has a white cap.
-- The **Mods** column has four compact mod cards, numbered 1 to 4. Each has an engine menu, a **Scope** stepper (per voice or per part) and a grid of knobs, eight to a row. A mod card's knobs show no value under the knob; hover over a knob to see its value.
+- **Variant A:** the four slot cards fill the left side. The four Mods are a column of mini-cards on the right.
+- **Variant B:** the slot cards use the full width. The Mods are on a page of their own behind the VOICE / MODS switch, each card also full width.
+- Each card has a slim header strip with the slot's name and the **engine menu** (a green-on-grey LCD well, wide enough for the longest engine name). A mod card has its number, the engine menu and a **Scope** stepper (per voice or per part). Under the header are the knobs of the selected engine, as many rows as they need: a card with eight knobs is one row, a card with sixteen is two rows. A card whose engine is Off is its header strip alone. A knob the engine does not use is hidden, so a card never shows a knob that does nothing.
+- In variant A, if four tall engines together are taller than the window allows (for example a 16-knob Source, a 16-knob Part FX and three 16-knob Mods), the column scrolls. Every knob stays reachable. Variant B never needs to scroll.
+- **Names:** a knob shows a short name, taken from the abbreviation printed on the real module panel where there is one (BRIGHT, STRUCT, RES, LPG COL, S.RATE). A name is never cut and never shrunk: a name of two words that does not fit wraps to two lines. Hover over a knob for its full name and value; VoiceOver reads the full name.
+- **Three knob sizes: large, medium and small**, following the real module's panel for the engine. For example, Granular follows the Clouds panel: Position, Size and Pitch are large, Density and Texture medium, Freeze small. An engine with no matching panel has medium knobs and one or two large main controls. A mod card's knobs are one step smaller (no large knob). Every knob shows its value under it.
+- **Emphasised** knobs have an accent cap and a coloured name tag, in the shown part's colour (teal in Part A, pink in Part B). They are the large knobs of the real panel (for a panel with no large knob, its coloured ones; see the design log), and the part's **Level**. Emphasis is not tied to size. **Secondary** knobs have a black cap with the part's colour in the arc: master **Dry** and **Out** and the matrix routes. Every other knob has a white cap.
 - The **matrix** row has the part's 12 route amounts, labelled Route 1 to Route 12. Choosing each route's source and destination is not in this version: routes keep the sources and destinations they have, and you can set their amounts. (Source and destination choices arrive with the matrix editor in a later version.)
 
 ## Knobs and steppers
@@ -35,6 +44,7 @@ The shown part is laid out in columns: **Source**, **Filter**, **Shaper** and **
 - Each drag, scroll or key press is one touch for your host's automation. If the touch is interrupted (the window closes mid-drag), the knob keeps the value it had reached and the touch ends.
 - VoiceOver reads each knob's name and value, and adjusts it up or down by one step or 1/100 of the range.
 - The engine menu in a card's header lists the engines by name; choosing one is a single automatable change.
+- Stepped settings in the header (Latency, Split, Gain, Clip) show a short name under the well; the full name is for VoiceOver.
 
 ## Bottom bar and meters
 

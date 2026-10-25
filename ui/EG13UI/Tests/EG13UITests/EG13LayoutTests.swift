@@ -87,7 +87,7 @@ struct EG13LayoutTests {
         #expect(controls.partSettings.count == 17)
         #expect(controls.partBar.map(\.id) == [.level, .pan, .glide, .voiceMode, .voiceCount].map { EG13ParamID.part(1, $0) })
         #expect(controls.masterBar.map(\.id) == [EG13ParamID.master(.dry), EG13ParamID.master(.level)])
-        #expect(controls.header.map(\.id) == [EG13ParamID.master(.mode)])
+        #expect(controls.header.map(\.id) == [.mode, .latencyMode, .splitNote, .voiceGain, .softClip].map { EG13ParamID.master($0) })
         #expect(controls.matrix.count == 12)
     }
 
@@ -122,16 +122,5 @@ struct EG13LayoutTests {
         #expect(a.matrix.allSatisfy { $0.id >> 16 == 0 } && b.matrix.allSatisfy { $0.id >> 16 == 1 })
         // The master controls are the same on both tabs.
         #expect(a.masterBar == b.masterBar && a.header == b.header)
-    }
-
-    @Test("Emphasis: P1 and P2 of a card, Level in the bar; black for Dry, Out and the routes")
-    func emphasisProposal() {
-        let controls = synth.editorControls(part: 0)
-        let source = controls.cards[0].params
-        #expect(source[0].emphasis == .teal && source[1].emphasis == .pink && source[2].emphasis == .plain)
-        #expect(controls.mods.flatMap(\.params).allSatisfy { $0.emphasis == .plain })
-        #expect(controls.partBar[0].emphasis == .teal)
-        #expect(controls.masterBar.allSatisfy { $0.emphasis == .black })
-        #expect(controls.matrix.allSatisfy { $0.emphasis == .black })
     }
 }

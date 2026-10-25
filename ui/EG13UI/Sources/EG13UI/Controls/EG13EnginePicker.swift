@@ -8,6 +8,7 @@ public struct EG13EnginePicker: View {
     let selector: EG13Param
     let selected: Int
     let accessibilityName: String
+    let wellWidth: CGFloat
     @Environment(\.eg13InteractiveControls) private var interactive
 
     /// - Parameters:
@@ -15,7 +16,11 @@ public struct EG13EnginePicker: View {
     ///   - selector: the slot's engine selector parameter.
     ///   - selected: the engine the plugin reports as selected.
     ///   - accessibilityName: e.g. "Part A Source engine".
-    public init(names: [String], selector: EG13Param, selected: Int, accessibilityName: String) {
+    ///   - wellWidth: the LCD well's width; the editor's cards use `EG13Layout.enginePickerWidth`,
+    ///     wide enough for every engine name.
+    public init(names: [String], selector: EG13Param, selected: Int, accessibilityName: String,
+                wellWidth: CGFloat = 118) {
+        self.wellWidth = wellWidth
         self.names = names
         self.selector = selector
         self.selected = selected
@@ -52,7 +57,6 @@ public struct EG13EnginePicker: View {
     /// The same LCD look as the other wells: green on grey.
     private var well: some View {
         EG13LCDText(text: selectedName)
-            .frame(minWidth: 118, minHeight: 24, maxHeight: 24)
-            .fixedSize(horizontal: true, vertical: false)
+            .frame(width: wellWidth, height: 24)
     }
 }

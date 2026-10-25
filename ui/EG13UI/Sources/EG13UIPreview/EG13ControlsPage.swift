@@ -95,7 +95,7 @@ private struct EG13PartGallery: View {
                 ForEach(items.indices, id: \.self) { i in
                     VStack(spacing: theme.spacing.xxs) {
                         EG13Knob(param: demo.param("\(part).\(title).\(i)", "Harmonics", value: values[i]),
-                                 style: items[i].1, size: .hero)
+                                 style: items[i].1, size: .large)
                         Text(items[i].0).font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(theme.text.secondary.color)
                             .multilineTextAlignment(.center)
@@ -109,17 +109,17 @@ private struct EG13PartGallery: View {
 
     private var sizes: some View {
         VStack(alignment: .leading, spacing: theme.spacing.xs) {
-            Text("SIZES: hero, detail, bar; bipolar; stepped (default style)")
+            Text("SIZES: large, medium, small; bipolar; stepped (default style)")
                 .font(theme.type.caption.font.weight(.bold)).foregroundStyle(theme.text.secondary.color)
             HStack(alignment: .top, spacing: theme.spacing.xl) {
-                EG13Knob(param: demo.param("\(part).size.0", "Harmonics"), style: base, size: .hero)
-                EG13Knob(param: demo.param("\(part).size.1", "Timbre"), style: base, size: .detail)
-                EG13Knob(param: demo.param("\(part).size.2", "Pan", value: 0.3, min: -1, max: 1), style: base, size: .bar)
+                EG13Knob(param: demo.param("\(part).size.0", "Harmonics"), style: base, size: .large)
+                EG13Knob(param: demo.param("\(part).size.1", "Timbre"), style: base, size: .medium)
+                EG13Knob(param: demo.param("\(part).size.2", "Pan", value: 0.3, min: -1, max: 1), style: base, size: .small)
                 EG13Knob(param: demo.param("\(part).size.3", "Voices", value: 5, min: 1, max: 8, stepped: true),
-                         style: base, size: .detail)
+                         style: base, size: .medium)
                 Spacer(minLength: 0)
             }
-            Text("hero, detail, bar (pan, bipolar: arc from centre), detail stepped (voices)")
+            Text("large, medium, small (pan, bipolar: arc from centre), medium stepped (voices)")
                 .font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.text.secondary.color)
         }
     }

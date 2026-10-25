@@ -103,6 +103,16 @@ final class EG13FakeCore: EG13Core {
 
     var dynamicNames = false
 
+    /// The full table with the plugin's real engines and P names (EG13EngineCatalog), for the
+    /// tests that check names, labels and panel data against every engine.
+    static func fullCatalog() -> EG13FakeCore {
+        let core = full()
+        for kind in 0..<8 {
+            core.slotEngines[kind] = EG13EngineCatalog.engines(kind: kind).map { FakeEngine(name: $0.name, params: $0.params) }
+        }
+        return core
+    }
+
     /// Selects an engine in one slot of one part, as the plugin does (a new engine generation).
     func select(_ kind: EG13SlotKind, engine: Int, part: Int) {
         currentBySlot[Int(kind.rawValue)]![part] = engine
