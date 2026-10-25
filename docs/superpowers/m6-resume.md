@@ -92,3 +92,34 @@ Final choices:
 - Minus and plus steppers.
 - The engine picker drawn as an LCD (#AFD22C on #383838).
 - Bold LCD text, at least 12 pt.
+
+## Layout design log, round 1 (2026-10-25): the one-part editor
+
+Run: `swift run --package-path ui/EG13UI EG13UIPreview --editor` (the editor in a window over a fake plugin with the plugin's whole parameter table and the real engine and P names). Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-editor docs/superpowers/m6-design/layout-r1` writes the files below to that folder (ImageRenderer, so the engine menus show their closed state).
+
+Shown:
+
+- `editor-a.png`, `editor-b.png`: the editor at 100 % for Part A (teal) and Part B (pink). `editor-a-75.png`: Part A at 75 %.
+- `part-settings.png`: the Part settings popover content, for both parts.
+- `source-engines.png`, `filter-engines.png`, `shaper-engines.png`, `partfx-engines.png`, `mods-engines.png`: that slot's card for every engine (Part A colours; the mods sheet shows the mod 1 card).
+- Layout, top to bottom: header (EG13 name, A/B tabs, Mode, master settings, About); Source, Filter, Shaper and Part FX cards (four knobs to a row) with the MODS column (four compact mod cards, eight knobs to a row); the matrix row (Route 1 to 12); the bottom bar (part Level, Pan, Glide, Voice Mode, Voices; Part settings; master Dry and Out; a stereo meter per part).
+- The controls are the approved round 3 controls. Every parameter of the shown part and the master is reachable from exactly one control; `EG13LayoutTests` checks it for every engine of every slot, on both parts.
+
+Decisions for the owner to see:
+
+1. **No keyboard in M6a.** The mock's collapsible keyboard is left out: the core API has no note input yet, so it moves to M6b with the live modulation display (spec §8 split). The toggle strip is gone.
+2. **Peak-hold mark on the meters** (added in the Task 8 model, drawn here): a thin white line at the highest recent peak for 1.5 s. A bar turns white at 0 dBFS or above (pink was the clip colour, but pink is Part B's colour).
+
+Open choices:
+
+1. **Which knobs are emphasised** (accent cap + chip). Proposal: the first two P's of every Source, Filter, Shaper and Part FX engine (teal, then pink, in both parts), and the part Level in the bottom bar. Secondary (black cap, part-colour arc): master Dry and Out and the 12 route amounts. Mod knobs stay white. The first two P's are often a model or mode selector (Macro Oscillator's P1 is Model); a per-engine choice (the old table named Harmonics and Timbre for Macro Oscillator) is possible and is data only (`EG13Emphasis`).
+2. **Long knob names.** Four knobs per row at 1200 pt leaves about 45 pt a knob, so names such as Brightness, Structure or Smoothness shrink to 65 % and are then cut (`BRIGHTNE...`); on a chip (emphasised knob) the cut is worse. The full name is in the tooltip and for VoiceOver. Options: narrow the MODS column to widen the cards; give Filter and Shaper narrower cards and Source and Part FX five knobs to a row; or emphasise only knobs with short names.
+3. **Mod cards are dense.** To fit 16 knobs in two rows in a quarter of the strip, mod knobs are 28 pt with no value text (tooltip shows it). The alternative is a taller strip by dropping the matrix row or the bottom bar's height.
+4. **Master settings.** Split Note, Voice Gain, Soft Clip and Latency Mode have no place in the mock's header or bottom bar, so they are in a popover behind the cog next to About, with the window size choices. Spec §8 puts the Latency Mode in settings in M6b; it is here already so that all 7 master parameters are reachable.
+5. **Mode** is four LCD segments (green on dark) instead of the system segmented control, which cannot be drawn in the screenshots and did not match the LCD look.
+6. **Header.** The patch name with previous, next and save (presets are M7; the buttons did nothing) is gone. The wordmark is the SymbioticAudio brand logo and "EG13" when the brand package is linked, otherwise just "EG13". Each part tab names the part's Source engine.
+7. **Inner gaps in an engine's P range are hidden** too (the LFO's unused P8 and P9), so the knobs pack to the left.
+8. **Matrix:** only the amounts are knobs. Route sources and destinations keep their init-patch values until M6b.
+9. **Control tweaks:** the stepper well is 88 pt wide (was 64) so "Per voice", "Other part" and "Part mix" fit; knob names may shrink to 65 %; a knob can take a label, a smaller diameter and no value text (`EG13KnobLayout`). The knob drawing is unchanged.
+
+Status: awaiting owner feedback (round 1 is not approved).

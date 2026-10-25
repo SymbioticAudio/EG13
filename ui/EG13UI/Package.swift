@@ -42,6 +42,7 @@ let package = Package(
             name: "EG13UIPreview",
             dependencies: [
                 "EG13UI",
+                "EG13CBridge",
                 .product(name: "SymbioticTokens", package: "symbiotic-design", moduleAliases: aliases),
             ]),
         .testTarget(name: "EG13UITests", dependencies: ["EG13UI"]),

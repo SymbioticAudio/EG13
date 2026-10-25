@@ -5,7 +5,8 @@ import SymbioticTokens
 
 // EG13UIPreview: the editor and the Controls page in a plain window over a fake plugin.
 //   swift run --package-path ui/EG13UI EG13UIPreview                    interactive window
-//   swift run --package-path ui/EG13UI EG13UIPreview --snapshot <dir>   write PNGs and exit
+//   swift run --package-path ui/EG13UI EG13UIPreview --snapshot <dir>   write the Controls page PNGs and exit
+//   swift run --package-path ui/EG13UI EG13UIPreview --snapshot-editor <dir>   write the layout PNGs and exit
 
 private struct EG13PreviewRoot: View {
     enum Page: String, CaseIterable { case controls = "Controls", editor = "Editor" }
@@ -63,6 +64,14 @@ MainActor.assumeIsolated {
         }
         _ = NSApplication.shared
         exit(EG13Snapshot.run(into: arguments[flag + 1]))
+    }
+    if let flag = arguments.firstIndex(of: "--snapshot-editor") {
+        guard flag + 1 < arguments.count else {
+            FileHandle.standardError.write(Data("usage: EG13UIPreview [--snapshot-editor <dir>]\n".utf8))
+            exit(2)
+        }
+        _ = NSApplication.shared
+        exit(EG13Snapshot.runEditor(into: arguments[flag + 1]))
     }
 
     let app = NSApplication.shared
