@@ -1,6 +1,8 @@
-/// Which knobs stand out on an engine's card (owner, 2026-10-20): a plain white cap (the
-/// default), an accent-filled cap with a teal or pink label chip, or a small black cap.
-/// UI metadata keyed by engine id (EngineInfo.id) and P index (0 = P1); not part of the core.
+import EG13CBridge
+
+/// Which knobs stand out (owner, 2026-10-20; round 3 control choices): a white cap by
+/// default, an accent cap with an accent chip for emphasised knobs, a black cap with the
+/// part-colour arc for secondary ones.
 public struct EG13ParamEmphasis: Sendable, Equatable {
     public enum Cap: Sendable, Equatable { case plain, accent(EG13Palette.AccentRole), black }
     public var cap: Cap
@@ -11,21 +13,18 @@ public struct EG13ParamEmphasis: Sendable, Equatable {
     public static let black = EG13ParamEmphasis(cap: .black)
 }
 
+/// Layout round 1 proposal (an open question for the owner, design log): an engine's main
+/// controls are its first two P's, teal then pink, in every Source, Filter, Shaper and Part FX
+/// engine. Mod knobs stay plain (their cards are compact). Keyed on the slot and the engine
+/// index, so an engine can later get its own choice without touching the views.
 public enum EG13Emphasis {
-    static let table: [String: [Int: EG13ParamEmphasis]] = [
-        // Macro Oscillator: Model, Harmonics, Timbre, Morph, Frequency, Decay, LPG Colour, Aux Mix
-        "plaits": [2: .teal, 3: .pink, 5: .black, 6: .black, 7: .black],
-        // Digital Oscillator: Shape, Timbre, Color, Frequency, Signature, Bit Depth, Sample Rate
-        "braids": [1: .teal, 2: .pink, 4: .black, 5: .black, 6: .black],
-        // Modal Synth: Model, Bow, Blow, Strike, Geometry, Brightness, Damping, Position
-        "elements": [2: .pink, 3: .teal, 6: .black, 7: .black],
-        // Resonator: Model, Structure, Brightness, Damping, Position, Exciter, Frequency, Spread
-        "rings": [1: .teal, 2: .pink, 5: .black, 6: .black, 7: .black],
-        // Audio Input: Gain, Attack, Release
-        "input": [1: .black, 2: .black],
-    ]
-
-    public static func emphasis(engineID: String, paramIndex: Int) -> EG13ParamEmphasis {
-        table[engineID]?[paramIndex] ?? .plain
+    /// `p` is 1 for P1.
+    public static func slotParam(kind: EG13SlotKind, engine: Int, p: Int) -> EG13ParamEmphasis {
+        guard !EG13ParamID.isModSlot(kind) else { return .plain }
+        switch p {
+        case 1: return .teal
+        case 2: return .pink
+        default: return .plain
+        }
     }
 }

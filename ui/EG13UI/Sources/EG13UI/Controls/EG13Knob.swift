@@ -13,17 +13,23 @@ public struct EG13Knob: View {
     let style: EG13KnobStyle
     let size: EG13KnobSize
     let showsMotionChip: Bool
+    let layout: EG13KnobLayout
 
-    public init(param: EG13Param, style: EG13KnobStyle, size: EG13KnobSize, showsMotionChip: Bool = false) {
+    /// - Parameter layout: only for dense cards (mod slots): a smaller diameter, no value text
+    ///   under the knob, or a label other than the parameter's name. The knob's drawing is the
+    ///   approved design in every case.
+    public init(param: EG13Param, style: EG13KnobStyle, size: EG13KnobSize, showsMotionChip: Bool = false,
+                layout: EG13KnobLayout = EG13KnobLayout()) {
         self.param = param
         self.style = style
         self.size = size
         self.showsMotionChip = showsMotionChip
+        self.layout = layout
     }
 
     public var body: some View {
         // A new param is a new control: its interaction state must not carry over.
-        EG13KnobBody(param: param, style: style, size: size, showsMotionChip: showsMotionChip)
+        EG13KnobBody(param: param, style: style, size: size, showsMotionChip: showsMotionChip, layout: layout)
             .id(ObjectIdentifier(param))
     }
 
@@ -36,38 +42,54 @@ public struct EG13Knob: View {
     }
 }
 
+/// Layout-only options of a knob: where a card is dense the knob can shrink and drop its
+/// value text (the value stays in the help tooltip and for VoiceOver).
+public struct EG13KnobLayout: Equatable, Sendable {
+    public var diameter: CGFloat?
+    public var showsValue = true
+    public var label: String?
+
+    public init(diameter: CGFloat? = nil, showsValue: Bool = true, label: String? = nil) {
+        self.diameter = diameter
+        self.showsValue = showsValue
+        self.label = label
+    }
+}
+
 private struct EG13KnobBody: View {
     let param: EG13Param
     let style: EG13KnobStyle
     let size: EG13KnobSize
     let showsMotionChip: Bool
+    let layout: EG13KnobLayout
     @State private var interaction: EG13ControlInteraction
     @FocusState private var isFocused: Bool
     @Environment(\.symbioticTheme) private var theme  // typography and spacing only
     @Environment(\.eg13ControlColors) private var colors
 
-    init(param: EG13Param, style: EG13KnobStyle, size: EG13KnobSize, showsMotionChip: Bool) {
+    init(param: EG13Param, style: EG13KnobStyle, size: EG13KnobSize, showsMotionChip: Bool, layout: EG13KnobLayout) {
         self.param = param
         self.style = style
         self.size = size
         self.showsMotionChip = showsMotionChip
+        self.layout = layout
         _interaction = State(initialValue: param.makeInteraction())
     }
 
     var body: some View {
-        let diameter = EG13Knob.diameter(size)
+        let diameter = layout.diameter ?? EG13Knob.diameter(size)
         VStack(spacing: theme.spacing.xxs) {
             VStack(spacing: theme.spacing.xxs) {
                 EG13KnobShape(normalized: param.normalized, origin: param.isBipolar ? 0.5 : 0,
                               style: style, size: size, isFocused: isFocused)
                     .frame(width: diameter, height: diameter)
                     .eg13ControlInput($interaction)
-                EG13ControlLabel(text: param.name, style: style.label, chip: style.accentInk,
+                EG13ControlLabel(text: layout.label ?? param.name, style: style.label, chip: style.accentInk,
                                  font: theme.type.caption.font)
                 if size == .hero {
                     EG13LCDText(text: param.text)
                         .frame(width: EG13Layout.heroReadoutWidth, height: 20)
-                } else {
+                } else if layout.showsValue {
                     Text(param.text)
                         .font(theme.type.caption.font)
                         .foregroundStyle(colors.label)
@@ -77,6 +99,7 @@ private struct EG13KnobBody: View {
             }
             .modifier(EG13ControlAccess(interaction: $interaction, label: param.accessibilityLabel,
                                         valueText: param.text, focus: $isFocused))
+            .help(layout.showsValue ? "" : "\(param.name): \(param.text)")
             if showsMotionChip {
                 EG13MotionChip(paramName: param.name)
             }

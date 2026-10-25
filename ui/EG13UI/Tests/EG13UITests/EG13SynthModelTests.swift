@@ -42,7 +42,7 @@ struct EG13SynthModelTests {
         #expect(second.engineName == "Waveshaper")
         #expect(second.descriptors.map(\.id) == (1...5).map { EG13ParamID.source(0, $0) })
         #expect(synth.name(EG13ParamID.source(0, 5)) == "Density")
-        #expect(synth.sourceParams(part: 0).count == 5)
+        #expect(synth.slotParams(source, part: 0).count == 5)
     }
 
     @Test("Snapshot updates do not emit edits")

@@ -30,7 +30,6 @@ public final class EG13Synth {
     public private(set) var activeVoices = [0, 0]
     /// The part the window shows (A/B tabs). Editor state only, not saved.
     public var selectedPart = 0
-    public var keyboardVisible = false
     /// Patch name; presets arrive in M7.
     public let patchName = "Init"
 
@@ -158,18 +157,10 @@ public final class EG13Synth {
         return slots[index]
     }
 
-    /// P1–P8 of a part's Source that the selected engine uses.
-    public func sourceParams(part: Int) -> [EG13Param] {
-        slot(EG13_SLOT_KIND_SOURCE, part: part).descriptors.compactMap { paramByID[$0.id] }
+    /// The part's engine-slot P's the selected engine uses, as handles.
+    public func slotParams(_ kind: EG13SlotKind, part: Int) -> [EG13Param] {
+        slot(kind, part: part).descriptors.compactMap { paramByID[$0.id] }
     }
-
-    public func sourceEngineName(part: Int) -> String { slot(EG13_SLOT_KIND_SOURCE, part: part).engineName }
-    public var sourceEngineNames: [String] { slot(EG13_SLOT_KIND_SOURCE, part: 0).engineNames }
-    public func sourceEngine(part: Int) -> Int { slot(EG13_SLOT_KIND_SOURCE, part: part).engine }
-
-    /// How a Source knob stands out. Plain until the emphasis metadata is rekeyed on
-    /// `EG13Slot.engine` (Task 9 rewrites the cards).
-    public func emphasis(of param: EG13Param, part: Int) -> EG13ParamEmphasis { .plain }
 
     public var mode: EG13Mode { EG13Mode(rawValue: Int(masterParam(.mode)?.value ?? 0)) ?? .single }
 

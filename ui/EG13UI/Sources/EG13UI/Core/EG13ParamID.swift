@@ -4,11 +4,12 @@ import EG13CBridge
 public enum EG13PartParam: Int, CaseIterable, Sendable {
     case level = 1, pan, glide, transpose, baseNote, midiChannel, keyLow, keyHigh
     case voiceMode, voiceCount, trigger, bendRange, mono, output
+    case inputSource, mpeMode, mpeBendRange, ccA, ccB, ccC, ccD, partFxInput
 }
 
 /// Master parameters (EG13_MASTER_*).
 public enum EG13MasterParam: Int, CaseIterable, Sendable {
-    case level = 0, dry, mode, splitNote
+    case level = 0, dry, mode, splitNote, voiceGain, softClip, latencyMode
 }
 
 /// Global mode switch values (spec §5.3).
@@ -63,6 +64,34 @@ public enum EG13ParamID {
         case EG13_SLOT_KIND_MOD3: return UInt32(EG13_SLOT_MOD3.rawValue)
         default: return UInt32(EG13_SLOT_MOD4.rawValue)
         }
+    }
+
+    /// Parameters per engine slot (P1...): Source 16, Filter 4, Shaper 12, Part FX 16, mod 16.
+    public static func slotParamCount(_ kind: EG13SlotKind) -> Int {
+        switch kind {
+        case EG13_SLOT_KIND_SOURCE: return 16
+        case EG13_SLOT_KIND_FILTER: return 4
+        case EG13_SLOT_KIND_SHAPER: return 12
+        default: return 16
+        }
+    }
+
+    public static let routeCount = 12
+
+    /// Whether the slot is one of the four mod slots.
+    public static func isModSlot(_ kind: EG13SlotKind) -> Bool {
+        kind == EG13_SLOT_KIND_MOD1 || kind == EG13_SLOT_KIND_MOD2
+            || kind == EG13_SLOT_KIND_MOD3 || kind == EG13_SLOT_KIND_MOD4
+    }
+
+    /// A mod slot's Scope, the entry after its P's.
+    public static func modScope(_ part: Int, _ kind: EG13SlotKind) -> UInt32 {
+        slot(part, kind, slotParamCount(kind) + 1)
+    }
+
+    /// Route amount `route` (0...11) of a part's matrix.
+    public static func routeAmount(_ part: Int, _ route: Int) -> UInt32 {
+        eg13_param_id(UInt32(part), UInt32(EG13_SLOT_MATRIX.rawValue), UInt32(route + 1))
     }
 
     /// A slot's parameter: p 0 is the engine selector, 1... are P1...

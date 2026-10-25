@@ -2,83 +2,96 @@ import SwiftUI
 import SymbioticIcons
 import SymbioticTokens
 
-/// Bottom bar: part settings of the shown part on the left; master Dry and Out and the
-/// part meters on the right (owner, 2026-10-20).
+/// Bottom bar: the shown part's Level, Pan, Glide, Voice Mode and Voices, the Part settings
+/// popover, master Dry and Out, and a stereo meter for each part in its accent colour.
 struct EG13BottomBar: View {
     let synth: EG13Synth
-    @State private var showsMore = false
+    @State private var showsSettings = false
     @Environment(\.symbioticTheme) private var theme
 
     var body: some View {
         let part = synth.selectedPart
-        let plain = EG13Palette.knobStyle(for: .plain, part: part)
-        HStack(spacing: theme.spacing.s) {
+        let controls = synth.editorControls(part: part)
+        HStack(alignment: .center, spacing: theme.spacing.m) {
             Text(EG13PartName.letter(part))
                 .font(theme.type.title.font.weight(.heavy))
                 .foregroundStyle(theme.text.inverse.color)
                 .frame(width: 26, height: 26)
                 .background(RoundedRectangle(cornerRadius: 3).fill(EG13Palette.part(part).ink.color))
                 .accessibilityHidden(true)
-            stepper(part, .voiceCount, "Voices")
-            stepper(part, .voiceMode, "Voice mode")
-            stepper(part, .midiChannel, "Channel")
-            stepper(part, .output, "Output")
-            Button { showsMore = true } label: { Icon(.viewMore, size: 16) }
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.text.primary.color)
-                .accessibilityLabel("\(EG13PartName.name(part)) more settings")
-                .popover(isPresented: $showsMore) { more(part) }
-            knob(synth.partParam(part, .glide), plain)
-            knob(synth.partParam(part, .transpose), plain)
-            knob(synth.partParam(part, .level), plain)
-            knob(synth.partParam(part, .pan), plain)
+            ForEach(controls.partBar) { EG13ControlView(synth: synth, spec: $0, part: part) }
+            Button { showsSettings = true } label: {
+                HStack(spacing: theme.spacing.xs) {
+                    Icon(.viewMore, size: 14)
+                    Text("PART SETTINGS").font(theme.type.caption.font.weight(.bold))
+                }
+                .padding(.horizontal, theme.spacing.s)
+                .frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: theme.radius.s).stroke(theme.text.secondary.color))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.text.primary.color)
+            .accessibilityLabel("\(EG13PartName.name(part)) settings")
+            .popover(isPresented: $showsSettings) {
+                EG13PartSettingsView(synth: synth, part: part)
+            }
             Spacer(minLength: 0)
             Rectangle().fill(theme.surface.separator.color).frame(width: 1, height: 52)
-            knob(synth.masterParam(.dry), EG13Palette.masterKnobStyle(part: part))
-            knob(synth.masterParam(.level), EG13Palette.masterKnobStyle(part: part))
+            VStack(spacing: 2) {
+                HStack(spacing: theme.spacing.s) {
+                    ForEach(controls.masterBar) { EG13ControlView(synth: synth, spec: $0, part: part) }
+                }
+                Text("MASTER").font(theme.type.caption.font.weight(.bold)).foregroundStyle(theme.text.secondary.color)
+            }
             EG13MeterView(meters: synth.meters, holds: synth.meterHolds)
         }
-        .padding(.horizontal, EG13Layout.outerPadding)
+        .padding(.horizontal, theme.spacing.m)
         .frame(height: EG13Layout.bottomBarHeight)
         .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(theme.surface.panel.color))
         .padding(.horizontal, EG13Layout.outerPadding)
+        .foregroundStyle(theme.text.primary.color)
+    }
+}
+
+/// The settings that do not fit the bar: transpose, base note, MIDI channel, key range,
+/// trigger, bend range, mono, output, input source, Part FX Input, MPE and the CC A to D
+/// sources. The popover's content, also drawn on its own for the design screenshots.
+public struct EG13PartSettingsView: View {
+    let synth: EG13Synth
+    let part: Int
+    @Environment(\.symbioticTheme) private var theme
+
+    public init(synth: EG13Synth, part: Int) {
+        self.synth = synth
+        self.part = part
     }
 
-    @ViewBuilder
-    private func stepper(_ part: Int, _ p: EG13PartParam, _ label: String) -> some View {
-        if let param = synth.partParam(part, p) {
-            EG13Stepped(param: param, label: label)
-        }
-    }
-
-    @ViewBuilder
-    private func knob(_ param: EG13Param?, _ style: EG13KnobStyle) -> some View {
-        if let param {
-            EG13Knob(param: param, style: style, size: .bar)
-        }
-    }
-
-    /// Settings that do not fit the bar: key range, trigger, base note, bend range, mono.
-    private func more(_ part: Int) -> some View {
-        Grid(horizontalSpacing: theme.spacing.l, verticalSpacing: theme.spacing.m) {
-            GridRow {
-                stepper(part, .keyLow, "Key low")
-                stepper(part, .keyHigh, "Key high")
-                stepper(part, .trigger, "Trigger")
+    public var body: some View {
+        let controls = synth.editorControls(part: part)
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            HStack(spacing: theme.spacing.s) {
+                Text(EG13PartName.letter(part))
+                    .font(theme.type.title.font.weight(.heavy))
+                    .foregroundStyle(theme.text.inverse.color)
+                    .frame(width: 26, height: 26)
+                    .background(RoundedRectangle(cornerRadius: 3).fill(EG13Palette.part(part).ink.color))
+                Text("\(EG13PartName.name(part)) settings".uppercased())
+                    .font(theme.type.caption.font.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
             }
-            GridRow {
-                stepper(part, .baseNote, "Base note")
-                stepper(part, .bendRange, "Bend range")
-                stepper(part, .mono, "Mono")
+            EG13ControlGrid(columns: 3, specs: controls.partSettings, rowSpacing: theme.spacing.m) {
+                EG13ControlView(synth: synth, spec: $0, part: part)
             }
+            .frame(width: 3 * (EG13Layout.stepperWidth + 56))
         }
+        .foregroundStyle(theme.text.primary.color)
         .padding(theme.spacing.l)
         .background(theme.surface.panel.color)
         .symbioticTheme(EG13Theme.theme)
     }
 }
 
-/// Peak meters for both parts, on the LCD.
+/// Peak meters: a stereo pair for each part, in the part's accent colour, with a peak-hold mark.
 struct EG13MeterView: View {
     /// Linear levels after ballistics: [part][left, right].
     let meters: [[Float]]
@@ -87,20 +100,14 @@ struct EG13MeterView: View {
     @Environment(\.symbioticTheme) private var theme
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: theme.spacing.xs) {
+        HStack(alignment: .bottom, spacing: theme.spacing.m) {
             ForEach(meters.indices, id: \.self) { part in
                 VStack(spacing: 3) {
-                    ZStack(alignment: .bottom) {
-                        RoundedRectangle(cornerRadius: 2).fill(EG13Palette.lcdBackground.color)
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(EG13MeterBallistics.isClipping(meters[part].max() ?? 0) ? EG13Palette.pink.bright.color : EG13Palette.lcdSegment.color)
-                            .frame(height: EG13Layout.meterHeight * EG13MeterBallistics.fraction(meters[part].max() ?? 0))
-                        Rectangle().fill(EG13Palette.lcdSegment.color)
-                            .frame(height: 1.5)
-                            .offset(y: -min(EG13Layout.meterHeight - 1.5,
-                                            EG13Layout.meterHeight * EG13MeterBallistics.fraction(holds[part].max() ?? 0)))
+                    HStack(spacing: 2) {
+                        ForEach(0..<2, id: \.self) { channel in
+                            bar(part: part, channel: channel)
+                        }
                     }
-                    .frame(width: EG13Layout.meterWidth, height: EG13Layout.meterHeight)
                     Text(EG13PartName.letter(part)).font(theme.type.caption.font.weight(.bold))
                         .foregroundStyle(theme.text.primary.color)
                 }
@@ -109,6 +116,23 @@ struct EG13MeterView: View {
                 .accessibilityValue(meterValue(part))
             }
         }
+    }
+
+    private func bar(part: Int, channel: Int) -> some View {
+        let level = meters[part][channel], hold = holds[part][channel]
+        let height = EG13Layout.meterHeight
+        let clipping = EG13MeterBallistics.isClipping(level)
+        return ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 2).fill(EG13Palette.lcdBackground.color)
+            RoundedRectangle(cornerRadius: 2)
+                .fill(clipping ? EG13Palette.white.color : EG13Palette.part(part).bright.color)
+                .frame(height: height * EG13MeterBallistics.fraction(level))
+            Rectangle().fill(EG13Palette.white.color)
+                .frame(height: 1.5)
+                .offset(y: -min(height - 1.5, height * EG13MeterBallistics.fraction(hold)))
+        }
+        .frame(width: EG13Layout.meterWidth, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 2))
     }
 
     private func meterValue(_ part: Int) -> String {

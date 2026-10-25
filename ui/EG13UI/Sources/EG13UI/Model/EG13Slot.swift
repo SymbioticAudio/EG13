@@ -12,6 +12,9 @@ public struct EG13Slot: Equatable {
     /// The slot's visible P's: only those the selected engine uses (P1 first).
     public var descriptors: [EG13ParamDescriptor]
 
+    /// The name the core gives a P the selected engine does not use.
+    public static let unusedName = "(unused)"
+
     public var engineName: String { engineNames.indices.contains(engine) ? engineNames[engine] : "" }
     /// The selector's parameter ID.
     public var selectorID: UInt32 { EG13ParamID.slot(part, kind, 0) }

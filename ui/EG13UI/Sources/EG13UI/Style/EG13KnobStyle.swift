@@ -278,15 +278,19 @@ struct EG13ControlLabel: View {
     var chip: Color?
     let font: Font
     @Environment(\.eg13ControlColors) private var colors
+    /// A long name in a narrow cell shrinks to this fraction of the type size before it is cut.
+    static let shrink: CGFloat = 0.65
 
     var body: some View {
         switch style {
         case .chip:
             Text(text.uppercased()).font(font.weight(.bold)).foregroundStyle(colors.chipText).lineLimit(1)
+                .minimumScaleFactor(Self.shrink)
                 .padding(.horizontal, 5)
                 .background(RoundedRectangle(cornerRadius: 2).fill(chip ?? colors.label))
         case .plain:
             Text(text.uppercased()).font(font.weight(.bold)).foregroundStyle(colors.label).lineLimit(1)
+                .minimumScaleFactor(Self.shrink)
         }
     }
 }
