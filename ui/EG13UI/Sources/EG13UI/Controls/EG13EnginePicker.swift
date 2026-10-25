@@ -9,6 +9,7 @@ public struct EG13EnginePicker: View {
     let selected: Int
     let accessibilityName: String
     @Environment(\.eg13ControlColors) private var colors
+    @Environment(\.eg13InteractiveControls) private var interactive
     @Environment(\.symbioticTheme) private var theme  // typography and spacing only
 
     /// - Parameters:
@@ -24,28 +25,39 @@ public struct EG13EnginePicker: View {
     }
 
     public var body: some View {
-        Menu {
-            ForEach(names.indices, id: \.self) { index in
-                Button {
-                    selector.setValue(Double(index))
-                } label: {
-                    if index == selected { Label(names[index], systemImage: "checkmark") } else { Text(names[index]) }
-                }
+        Group {
+            if interactive {
+                Menu {
+                    ForEach(names.indices, id: \.self) { index in
+                        Button {
+                            selector.setValue(Double(index))
+                        } label: {
+                            if index == selected { Label(names[index], systemImage: "checkmark") } else { Text(names[index]) }
+                        }
+                    }
+                } label: { well }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.visible)
+            } else {
+                // An image render cannot draw the AppKit menu: show its closed state.
+                HStack(spacing: 4) { well; Image(systemName: "chevron.up.chevron.down").font(.system(size: 8)) }
             }
-        } label: {
-            Text(names.indices.contains(selected) ? names[selected] : "")
-                .font(theme.type.caption.font.weight(.bold))
-                .foregroundStyle(colors.chipText)
-                .lineLimit(1)
-                .padding(.horizontal, theme.spacing.xs)
-                .frame(minWidth: 96, minHeight: 20)
-                .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(colors.skirt))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.visible)
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityName)
-        .accessibilityValue(names.indices.contains(selected) ? names[selected] : "")
+        .accessibilityValue(selectedName)
+    }
+
+    private var selectedName: String { names.indices.contains(selected) ? names[selected] : "" }
+
+    private var well: some View {
+        Text(selectedName)
+            .font(theme.type.caption.font.weight(.bold))
+            .foregroundStyle(colors.chipText)
+            .lineLimit(1)
+            .padding(.horizontal, theme.spacing.xs)
+            .frame(minWidth: 96, minHeight: 20)
+            .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(colors.skirt))
     }
 }

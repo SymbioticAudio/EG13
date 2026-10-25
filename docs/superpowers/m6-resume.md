@@ -30,3 +30,29 @@ UI work is paused until M6 comes up in normal milestone order, after M5. The pla
 1. Rebase this branch onto main after M2 to M5 have merged.
 2. Update spec §8 with the decisions above.
 3. Write the M6 plan with superpowers:writing-plans, then get owner review.
+
+## Design log, round 1 (2026-10-24): controls
+
+Run: `swift run --package-path ui/EG13UI EG13UIPreview` (interactive window, Controls page by default; `--editor` opens the editor page; the zoom control shows 75, 100 and 200 %). Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot docs/superpowers/m6-design/controls-r1` writes `controls-75.png`, `controls-100.png` and `controls-200.png` in that folder (ImageRenderer, no screen-recording permission). Each image shows Part A (teal) and Part B (pink).
+
+Shown, every option labelled with its `EG13KnobStyle` name:
+
+- Arc: off; on in the skirt band over a faint track (`.skirtBand`, the default); a ring outside the skirt (`.outside`); a thin ring hugging the cap (`.capRim`).
+- Inner ring: off, on. Ticks: off, on.
+- Cap: white (default), accent, black with an accent arc, black with the grey arc the master knobs use.
+- Label: plain (default), chip; also chips on an accent cap and on a black cap.
+- Sizes: hero, detail and bar knobs, a bipolar knob (arc from the centre) and a stepped knob.
+- Engine picker (menu of engine names) and three stepped controls (voices, voice mode, channel).
+
+Open choices for the owner:
+
+1. Arc placement: `.skirtBand`, `.outside` or `.capRim`; or arc off.
+2. Inner ring: yes or no.
+3. Ticks: yes or no (they cost 8 % of the diameter, so the skirt shrinks).
+4. Cap colours: white as the default with accent caps for emphasised knobs, and black caps for secondary knobs. Should a black cap keep the part's arc colour or the grey arc?
+5. Label style: plain everywhere, or chips on emphasised knobs only (the current palette rule).
+6. Stepped controls: the LCD well with minus and plus, as shown, or knobs for small stepped settings such as voices.
+7. Engine picker: black well with a menu, as shown, or something lighter.
+8. Whether chip ink colours (`#007F8A`, `#C42C4E`) read well under white text at 75 %.
+
+Status: awaiting owner feedback (round 1 is not approved).

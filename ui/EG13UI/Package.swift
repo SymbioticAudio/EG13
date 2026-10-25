@@ -19,7 +19,12 @@ let icons: Target.Dependency = withBrand
 let package = Package(
     name: "EG13UI",
     platforms: [.macOS(.v14)],
-    products: [.library(name: "EG13UI", type: .static, targets: ["EG13UI"])],
+    products: [
+        .library(name: "EG13UI", type: .static, targets: ["EG13UI"]),
+        // The editor and the controls gallery in a plain window, over a fake plugin (no DAW):
+        //   swift run --package-path ui/EG13UI EG13UIPreview [--snapshot <dir>]
+        .executable(name: "EG13UIPreview", targets: ["EG13UIPreview"]),
+    ],
     dependencies: [
         .package(url: "https://github.com/SymbioticAudio/symbiotic-design.git", exact: "0.1.0"),
     ],
@@ -32,6 +37,12 @@ let package = Package(
                 "EG13CBridge",
                 .product(name: "SymbioticTokens", package: "symbiotic-design", moduleAliases: aliases),
                 icons,
+            ]),
+        .executableTarget(
+            name: "EG13UIPreview",
+            dependencies: [
+                "EG13UI",
+                .product(name: "SymbioticTokens", package: "symbiotic-design", moduleAliases: aliases),
             ]),
         .testTarget(name: "EG13UITests", dependencies: ["EG13UI"]),
     ]
