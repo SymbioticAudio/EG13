@@ -36,7 +36,7 @@ struct EG13BottomBar: View {
             Rectangle().fill(theme.surface.separator.color).frame(width: 1, height: 52)
             knob(synth.masterParam(.dry), EG13Palette.masterKnobStyle(part: part))
             knob(synth.masterParam(.level), EG13Palette.masterKnobStyle(part: part))
-            EG13MeterView(meters: synth.meters)
+            EG13MeterView(meters: synth.meters, holds: synth.meterHolds)
         }
         .padding(.horizontal, EG13Layout.outerPadding)
         .frame(height: EG13Layout.bottomBarHeight)
@@ -80,7 +80,10 @@ struct EG13BottomBar: View {
 
 /// Peak meters for both parts, on the LCD.
 struct EG13MeterView: View {
-    let meters: [EG13MeterBallistics]
+    /// Linear levels after ballistics: [part][left, right].
+    let meters: [[Float]]
+    /// Peak holds, same shape.
+    let holds: [[Float]]
     @Environment(\.symbioticTheme) private var theme
 
     var body: some View {
@@ -90,8 +93,12 @@ struct EG13MeterView: View {
                     ZStack(alignment: .bottom) {
                         RoundedRectangle(cornerRadius: 2).fill(EG13Palette.lcdBackground.color)
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(meters[part].isClipping ? EG13Palette.pink.bright.color : EG13Palette.lcdSegment.color)
-                            .frame(height: EG13Layout.meterHeight * meters[part].fraction)
+                            .fill(EG13MeterBallistics.isClipping(meters[part].max() ?? 0) ? EG13Palette.pink.bright.color : EG13Palette.lcdSegment.color)
+                            .frame(height: EG13Layout.meterHeight * EG13MeterBallistics.fraction(meters[part].max() ?? 0))
+                        Rectangle().fill(EG13Palette.lcdSegment.color)
+                            .frame(height: 1.5)
+                            .offset(y: -min(EG13Layout.meterHeight - 1.5,
+                                            EG13Layout.meterHeight * EG13MeterBallistics.fraction(holds[part].max() ?? 0)))
                     }
                     .frame(width: EG13Layout.meterWidth, height: EG13Layout.meterHeight)
                     Text(EG13PartName.letter(part)).font(theme.type.caption.font.weight(.bold))
@@ -99,9 +106,13 @@ struct EG13MeterView: View {
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(EG13PartName.name(part)) output level")
-                .accessibilityValue(meters[part].levelDB <= EG13MeterBallistics.floorDB
-                    ? "Silent" : "\(Int(meters[part].levelDB.rounded())) dB")
+                .accessibilityValue(meterValue(part))
             }
         }
+    }
+
+    private func meterValue(_ part: Int) -> String {
+        let db = EG13MeterBallistics.decibels(meters[part].max() ?? 0)
+        return db <= EG13MeterBallistics.floorDB ? "Silent" : "\(Int(db.rounded())) dB"
     }
 }

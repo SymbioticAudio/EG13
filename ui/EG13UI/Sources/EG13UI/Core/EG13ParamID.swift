@@ -50,4 +50,23 @@ public enum EG13ParamID {
 
     /// The Source engine slot, for the engine functions of the C API.
     public static var sourceKind: UInt32 { UInt32(EG13_SLOT_KIND_SOURCE.rawValue) }
+
+    /// The parameter-ID slot (EG13Slot) of an engine slot (EG13SlotKind): table order differs.
+    public static func paramSlot(of kind: EG13SlotKind) -> UInt32 {
+        switch kind {
+        case EG13_SLOT_KIND_SOURCE: return UInt32(EG13_SLOT_SOURCE.rawValue)
+        case EG13_SLOT_KIND_FILTER: return UInt32(EG13_SLOT_FILTER.rawValue)
+        case EG13_SLOT_KIND_SHAPER: return UInt32(EG13_SLOT_SHAPER.rawValue)
+        case EG13_SLOT_KIND_PART_FX: return UInt32(EG13_SLOT_PART_FX.rawValue)
+        case EG13_SLOT_KIND_MOD1: return UInt32(EG13_SLOT_MOD1.rawValue)
+        case EG13_SLOT_KIND_MOD2: return UInt32(EG13_SLOT_MOD2.rawValue)
+        case EG13_SLOT_KIND_MOD3: return UInt32(EG13_SLOT_MOD3.rawValue)
+        default: return UInt32(EG13_SLOT_MOD4.rawValue)
+        }
+    }
+
+    /// A slot's parameter: p 0 is the engine selector, 1... are P1...
+    public static func slot(_ part: Int, _ kind: EG13SlotKind, _ p: Int) -> UInt32 {
+        eg13_param_id(UInt32(part), paramSlot(of: kind), UInt32(p))
+    }
 }

@@ -195,8 +195,8 @@ struct EG13ControlInteractionTests {
 
     @Test func aParameterInteractionSendsGesturesToTheCore() {
         let core = EG13FakeCore.standard()
-        let i = core.index(of: EG13ParamID.source(0, 2))
-        let param = EG13Param(core: core, index: i, descriptor: core.descriptors[i], value: core.values[i])
+        let synth = EG13Synth(core: core, kind: .instrument)
+        let param = synth.param(EG13ParamID.source(0, 2))!
         var knob = param.makeInteraction()
         knob.mouseDown(clickCount: 1)
         knob.mouseDragged(deltaY: 50, fine: false)

@@ -61,8 +61,11 @@ public final class EG13CoreAPIClient: EG13Core {
         let count = min(Int(snapshot.param_count), Int(EG13_MAX_PARAMS))
         let values = withUnsafeBytes(of: snapshot.values) { Array($0.bindMemory(to: Double.self).prefix(count)) }
         let peaks = snapshot.part_peak
+        let voices = snapshot.active_voices
         return EG13DisplayFrame(values: values,
-                                partPeaks: [[peaks.0.0, peaks.0.1], [peaks.1.0, peaks.1.1]])
+                                partPeaks: [[peaks.0.0, peaks.0.1], [peaks.1.0, peaks.1.1]],
+                                activeVoices: [Int(voices.0), Int(voices.1)],
+                                engineGeneration: snapshot.engine_generation)
     }
 
     public func requestResize(width: UInt32, height: UInt32) {

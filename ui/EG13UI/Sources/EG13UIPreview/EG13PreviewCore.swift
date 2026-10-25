@@ -13,6 +13,10 @@ final class EG13PreviewCore: EG13Core {
     private var names: [String] = []
     private var values: [Double] = []
     private var nextDemoID: UInt32 = 0x00F0_0000
+    /// Bumped when an engine selector is edited, as the plugin does on an engine switch.
+    private var generation: UInt32 = 0
+    /// The gallery's parameters each live in a synth of their own (a Param is a handle on one).
+    private var demoSynths: [EG13Synth] = []
 
     /// The real parameter table, so the full editor runs: master, both parts, Source P0-P8.
     static func standard() -> EG13PreviewCore {
@@ -56,8 +60,9 @@ final class EG13PreviewCore: EG13Core {
     func demoParam(_ name: String, value: Double, min: Double = 0, max: Double = 1, stepped: Bool = false) -> EG13Param {
         nextDemoID += 1
         append(.init(id: nextDemoID, isStepped: stepped, minValue: min, maxValue: max, defaultValue: value), name)
-        return EG13Param(core: self, index: descriptors.count - 1, descriptor: descriptors[descriptors.count - 1],
-                         value: value)
+        let synth = EG13Synth(core: self, kind: .instrument)
+        demoSynths.append(synth)
+        return synth.param(nextDemoID)!
     }
 
     func param(_ id: UInt32) -> Int { descriptors.firstIndex { $0.id == id }! }
@@ -90,10 +95,13 @@ final class EG13PreviewCore: EG13Core {
     func engineParamCount(slot: UInt32, engine: Int) -> Int { engine % 2 == 0 ? 8 : 6 }
     func currentEngine(slot: UInt32, part: Int) -> Int { Int(values[param(EG13ParamID.source(part, 0))]) }
     func beginEdit(_ id: UInt32) {}
-    func edit(_ id: UInt32, value: Double) { values[param(id)] = value }
-    func endEdit(_ id: UInt32) {}
+    func edit(_ id: UInt32, value: Double) {
+        values[param(id)] = value
+        if id == EG13ParamID.source(0, 0) || id == EG13ParamID.source(1, 0) { generation += 1 }
+    }
+    func endEdit(_ id: UInt32) { for synth in demoSynths { synth.tick() } }
     func displayFrame() -> EG13DisplayFrame {
-        EG13DisplayFrame(values: values, partPeaks: [[0.4, 0.35], [0.2, 0.25]])
+        EG13DisplayFrame(values: values, partPeaks: [[0.4, 0.35], [0.2, 0.25]], engineGeneration: generation)
     }
     func requestResize(width: UInt32, height: UInt32) {}
 }

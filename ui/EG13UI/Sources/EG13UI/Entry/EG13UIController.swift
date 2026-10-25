@@ -64,7 +64,6 @@ final class EG13UIController: NSObject {
     let synth: EG13Synth
     let view: EG13PluginView
     private var timer: Timer?
-    private var lastTick: CFTimeInterval = 0
 
     init(api: UnsafePointer<EG13CoreAPI>, kind: EG13Synth.Kind, zoom: Double) {
         EG13UIController.registerIconsOnce()
@@ -107,9 +106,11 @@ final class EG13UIController: NSObject {
 
     private func startTimer() {
         guard timer == nil else { return }
-        lastTick = CACurrentMediaTime()
-        let timer = Timer(timeInterval: 1 / Self.framesPerSecond, target: self,
-                          selector: #selector(tick), userInfo: nil, repeats: true)
+        // The closure holds the controller weakly, so a forgotten timer cannot keep it alive;
+        // teardown invalidates it anyway.
+        let timer = Timer(timeInterval: 1 / Self.framesPerSecond, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.synth.tick() }
+        }
         RunLoop.main.add(timer, forMode: .common)  // keeps meters moving during drags and menus
         self.timer = timer
     }
@@ -117,12 +118,6 @@ final class EG13UIController: NSObject {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
-    }
-
-    @objc private func tick() {
-        let now = CACurrentMediaTime()
-        synth.refresh(elapsed: now - lastTick)
-        lastTick = now
     }
 
     private static var iconsRegistered = false

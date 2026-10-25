@@ -18,16 +18,23 @@ public struct EG13ParamDescriptor: Equatable, Sendable {
     }
 }
 
-/// What the editor reads at display rate.
+/// What the editor reads at display rate. The peaks are read-and-reset: one consumer polls.
 public struct EG13DisplayFrame: Equatable, Sendable {
     /// Parameter values by index.
     public var values: [Double]
     /// Largest absolute sample per part since the previous frame: [part][left, right].
     public var partPeaks: [[Float]]
+    /// Voices sounding per part.
+    public var activeVoices: [Int]
+    /// Changes on every engine switch, state load or adopt: the cue to re-read descriptors.
+    public var engineGeneration: UInt32
 
-    public init(values: [Double], partPeaks: [[Float]]) {
+    public init(values: [Double], partPeaks: [[Float]], activeVoices: [Int] = [0, 0],
+                engineGeneration: UInt32 = 0) {
         self.values = values
         self.partPeaks = partPeaks
+        self.activeVoices = activeVoices
+        self.engineGeneration = engineGeneration
     }
 }
 

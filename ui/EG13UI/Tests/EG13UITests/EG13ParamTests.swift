@@ -4,11 +4,11 @@ import Testing
 @MainActor
 struct EG13ParamTests {
     let core = EG13FakeCore.standard()
+    let synth: EG13Synth
 
-    func param(_ id: UInt32) -> EG13Param {
-        let i = core.index(of: id)
-        return EG13Param(core: core, index: i, descriptor: core.descriptors[i], value: core.values[i])
-    }
+    init() { synth = EG13Synth(core: core, kind: .instrument) }
+
+    func param(_ id: UInt32) -> EG13Param { synth.param(id)! }
 
     @Test func idsMirrorTheParamTable() {
         #expect(EG13PartParam.level.rawValue == 1)
@@ -61,30 +61,6 @@ struct EG13ParamTests {
         #expect(voices.value == 8)
         voices.setValue(.nan)
         #expect(voices.value == 1)
-    }
-
-    @Test func hostValuesAreIgnoredDuringAGestureAndBrieflyAfterIt() {
-        let level = param(EG13ParamID.part(0, .level))
-        level.beginEdit()
-        level.setValue(0.2)
-        level.apply(hostValue: 0.9)  // automation while dragging: the knob does not jump
-        #expect(level.value == 0.2)
-        level.endEdit()
-        level.apply(hostValue: 1.0)  // the host has not seen the edit yet
-        #expect(level.value == 0.2)
-        level.apply(hostValue: 0.2)  // echoed: following the host again
-        level.apply(hostValue: 0.6)
-        #expect(level.value == 0.6)
-        #expect(level.text == "60%")
-    }
-
-    @Test func aHostThatNeverEchoesIsFollowedAfterTheHoldFrames() {
-        let level = param(EG13ParamID.part(0, .level))
-        level.setValue(0.2)
-        for _ in 0..<EG13Param.holdFramesAfterEdit { level.apply(hostValue: 0.7) }
-        #expect(level.value == 0.2)
-        level.apply(hostValue: 0.7)
-        #expect(level.value == 0.7)
     }
 
     @Test func resetToDefaultIsOneGesture() {

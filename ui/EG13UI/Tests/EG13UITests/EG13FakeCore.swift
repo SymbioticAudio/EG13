@@ -14,7 +14,12 @@ final class EG13FakeCore: EG13Core {
     var names: [String]
     var values: [Double]
     var peaks: [[Float]] = [[0, 0], [0, 0]]
-    var engines = ["Macro Oscillator"]
+    /// Source engines, how many P's each uses, and the engine each part has selected.
+    var engines = ["Macro Oscillator", "Waveshaper", "Chord"]
+    var paramCounts = [8, 5, 3]
+    var currentSource = [0, 0]
+    var generation: UInt32 = 0
+    var voices = [0, 0]
     var calls: [Call] = []
 
     init(descriptors: [EG13ParamDescriptor], names: [String]) {
@@ -37,10 +42,14 @@ final class EG13FakeCore: EG13Core {
             (.init(id: EG13ParamID.part(0, .keyLow), isStepped: true, minValue: 0, maxValue: 127, defaultValue: 0), "Key Low"),
             (.init(id: EG13ParamID.part(0, .keyHigh), isStepped: true, minValue: 0, maxValue: 127, defaultValue: 127), "Key High"),
             (.init(id: EG13ParamID.part(1, .midiChannel), isStepped: true, minValue: 0, maxValue: 16, defaultValue: 2), "MIDI Channel"),
+            (.init(id: EG13ParamID.source(0, 0), isStepped: true, minValue: 0, maxValue: 2, defaultValue: 0), "Engine"),
             (.init(id: EG13ParamID.source(0, 1), isStepped: false, minValue: 0, maxValue: 1, defaultValue: 0.25), "Model"),
             (.init(id: EG13ParamID.source(0, 2), isStepped: false, minValue: 0, maxValue: 1, defaultValue: 0.5), "Harmonics"),
             (.init(id: EG13ParamID.source(0, 3), isStepped: false, minValue: 0, maxValue: 1, defaultValue: 0.5), "Timbre"),
-        ]
+        ] + (4...8).map { p in
+            (EG13ParamDescriptor(id: EG13ParamID.source(0, p), isStepped: false, minValue: 0, maxValue: 1,
+                                 defaultValue: 0.5), "P\(p)")
+        }
         return EG13FakeCore(descriptors: d.map(\.0), names: d.map(\.1))
     }
 
@@ -53,12 +62,21 @@ final class EG13FakeCore: EG13Core {
         descriptors[index].isStepped ? "\(Int(value))" : "\(Int((value * 100).rounded()))%"
     }
     func engineCount(slot: UInt32) -> Int { slot == EG13ParamID.sourceKind ? engines.count : 0 }
-    func engineParamCount(slot: UInt32, engine: Int) -> Int { 8 }
-    func currentEngine(slot: UInt32, part: Int) -> Int { 0 }
+    func engineParamCount(slot: UInt32, engine: Int) -> Int { paramCounts[engine] }
+    func currentEngine(slot: UInt32, part: Int) -> Int { slot == EG13ParamID.sourceKind ? currentSource[part] : 0 }
     func engineName(slot: UInt32, engine: Int) -> String { engines[engine] }
     func beginEdit(_ id: UInt32) { calls.append(.begin(id)) }
-    func edit(_ id: UInt32, value: Double) { calls.append(.edit(id, value)) }
+    func edit(_ id: UInt32, value: Double) {
+        calls.append(.edit(id, value))
+        values[index(of: id)] = value
+    }
     func endEdit(_ id: UInt32) { calls.append(.end(id)) }
-    func displayFrame() -> EG13DisplayFrame { EG13DisplayFrame(values: values, partPeaks: peaks) }
+    /// Peaks are read-and-reset, like the real snapshot.
+    func displayFrame() -> EG13DisplayFrame {
+        let frame = EG13DisplayFrame(values: values, partPeaks: peaks, activeVoices: voices,
+                                     engineGeneration: generation)
+        peaks = [[0, 0], [0, 0]]
+        return frame
+    }
     func requestResize(width: UInt32, height: UInt32) { calls.append(.resize(width, height)) }
 }

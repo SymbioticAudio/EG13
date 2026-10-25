@@ -46,6 +46,7 @@ private struct EG13PreviewRoot: View {
                 .symbioticTheme(EG13Theme.theme)
             }
         }
+        .onReceive(Timer.publish(every: 1.0 / 30, on: .main, in: .common).autoconnect()) { _ in synth.tick() }
     }
 
     private var contentSize: CGSize {

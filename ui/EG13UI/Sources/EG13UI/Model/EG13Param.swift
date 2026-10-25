@@ -1,35 +1,25 @@
 import Observation
 
-/// One host parameter in the editor. Edits are CLAP gestures: beginEdit, any number of
-/// setValue calls, endEdit (spec §8). While a gesture is open, host values from the
-/// display frame are ignored so the control does not jump; after it ends they are ignored
-/// for a few frames until the host has caught up with the last edit.
+/// One host parameter as the controls see it: a handle on EG13Synth, which holds the
+/// value (the user's during a drag, the snapshot's otherwise). Edits are CLAP gestures:
+/// beginEdit, any number of setValue calls, endEdit (spec §8).
 @MainActor
-@Observable
 public final class EG13Param {
-    /// Display frames to wait for the host to echo an edit before following it again.
-    public static let holdFramesAfterEdit = 6
-
     public let index: Int
-    public private(set) var descriptor: EG13ParamDescriptor
-    public private(set) var name: String
-    public private(set) var value: Double
-    public private(set) var text: String
-    public private(set) var isEditing = false
+    public let id: UInt32
+    @ObservationIgnored private unowned let synth: EG13Synth
 
-    @ObservationIgnored private unowned let core: any EG13Core
-    @ObservationIgnored private var holdFrames = 0
-
-    public init(core: any EG13Core, index: Int, descriptor: EG13ParamDescriptor, value: Double) {
-        self.core = core
+    init(synth: EG13Synth, index: Int) {
+        self.synth = synth
         self.index = index
-        self.descriptor = descriptor
-        self.name = core.paramName(at: index)
-        self.value = value
-        self.text = core.paramText(at: index, value: value)
+        id = synth.descriptorAt(index).id
     }
 
-    public var id: UInt32 { descriptor.id }
+    public var descriptor: EG13ParamDescriptor { synth.descriptor(id) ?? synth.descriptorAt(index) }
+    public var name: String { synth.name(id) }
+    public var value: Double { synth.value(id) }
+    public var text: String { synth.text(id) }
+    public var isEditing: Bool { synth.isEditing(id) }
 
     /// 0...1 across the parameter's range.
     public var normalized: Double {
@@ -67,63 +57,22 @@ public final class EG13Param {
         return descriptor.isStepped ? clamped.rounded() : clamped
     }
 
-    public func text(for value: Double) -> String { core.paramText(at: index, value: value) }
+    public func text(for value: Double) -> String { synth.text(at: index, value: value) }
 
-    public func beginEdit() {
-        guard !isEditing else { return }
-        isEditing = true
-        core.beginEdit(id)
-    }
+    public func beginEdit() { synth.begin(id) }
 
     /// Inside a gesture: sends the edit. Outside one: wraps it in its own gesture.
     public func setValue(_ newValue: Double) {
         let v = constrain(newValue)
         guard v != value else { return }
-        perform {
-            value = v
-            text = core.paramText(at: index, value: v)
-            core.edit(id, value: v)
-        }
+        synth.edit(id, v)
     }
 
     public func setNormalized(_ normalized: Double) { setValue(value(forNormalized: normalized)) }
 
-    public func endEdit() {
-        guard isEditing else { return }
-        isEditing = false
-        holdFrames = Self.holdFramesAfterEdit
-        core.endEdit(id)
-    }
+    public func endEdit() { synth.end(id) }
 
     public func resetToDefault() { setValue(descriptor.defaultValue) }
-
-    /// Runs change inside a gesture, opening and closing one if none is open.
-    public func perform(_ change: () -> Void) {
-        let opened = !isEditing
-        if opened { beginEdit() }
-        change()
-        if opened { endEdit() }
-    }
-
-    /// A host value from the display frame.
-    func apply(hostValue: Double) {
-        if isEditing { return }
-        if holdFrames > 0 {
-            holdFrames -= 1
-            if hostValue != value { return }
-            holdFrames = 0
-        }
-        guard hostValue != value else { return }
-        value = hostValue
-        text = core.paramText(at: index, value: hostValue)
-    }
-
-    /// New name and descriptor (e.g. after an engine switch).
-    func reload(descriptor newDescriptor: EG13ParamDescriptor) {
-        descriptor = newDescriptor
-        name = core.paramName(at: index)
-        text = core.paramText(at: index, value: value)
-    }
 }
 
 extension EG13Param {
