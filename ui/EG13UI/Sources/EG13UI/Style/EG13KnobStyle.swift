@@ -91,17 +91,8 @@ public struct EG13KnobStyle: Sendable, Equatable {
         self.accentInk = accentInk ?? accent
     }
 
-    /// EG13's default: arc inside the skirt band over a faint track, no ticks, white cap,
-    /// in Part A's accent.
-    public static let `default` = EG13KnobStyle(accent: partAccent(0), accentInk: EG13Palette.teal.ink.color)
-
-    /// The same style in a part's accent.
-    public func accented(part: Int) -> EG13KnobStyle {
-        var style = self
-        style.accent = partAccent(part)
-        style.accentInk = EG13Palette.part(part).ink.color
-        return style
-    }
+    /// EG13's default: arc inside the skirt band over a faint track, no ticks, white cap, grey arc.
+    public static let `default` = EG13KnobStyle(accent: EG13Palette.whiteKnobArc.color, accentInk: EG13Palette.legend.color)
 
     static func capRatio(for size: EG13KnobSize) -> Double {
         size == .large ? 23.0 / 34.0 : 10.5 / 17.0

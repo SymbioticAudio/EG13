@@ -34,7 +34,7 @@ struct EG13ControlView: View {
         }
     }
 
-    private var style: EG13KnobStyle { EG13Palette.knobStyle(for: spec.emphasis, part: part) }
+    private var style: EG13KnobStyle { EG13Palette.knobStyle(for: spec.emphasis) }
 
     /// The slot's engine menu, drawn from the spec, so a card that drops the spec drops the menu.
     @ViewBuilder private func enginePicker(_ kind: EG13SlotKind) -> some View {
@@ -108,7 +108,7 @@ struct EG13ControlGrid<Cell: View>: View {
     }
 }
 
-/// A row of LCD segments, one lit: the master Mode, and variant B's VOICE / MODS switch.
+/// A row of LCD segments, one lit: the master Mode.
 struct EG13LCDSegments: View {
     let labels: [String]
     let selected: Int

@@ -78,10 +78,9 @@ enum EG13Snapshot {
         return 0
     }
 
-    /// The layout design set. For each variant (A: Mods in a column, B: Mods on their own page): both
-    /// parts at 100% and Part A at 75%; B also shows its Mods page. Then the header close-up, the
-    /// Part settings popover, a contact sheet of every engine for each slot kind, and the worst case
-    /// (the tallest engines in every slot).
+    /// The layout design set: both parts at 100%, Part A at 75%, the header close-up, a contact sheet
+    /// of every engine for each slot kind, and the worst case (the tallest engines in every slot) as
+    /// the full height of both columns, with the visible strip marked.
     static func runEditor(into directory: String) -> Int32 {
         guard makeDirectory(directory) else { return 1 }
         let core = EG13PreviewCore.standard()
@@ -90,29 +89,13 @@ enum EG13Snapshot {
         for _ in 0..<12 { synth.tick() }
         let base = EG13Layout.baseSize
         var ok = true
-        for variant in EG13EditorVariant.allCases {
-            let v = variant.rawValue
-            synth.showsMods = false
-            synth.selectedPart = 0
-            ok = write(EG13RootView(synth: synth, variant: variant), size: base, zoom: 1,
-                       to: "\(directory)/editor-a-\(v).png") && ok
-            ok = write(EG13RootView(synth: synth, variant: variant), size: base, zoom: 0.75,
-                       to: "\(directory)/editor-a-75-\(v).png") && ok
-            if variant == .modsPage {
-                synth.showsMods = true
-                ok = write(EG13RootView(synth: synth, variant: variant), size: base, zoom: 1,
-                           to: "\(directory)/editor-a-mods-\(v).png") && ok
-                synth.showsMods = false
-            }
-            synth.selectedPart = 1
-            ok = write(EG13RootView(synth: synth, variant: variant), size: base, zoom: 1,
-                       to: "\(directory)/editor-b-\(v).png") && ok
-        }
         synth.selectedPart = 0
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-a.png") && ok
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 0.75, to: "\(directory)/editor-a-75.png") && ok
         ok = write(EG13HeaderPreview(synth: synth), size: CGSize(width: base.width, height: EG13Layout.headerHeight),
                    zoom: 1, to: "\(directory)/master.png") && ok
-        ok = write(EG13PartSettingsSheet(synth: synth), size: EG13PartSettingsSheet.size, zoom: 1,
-                   to: "\(directory)/part-settings.png") && ok
+        synth.selectedPart = 1
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-b.png") && ok
         for sheet in EG13ContactSheet.all {
             ok = writeFitted(sheet, to: "\(directory)/\(sheet.fileName).png") && ok
         }
@@ -127,9 +110,30 @@ enum EG13Snapshot {
         }
         let worstSynth = EG13Synth(core: worst, kind: .instrument)
         for _ in 0..<12 { worstSynth.tick() }
-        ok = write(EG13RootView(synth: worstSynth, variant: .modsColumn), size: base, zoom: 1,
-                   to: "\(directory)/worst-case-A.png") && ok
+        ok = writeFitted(EG13WorstCaseSheet(synth: worstSynth), to: "\(directory)/worst-case-a.png") && ok
         return ok ? 0 : 1
+    }
+}
+
+/// Both card columns at their full height, as the scrolling columns hold them, with a line where
+/// the visible strip ends (an image render cannot draw a scroll view).
+struct EG13WorstCaseSheet: View {
+    let synth: EG13Synth
+    @Environment(\.symbioticTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.s) {
+            Text("Worst case, Part A: the tallest engine in every slot. The columns scroll below the line.")
+                .font(.system(size: 16, weight: .light))
+                .foregroundStyle(theme.text.primary.color)
+            HStack(alignment: .top, spacing: EG13Layout.gap) {
+                EG13SlotCards(synth: synth, part: 0, width: EG13Layout.slotCardWidth)
+                EG13ModCards(synth: synth, part: 0, width: EG13Layout.modCardWidth)
+            }
+            .overlay(alignment: .top) {
+                Rectangle().fill(EG13Palette.black.color).frame(height: 2).offset(y: EG13Layout.stripHeight)
+            }
+        }
     }
 }
 
@@ -137,7 +141,7 @@ enum EG13Snapshot {
 struct EG13HeaderPreview: View {
     let synth: EG13Synth
     var body: some View {
-        EG13RootView(synth: synth, variant: .modsPage)
+        EG13RootView(synth: synth)
             .frame(width: EG13Layout.baseSize.width, height: EG13Layout.headerHeight, alignment: .top)
             .clipped()
     }
@@ -199,10 +203,10 @@ struct EG13ContactSheet: View {
                 ForEach(synths.indices, id: \.self) { index in
                     if let number {
                         EG13ModuleCard(synth: synths[index], kind: kind, part: 0, number: number,
-                                       width: EG13Layout.modCardWidth(.modsColumn))
+                                       width: EG13Layout.modCardWidth)
                     } else {
                         EG13ModuleCard(synth: synths[index], kind: kind, part: 0,
-                                       width: EG13Layout.slotCardWidth(.modsColumn))
+                                       width: EG13Layout.slotCardWidth)
                     }
                 }
             }

@@ -53,7 +53,7 @@ private struct EG13PartGallery: View {
     let part: Int
     @Environment(\.symbioticTheme) private var theme
 
-    private var base: EG13KnobStyle { EG13KnobStyle.default.accented(part: part) }
+    private var base: EG13KnobStyle { EG13KnobStyle.default }
     private func with(_ change: (inout EG13KnobStyle) -> Void) -> EG13KnobStyle {
         var style = base
         change(&style)
@@ -75,8 +75,8 @@ private struct EG13PartGallery: View {
             }
             row("APPROVED CONTROLS: arc in the skirt band, no ticks", [
                 ("default: white cap, plain label", base),
-                ("emphasised: accent cap + chip", with { $0.cap = .accent; $0.label = .chip }),
-                ("secondary: black cap, part arc", with { $0.cap = .black }),
+                ("pink cap + chip", EG13Palette.knobStyle(for: .pink)),
+                ("secondary: black cap", EG13Palette.knobStyle(for: .black)),
                 ("default, arc at minimum", base),
             ], values: [0.45, 0.6, 0.75, 0.0])
             sizes

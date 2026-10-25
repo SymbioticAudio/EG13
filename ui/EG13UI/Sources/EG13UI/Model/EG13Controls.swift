@@ -71,7 +71,7 @@ extension EG13Synth {
             guard param(descriptor.id) != nil, name(descriptor.id) != EG13Slot.unusedName else { return nil }
             let knob = EG13PanelLayout.knob(kind: kind, engine: slot.engineName, p: index + 1)
             return EG13ControlSpec(id: descriptor.id, kind: .knob(knob.size),
-                                   emphasis: knob.emphasised ? .accent : .plain)
+                                   emphasis: knob.emphasis)
         }
         let scopeID = EG13ParamID.modScope(part, kind)
         let scope = isMod && param(scopeID) != nil ? EG13ControlSpec(id: scopeID, kind: .scope) : nil
@@ -91,10 +91,9 @@ extension EG13Synth {
                                          EG13_SLOT_KIND_PART_FX]
         let modKinds: [EG13SlotKind] = [EG13_SLOT_KIND_MOD1, EG13_SLOT_KIND_MOD2, EG13_SLOT_KIND_MOD3,
                                         EG13_SLOT_KIND_MOD4]
-        // Part Level is the bar's main control (accent, in the shown part's colour); Dry and Out are
-        // secondary (black).
+        // Part Level, Pan and Glide have white caps; Dry and Out are secondary (black).
         let partBar: [EG13ControlSpec] = [
-            spec(EG13ParamID.part(shown, .level), .knob(.medium), .accent),
+            spec(EG13ParamID.part(shown, .level), .knob(.medium)),
             spec(EG13ParamID.part(shown, .pan), .knob(.medium)),
             spec(EG13ParamID.part(shown, .glide), .knob(.medium)),
             spec(EG13ParamID.part(shown, .voiceMode), .wideStepped),

@@ -60,34 +60,34 @@ public enum EG13Palette {
         return colors
     }
 
-    /// A knob's style from its emphasis (owner, 2026-10-20): an accent cap has its arc in the
-    /// part's bright colour and an ink chip; a white cap has an arc in the part's colour;
-    /// a black cap (secondary knobs, master knobs) has an arc in the part's colour.
-    public static func knobStyle(for emphasis: EG13ParamEmphasis, part: Int, base: EG13KnobStyle = .default) -> EG13KnobStyle {
+    /// The arc of a white-cap knob (owner, 2026-10-25, open choice): the panel grey, light on the
+    /// black skirt band and not a part colour.
+    public static let whiteKnobArc = panel
+    /// The arc of a black-cap (secondary) knob: a mid grey, quieter than a white knob's.
+    public static let blackKnobArc = ThemeColor(hex: 0xA8A8A5FF)
+
+    /// A knob's style from its cap colour (owner, 2026-10-25): the same in both parts. A pink or
+    /// teal cap has an arc in its own colour and a chip in the ink of it; a white cap has a plain
+    /// label and a grey arc; a black cap (secondary knobs) has a grey arc.
+    public static func knobStyle(for emphasis: EG13ParamEmphasis, base: EG13KnobStyle = .default) -> EG13KnobStyle {
         var style = base
         switch emphasis.cap {
         case .plain:
             style.cap = .white
-            style.accent = self.part(part).bright.color
-            style.accentInk = self.part(part).ink.color
-        case .accent:
-            // Always the shown part's accent: a size or an engine never picks a colour.
+            style.accent = whiteKnobArc.color
+            style.accentInk = legend.color
+        case .pink, .teal:
+            let pair = emphasis.cap == .pink ? pink : teal
             style.cap = .accent
-            style.accent = self.part(part).bright.color
-            style.accentInk = self.part(part).ink.color
+            style.accent = pair.bright.color
+            style.accentInk = pair.ink.color
             style.label = .chip
         case .black:
             style.cap = .black
-            // Owner, round 1: a black cap keeps the part's arc colour, never grey.
-            style.accent = self.part(part).bright.color
-            style.accentInk = self.part(part).ink.color
+            style.accent = blackKnobArc.color
+            style.accentInk = legend.color
         }
         return style
-    }
-
-    /// Master Dry and Out: black caps, arcs in the shown part's colour.
-    public static func masterKnobStyle(part: Int = 0, base: EG13KnobStyle = .default) -> EG13KnobStyle {
-        knobStyle(for: .black, part: part, base: base)
     }
 }
 

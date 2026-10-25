@@ -99,16 +99,22 @@ public struct EG13ModuleCard: View {
     }
 }
 
-/// The four mod cards, one under another (variant A's right-hand column, variant B's Mods page).
-struct EG13ModCards: View {
+/// The four mod cards, one under another (the right-hand column).
+public struct EG13ModCards: View {
     let synth: EG13Synth
     let part: Int
     let width: CGFloat
 
+    public init(synth: EG13Synth, part: Int, width: CGFloat) {
+        self.synth = synth
+        self.part = part
+        self.width = width
+    }
+
     static let kinds: [EG13SlotKind] = [EG13_SLOT_KIND_MOD1, EG13_SLOT_KIND_MOD2, EG13_SLOT_KIND_MOD3,
                                         EG13_SLOT_KIND_MOD4]
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: EG13Layout.gap) {
             ForEach(Self.kinds.indices, id: \.self) { index in
                 EG13ModuleCard(synth: synth, kind: Self.kinds[index], part: part, number: index + 1, width: width)
@@ -120,15 +126,21 @@ struct EG13ModCards: View {
 }
 
 /// The Source, Filter, Shaper and Part FX cards, one under another.
-struct EG13SlotCards: View {
+public struct EG13SlotCards: View {
     let synth: EG13Synth
     let part: Int
     let width: CGFloat
 
+    public init(synth: EG13Synth, part: Int, width: CGFloat) {
+        self.synth = synth
+        self.part = part
+        self.width = width
+    }
+
     static let kinds: [EG13SlotKind] = [EG13_SLOT_KIND_SOURCE, EG13_SLOT_KIND_FILTER, EG13_SLOT_KIND_SHAPER,
                                         EG13_SLOT_KIND_PART_FX]
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: EG13Layout.gap) {
             ForEach(Self.kinds.indices, id: \.self) { index in
                 EG13ModuleCard(synth: synth, kind: Self.kinds[index], part: part, width: width)

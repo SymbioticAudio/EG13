@@ -30,8 +30,6 @@ public final class EG13Synth {
     public private(set) var activeVoices = [0, 0]
     /// The part the window shows (A/B tabs). Editor state only, not saved.
     public var selectedPart = 0
-    /// Layout variant B: the Mods page is shown instead of the slot cards (VOICE / MODS switch).
-    public var showsMods = false
     /// Patch name; presets arrive in M7.
     public let patchName = "Init"
 

@@ -65,43 +65,65 @@ struct EG13PanelLayoutTests {
         #expect(size("Freeze") == .small)
     }
 
-    @Test("Emphasis follows the panels' large knobs, always in the part's accent")
-    func emphasisFromPanels() {
-        func emphasised(_ kind: EG13SlotKind, _ engine: Int) -> [String] {
-            core.select(kind, engine: engine, part: 0)
-            synth.tick()
-            return synth.slotControls(kind, part: 0).params.filter { $0.emphasis != .plain }.map { synth.name($0.id) }
-        }
-        #expect(emphasised(EG13_SLOT_KIND_SOURCE, 0) == ["Harmonics", "Frequency"])      // Plaits
-        #expect(emphasised(EG13_SLOT_KIND_SOURCE, 2) == ["Flow", "Mallet", "Geometry", "Brightness"])  // Elements
-        #expect(emphasised(EG13_SLOT_KIND_SOURCE, 3) == ["Structure", "Frequency"])      // Rings
-        #expect(emphasised(EG13_SLOT_KIND_FILTER, 1) == ["Frequency", "Resonance"])      // Ripples
-        #expect(emphasised(EG13_SLOT_KIND_SHAPER, 1) == ["Algorithm"])                   // Warps
-        #expect(emphasised(EG13_SLOT_KIND_MOD1, 2) == ["Frequency", "Shape"])             // Tides 2
-        #expect(emphasised(EG13_SLOT_KIND_MOD1, 3) == ["T Rate", "X Spread"])             // Marbles
-        #expect(emphasised(EG13_SLOT_KIND_PART_FX, 1) == ["Position", "Size", "Pitch"])  // Clouds
-        // Every emphasised knob is plain `.accent`: no colour is stored with it.
-        for kind in Self.slotKinds {
-            for engine in 0..<core.slotEngines[Int(kind.rawValue)]!.count {
-                core.select(kind, engine: engine, part: 0)
-                synth.tick()
-                #expect(synth.slotControls(kind, part: 0).params.allSatisfy { $0.emphasis == .accent || $0.emphasis == .plain })
-            }
-        }
-        let controls = synth.editorControls(part: 0)
-        #expect(controls.partBar[0].emphasis == .accent)
-        #expect(controls.masterBar.allSatisfy { $0.emphasis == .black })
-        #expect(controls.matrix.allSatisfy { $0.emphasis == .black })
+    func caps(_ kind: EG13SlotKind, _ engine: Int, part: Int = 0) -> [String: EG13ParamEmphasis.Cap] {
+        core.select(kind, engine: engine, part: part)
+        synth.tick()
+        var result: [String: EG13ParamEmphasis.Cap] = [:]
+        for spec in synth.slotControls(kind, part: part).params { result[synth.name(spec.id)] = spec.emphasis.cap }
+        return result
     }
 
-    @Test("Review I1: the emphasis colour is the shown part's accent, teal for A and pink for B")
-    func emphasisColourIsPartAccent() {
-        for part in 0..<EG13ParamID.parts {
-            let style = EG13Palette.knobStyle(for: .accent, part: part)
-            #expect(style.accent == partAccent(part))
-            #expect(style.accentInk == EG13Palette.part(part).ink.color)
-            #expect(style.cap == .accent && style.label == .chip)
+    @Test("Elements' caps match the panel: pink Blow, Flow, Blow Timbre; teal Strike, Mallet, Strike Timbre")
+    func elementsColours() {
+        let c = caps(EG13_SLOT_KIND_SOURCE, 2)
+        #expect(c["Blow"] == .pink && c["Flow"] == .pink && c["Blow Timbre"] == .pink)
+        #expect(c["Strike"] == .teal && c["Mallet"] == .teal && c["Strike Timbre"] == .teal)
+        for white in ["Contour", "Bow", "Bow Timbre", "Geometry", "Brightness", "Damping", "Position", "Space"] {
+            #expect(c[white] == .plain, "\(white)")
         }
+    }
+
+    @Test("Other panels: Clouds, Liquid Filter, Shelves, Rings; the fallbacks are white")
+    func panelColours() {
+        let clouds = caps(EG13_SLOT_KIND_PART_FX, 1)
+        #expect(clouds["Position"] == .pink && clouds["Size"] == .teal && clouds["Pitch"] == .plain)
+        #expect(clouds["Density"] == .pink && clouds["Texture"] == .teal && clouds["Blend"] == .plain)
+        #expect(caps(EG13_SLOT_KIND_FILTER, 1)["Resonance"] == .pink && caps(EG13_SLOT_KIND_FILTER, 1)["Frequency"] == .plain)
+        let eq = caps(EG13_SLOT_KIND_SHAPER, 2)
+        #expect(eq["Mid 1 Freq"] == .pink && eq["Mid 2 Gain"] == .teal && eq["High Freq"] == .plain)
+        #expect(caps(EG13_SLOT_KIND_SOURCE, 3).values.allSatisfy { $0 == .plain })      // Rings
+        #expect(caps(EG13_SLOT_KIND_SHAPER, 1).values.allSatisfy { $0 == .plain })      // Warps
+        #expect(caps(EG13_SLOT_KIND_SOURCE, 4).values.allSatisfy { $0 == .plain })      // Audio Input
+        for kind in [EG13_SLOT_KIND_MOD1, EG13_SLOT_KIND_MOD2, EG13_SLOT_KIND_MOD3, EG13_SLOT_KIND_MOD4] {
+            for engine in 0..<core.slotEngines[Int(kind.rawValue)]!.count {
+                #expect(caps(kind, engine).values.allSatisfy { $0 == .plain })          // no panel: white
+            }
+        }
+    }
+
+    @Test("Knob colour and size never depend on the part")
+    func colourIsPartIndependent() {
+        for kind in Self.slotKinds {
+            for engine in 0..<core.slotEngines[Int(kind.rawValue)]!.count {
+                for part in 0..<EG13ParamID.parts { core.select(kind, engine: engine, part: part) }
+                synth.tick()
+                let a = synth.slotControls(kind, part: 0).params.map { ($0.kind, $0.emphasis) }
+                let b = synth.slotControls(kind, part: 1).params.map { ($0.kind, $0.emphasis) }
+                #expect(a.count == b.count)
+                #expect(zip(a, b).allSatisfy { $0 == $1 }, "slot \(kind.rawValue) engine \(engine)")
+            }
+        }
+        // The knob style takes no part: one style per cap colour.
+        #expect(EG13Palette.knobStyle(for: .pink).accent == EG13Palette.pink.bright.color)
+        #expect(EG13Palette.knobStyle(for: .teal).accent == EG13Palette.teal.bright.color)
+        #expect(EG13Palette.knobStyle(for: .plain).accent == EG13Palette.whiteKnobArc.color)
+        #expect(EG13Palette.knobStyle(for: .black).accent == EG13Palette.blackKnobArc.color)
+        #expect(EG13Palette.knobStyle(for: .pink).label == .chip && EG13Palette.knobStyle(for: .plain).label == .plain)
+        let controls = synth.editorControls(part: 0)
+        #expect(controls.partBar.allSatisfy { $0.emphasis == .plain })
+        #expect(controls.masterBar.allSatisfy { $0.emphasis == .black })
+        #expect(controls.matrix.allSatisfy { $0.emphasis == .black })
+        // Part identity stays in the part colours.
         #expect(partAccent(0) != partAccent(1))
     }
 

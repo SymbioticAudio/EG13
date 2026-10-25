@@ -23,7 +23,7 @@ public func eg13UILinkCheck() -> Int32 {
         let view = NSHostingView(rootView: VStack {
             Icon(.slotSource, size: 16)                                            // SymbioticIcons
             Text("EG13").font(EG13Theme.theme.type.body.font)                       // SymbioticTokens
-            EG13KnobShape(normalized: 0.5, style: EG13Palette.knobStyle(for: .accent, part: 0),
+            EG13KnobShape(normalized: 0.5, style: EG13Palette.knobStyle(for: .teal),
                           size: .large)                                              // EG13UI
                 .frame(width: 40, height: 40)
         }.frame(width: 200, height: 160))

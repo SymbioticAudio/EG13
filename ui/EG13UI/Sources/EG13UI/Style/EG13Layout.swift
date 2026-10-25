@@ -1,15 +1,5 @@
 import CoreGraphics
 
-/// Which way the Mods are laid out (layout round 2: the owner picks one, then the other goes).
-public enum EG13EditorVariant: String, CaseIterable, Sendable {
-    /// A: Source, Filter, Shaper and Part FX cards on the left; the four Mods as a column of
-    /// horizontal mini-cards on the right.
-    case modsColumn = "A"
-    /// B: the slot cards use the full width; a VOICE / MODS switch in the header swaps them for
-    /// the four Mods cards, also full width.
-    case modsPage = "B"
-}
-
 /// All window geometry in one place (spec §8 layout, owner 2026-10-20 and 2026-10-25). Views read
 /// sizes from here; view models never do, so the arrangement can change without touching them.
 ///
@@ -60,17 +50,11 @@ public enum EG13Layout {
     /// A cell is never wider than this: a card with few knobs packs them to the left.
     public static let maxCell: CGFloat = 96
 
-    /// The strip is the full inner width; variant A gives the right-hand part to the Mods.
+    /// The strip is the full inner width: the four slot cards on the left, the four Mods as a
+    /// column of mini-cards on the right (owner, 2026-10-25: the Mods column).
     public static var stripWidth: CGFloat { baseSize.width - 2 * outerPadding }
-    public static let modsColumnWidth: CGFloat = 470
-
-    public static func slotCardWidth(_ variant: EG13EditorVariant) -> CGFloat {
-        variant == .modsColumn ? stripWidth - modsColumnWidth - gap : stripWidth
-    }
-
-    public static func modCardWidth(_ variant: EG13EditorVariant) -> CGFloat {
-        variant == .modsColumn ? modsColumnWidth : stripWidth
-    }
+    public static let modCardWidth: CGFloat = 470
+    public static var slotCardWidth: CGFloat { stripWidth - modCardWidth - gap }
 
     /// Height left for the card strip.
     public static var stripHeight: CGFloat {

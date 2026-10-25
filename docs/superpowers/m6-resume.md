@@ -165,3 +165,31 @@ Not mapped: Frames (Keyframer/Mixer) and Veils (Quad VCA): EG13 has no engine de
 4. The part tabs without the engine name.
 
 Status: awaiting owner feedback (round 2 is not approved).
+
+## Layout design log, round 3 (2026-10-25): panel colours, variant A
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-editor docs/superpowers/m6-design/layout-r3` writes `editor-a.png`, `editor-b.png` (Part B), `editor-a-75.png`, `master.png`, `worst-case-a.png` (both columns at full height with a line where the visible strip ends) and the five `*-engines.png` contact sheets.
+
+### Owner's round 2 feedback, as decisions
+
+1. **Knobs are not coloured by part** ("it lessens the value of the coloured knobs from the originals"). Each knob's cap (white, pink or teal), chip and size come from the real panel, the same in Part A and Part B. This **supersedes the round 3 controls rule** "emphasised = accent cap in the part's accent" and the round 2 "emphasis is the part's accent" (review I1 is therefore moot: no knob uses a part colour). Part identity stays on the A/B tabs, the bottom-bar badge and the meters (teal A, pink B).
+2. Chips follow the knob colour: a pink or teal knob gets a chip in its colour, a white knob a plain label. A pink or teal knob's arc matches its cap.
+3. **Variant A is chosen.** Variant B, its enum and the VOICE / MODS switch are deleted.
+4. The part tab that is shown also names its Source engine; the other tab is a plain letter.
+5. Engines with no usable panel, and all mods: white caps, the main one or two controls large.
+
+### What changed
+
+- `EG13PanelLayout` holds size and cap colour per P (`L M S` plus `p` pink or `t` teal). Colours read from the Audible Instruments sources (`Rogan*Red` = pink, `Green` = teal, `White` and `Gray` = white). `EG13ParamEmphasis` is now `plain`, `pink`, `teal`, `black`; the part is gone from `knobStyle`.
+- Elements-derived Modal Synth matches the panel: pink Blow, Flow, Blow Timbre; teal Strike, Mallet, Strike Timbre; the rest white. Others: Clouds-derived Granular (Position, Density, Spread, In Gain pink; Size, Texture, Feedback, Reverb teal), Braids-derived Digital Oscillator (Color pink, Timbre teal), Liquid Filter-derived Analog Filter (Resonance pink), Shelves-derived EQ (Mid 1 pink, Mid 2 teal). Plaits, Rings, Warps, Tides 2 and Marbles are white panels.
+- Variant A's worst case (four 16-knob engines in the slots and mods) is taller than the strip; each column scrolls (`worst-case-a.png`). It shows the full content height, since an image render cannot draw a scroll view.
+
+### Open choices for the owner
+
+1. **Arc colour of white knobs:** the panel grey #E6E6E6 (`EG13Palette.whiteKnobArc`), light on the black skirt band and not a part colour. Alternative: pure white.
+2. **Black (secondary) caps** (master Dry and Out, route amounts): a mid grey arc #A8A8A5 (`EG13Palette.blackKnobArc`), quieter than a white knob's, so the secondary knobs stay secondary. Alternative: the same as white knobs. This reverses round 2's "a black cap keeps the part-colour arc, never grey", at the owner's request.
+3. **Blue knobs** (Plaits' LPG Colour and Decay, Clouds' Reverb are blue on the panel): shown teal, since EG13 has only pink and teal. Alternative: white.
+4. **Fallback engines (no replica panel): white caps, main controls large.** Audio Input (Gain large), Envelope (Attack, Decay, Sustain, Release large in the panel table, medium in a mod), Function Generator (Attack, Rate), Reverb (Amount, Time), Digital Oscillator and Shelves EQ have a panel but no size difference (all medium). Pink or teal added only by analogy: Classic Filters and State Variable Filter take Liquid Filter's pink Resonance (small); Granular Delay takes Clouds' pink Time (as Position) and teal Size. Mods: white throughout.
+5. Matrix row stays; the part tab names (from round 2) are now shown for the selected part only.
+
+Status: awaiting owner feedback (round 3 is not approved).
