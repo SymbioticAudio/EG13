@@ -12,7 +12,7 @@ public struct EG13ControlColors: Sendable, Equatable {
     public var track: Color            // faint band under the value arc
     public var tick: Color
     public var skirt: Color            // black outer ring
-    public var innerRing: Color        // optional faint ring on the skirt
+    public var innerRing: Color        // optional ring on the cap's edge
     public var plainCap: Color         // white cap
     public var darkCap: Color          // black cap
     public var indicator: Color        // on white and accent caps
@@ -59,7 +59,7 @@ public enum EG13KnobSize: Sendable, Equatable { case hero, detail, bar }
 
 /// The knob design's options (owner, 2026-10-20). Colours are always injected.
 public struct EG13KnobStyle: Sendable, Equatable {
-    /// Where the value arc is drawn.
+    /// Where the value arc is drawn. Owner, round 1: `.skirtBand` only; the others stay as options.
     public enum ArcPlacement: Sendable, Equatable, CaseIterable {
         /// Filling the black skirt band, over a faint track (the default).
         case skirtBand
@@ -223,8 +223,9 @@ public struct EG13KnobShape: View {
                         .stroke(style.accent, style: StrokeStyle(lineWidth: arcWidth, lineCap: .butt))
                 }
                 if style.innerRing {
-                    Circle().stroke(colors.innerRing, lineWidth: max(1, d * 0.012))
-                        .frame(width: cap + band * 0.5, height: cap + band * 0.5)
+                    // A clearly contrasting thin ring on the cap's edge, inside the cap.
+                    Circle().strokeBorder(colors.innerRing, lineWidth: max(1.5, d * 0.03))
+                        .frame(width: cap, height: cap)
                 }
                 Circle().fill(capColor).frame(width: cap, height: cap)
                 Capsule()
@@ -264,7 +265,8 @@ public struct EG13LCDText: View {
 
     public var body: some View {
         Text(text.uppercased())
-            .font(.system(size: theme.type.label.size, weight: theme.type.label.weight.swiftUI, design: .monospaced))
+            // Heavier and at least 12 pt: the green-on-grey wells must read at 75 % (owner, round 1).
+            .font(.system(size: max(theme.type.label.size, 12), weight: .bold, design: .monospaced))
             .lineLimit(1)
             .minimumScaleFactor(0.7)
             .foregroundStyle(colors.lcdText)

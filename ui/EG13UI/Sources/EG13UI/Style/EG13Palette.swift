@@ -46,7 +46,7 @@ public enum EG13Palette {
             track: white.color.opacity(0.14),
             tick: legend.color.opacity(0.6),
             skirt: black.color,
-            innerRing: white.color.opacity(0.2),
+            innerRing: window.color,
             plainCap: white.color,
             darkCap: black.color,
             indicator: black.color,
@@ -60,7 +60,7 @@ public enum EG13Palette {
 
     /// A knob's style from its emphasis (owner, 2026-10-20): an accent cap has its arc in the
     /// accent's bright colour and an ink chip; a white cap has an arc in the part's colour;
-    /// a black cap (master knobs, small black knobs) has a light grey arc.
+    /// a black cap (secondary knobs, master knobs) has an arc in the part's colour.
     public static func knobStyle(for emphasis: EG13ParamEmphasis, part: Int, base: EG13KnobStyle = .default) -> EG13KnobStyle {
         var style = base
         switch emphasis.cap {
@@ -76,15 +76,16 @@ public enum EG13Palette {
             style.label = .chip
         case .black:
             style.cap = .black
-            style.accent = panel.color
-            style.accentInk = groupChip.color
+            // Owner, round 1: a black cap keeps the part's arc colour, never grey.
+            style.accent = self.part(part).bright.color
+            style.accentInk = self.part(part).ink.color
         }
         return style
     }
 
-    /// Master Dry and Out: black caps, light grey arcs.
-    public static func masterKnobStyle(base: EG13KnobStyle = .default) -> EG13KnobStyle {
-        knobStyle(for: .black, part: 0, base: base)
+    /// Master Dry and Out: black caps, arcs in the shown part's colour.
+    public static func masterKnobStyle(part: Int = 0, base: EG13KnobStyle = .default) -> EG13KnobStyle {
+        knobStyle(for: .black, part: part, base: base)
     }
 }
 

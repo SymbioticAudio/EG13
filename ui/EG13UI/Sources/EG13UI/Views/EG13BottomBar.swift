@@ -34,8 +34,8 @@ struct EG13BottomBar: View {
             knob(synth.partParam(part, .pan), plain)
             Spacer(minLength: 0)
             Rectangle().fill(theme.surface.separator.color).frame(width: 1, height: 52)
-            knob(synth.masterParam(.dry), EG13Palette.masterKnobStyle())
-            knob(synth.masterParam(.level), EG13Palette.masterKnobStyle())
+            knob(synth.masterParam(.dry), EG13Palette.masterKnobStyle(part: part))
+            knob(synth.masterParam(.level), EG13Palette.masterKnobStyle(part: part))
             EG13MeterView(meters: synth.meters)
         }
         .padding(.horizontal, EG13Layout.outerPadding)

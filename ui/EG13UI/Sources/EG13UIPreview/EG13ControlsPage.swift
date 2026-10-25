@@ -25,14 +25,14 @@ struct EG13ControlsPage: View {
     let demo: EG13ControlsDemo
     @Environment(\.symbioticTheme) private var theme
 
-    static let size = CGSize(width: 1240, height: 1000)
+    static let size = CGSize(width: 1240, height: 800)
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.spacing.m) {
             HStack(alignment: .firstTextBaseline) {
-                Text("EG13 controls, round 1")
+                Text("EG13 controls, round 2")
                     .font(.system(size: 22, weight: .light))
-                Text("every EG13KnobStyle option, in each part accent. Captions are the option names.")
+                Text("approved defaults, the open inner-ring choice, sizes, engine picker and steppers, in each part accent.")
                     .font(theme.type.caption.font)
                 Spacer()
             }
@@ -73,31 +73,18 @@ private struct EG13PartGallery: View {
                     .font(theme.type.caption.font.weight(.bold))
                 Spacer()
             }
-            row("ARC: on/off and placement", [
-                ("arc off", with { $0.arc = false }),
-                ("on, .skirtBand (default)", base),
-                ("on, .outside", with { $0.arcPlacement = .outside }),
-                ("on, .capRim", with { $0.arcPlacement = .capRim }),
-            ])
-            row("INNER RING AND TICKS", [
-                ("innerRing off", base),
-                ("innerRing on", with { $0.innerRing = true }),
-                ("ticks off", base),
-                ("ticks on", with { $0.ticks = true }),
-            ])
-            row("CAP", [
-                ("cap .white (default)", base),
-                ("cap .accent", with { $0.cap = .accent }),
-                ("cap .black, accent arc", with { $0.cap = .black }),
-                ("cap .black, grey arc (master)", EG13Palette.masterKnobStyle()),
-            ])
-            row("LABEL", [
-                ("label .plain (default)", base),
-                ("label .chip", with { $0.label = .chip }),
-                (".accent cap + .chip", with { $0.cap = .accent; $0.label = .chip }),
-                (".black cap + .chip, grey", with { s in
-                    s = EG13Palette.masterKnobStyle(); s.label = .chip }),
-            ])
+            row("APPROVED DEFAULTS (round 1): arc in the skirt band, no ticks", [
+                ("default: white cap, plain label", base),
+                ("emphasised: accent cap + chip", with { $0.cap = .accent; $0.label = .chip }),
+                ("secondary: black cap, part arc", with { $0.cap = .black }),
+                ("default, arc at minimum", base),
+            ], values: [0.45, 0.6, 0.75, 0.0])
+            row("INNER RING: OPEN CHOICE (owner decides on or off)", [
+                ("white cap, ring off", base),
+                ("white cap, ring on", with { $0.innerRing = true }),
+                ("black cap, ring off", with { $0.cap = .black }),
+                ("black cap, ring on", with { $0.cap = .black; $0.innerRing = true }),
+            ], values: [0.5, 0.5, 0.5, 0.5])
             sizes
             controls
         }
@@ -107,13 +94,13 @@ private struct EG13PartGallery: View {
         .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(theme.surface.panel.color))
     }
 
-    private func row(_ title: String, _ items: [(String, EG13KnobStyle)]) -> some View {
+    private func row(_ title: String, _ items: [(String, EG13KnobStyle)], values: [Double]) -> some View {
         VStack(alignment: .leading, spacing: theme.spacing.xs) {
             Text(title).font(theme.type.caption.font.weight(.bold)).foregroundStyle(theme.text.secondary.color)
             HStack(alignment: .top, spacing: 0) {
                 ForEach(items.indices, id: \.self) { i in
                     VStack(spacing: theme.spacing.xxs) {
-                        EG13Knob(param: demo.param("\(part).\(title).\(i)", "Harmonics", value: 0.35 + 0.1 * Double(i)),
+                        EG13Knob(param: demo.param("\(part).\(title).\(i)", "Harmonics", value: values[i]),
                                  style: items[i].1, size: .hero)
                         Text(items[i].0).font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(theme.text.secondary.color)
@@ -128,7 +115,7 @@ private struct EG13PartGallery: View {
 
     private var sizes: some View {
         VStack(alignment: .leading, spacing: theme.spacing.xs) {
-            Text("SIZES: .hero, .detail, .bar (default style)")
+            Text("SIZES: hero, detail, bar; bipolar; stepped (default style)")
                 .font(theme.type.caption.font.weight(.bold)).foregroundStyle(theme.text.secondary.color)
             HStack(alignment: .top, spacing: theme.spacing.xl) {
                 EG13Knob(param: demo.param("\(part).size.0", "Harmonics"), style: base, size: .hero)
@@ -138,7 +125,7 @@ private struct EG13PartGallery: View {
                          style: base, size: .detail)
                 Spacer(minLength: 0)
             }
-            Text("hero, detail, bar (bipolar: arc from centre), detail stepped")
+            Text("hero, detail, bar (pan, bipolar: arc from centre), detail stepped (voices)")
                 .font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.text.secondary.color)
         }
     }

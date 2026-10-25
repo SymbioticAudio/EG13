@@ -56,3 +56,25 @@ Open choices for the owner:
 8. Whether chip ink colours (`#007F8A`, `#C42C4E`) read well under white text at 75 %.
 
 Status: awaiting owner feedback (round 1 is not approved).
+
+## Design log, round 2 (2026-10-24): controls
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot docs/superpowers/m6-design/controls-r2` writes `controls-75.png`, `controls-100.png` and `controls-200.png`.
+
+Owner decisions from round 1:
+
+1. Arc on, in the skirt band, only. The other placements stay in the code as unused options and are not shown.
+2. Ticks off. The tick variant is gone from the Controls page.
+3. Caps: white is the default, the accent cap marks emphasised knobs, and the black cap marks secondary knobs. A black cap keeps the part-colour arc, never grey (master Dry and Out follow the shown part's colour).
+4. Labels: plain by default, with the coloured accent chip on emphasised knobs.
+5. Stepped controls keep the minus and plus buttons.
+6. The engine picker uses the LCD look of the other wells (#AFD22C on #383838).
+7. The chip ink colours are fine.
+
+Changed in round 2:
+
+- Inner ring: now a thin mid-grey ring (the window grey, `#8C8C89`) on the cap's edge, 1.5 pt or 3 % of the diameter, drawn inside the cap. It was a faint ring on the skirt that could not be seen.
+- LCD wells: bold, at least 12 pt (was medium, 11 pt). The palette colours are unchanged; no brighter green was needed.
+- The Controls page shows the approved defaults (default, emphasised, secondary), the inner ring on and off for white and black caps, sizes (hero, detail, bar, bipolar, stepped), the engine picker and the steppers, in both part accents.
+
+Open question for the owner: inner ring on or off. It is visible on black caps and subtle on white ones; compare the second row.

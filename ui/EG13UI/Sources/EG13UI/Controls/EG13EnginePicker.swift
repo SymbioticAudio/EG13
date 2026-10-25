@@ -8,9 +8,7 @@ public struct EG13EnginePicker: View {
     let selector: EG13Param
     let selected: Int
     let accessibilityName: String
-    @Environment(\.eg13ControlColors) private var colors
     @Environment(\.eg13InteractiveControls) private var interactive
-    @Environment(\.symbioticTheme) private var theme  // typography and spacing only
 
     /// - Parameters:
     ///   - names: engine names, in selector order.
@@ -51,13 +49,10 @@ public struct EG13EnginePicker: View {
 
     private var selectedName: String { names.indices.contains(selected) ? names[selected] : "" }
 
+    /// The same LCD look as the other wells: green on grey.
     private var well: some View {
-        Text(selectedName)
-            .font(theme.type.caption.font.weight(.bold))
-            .foregroundStyle(colors.chipText)
-            .lineLimit(1)
-            .padding(.horizontal, theme.spacing.xs)
-            .frame(minWidth: 96, minHeight: 20)
-            .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(colors.skirt))
+        EG13LCDText(text: selectedName)
+            .frame(minWidth: 118, minHeight: 24, maxHeight: 24)
+            .fixedSize(horizontal: true, vertical: false)
     }
 }
