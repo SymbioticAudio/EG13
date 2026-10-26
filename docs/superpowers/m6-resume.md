@@ -266,3 +266,5 @@ Owner feedback on round 3: the large wave crossed the pointer and cluttered the 
 Built: `EG13ModMarkGeometry.pointerIsUp` and `centre(capRadius:normalized:)` (the wave's centre is 0.55 cap radii from the cap's centre); the click area follows the wave. Test "the wave never intersects the pointer" sweeps 0 to 1 in 1 % steps on all three knob sizes against the wave's stroked bounding box and the pointer's width.
 
 Open choices: the wave jumps between the two places at horizontal; a small knob's wave is close to the cap's edge; the 14 x 10 pt click area moves with the wave.
+
+**Modulation display approved by the owner on 2026-10-26** (round 4: the 45 % wave in the top or bottom third, the MOTION n menu, 15 Hz traces).
