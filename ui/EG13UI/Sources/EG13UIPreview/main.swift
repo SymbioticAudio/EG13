@@ -7,6 +7,7 @@ import SymbioticTokens
 //   swift run --package-path ui/EG13UI EG13UIPreview                    interactive window
 //   swift run --package-path ui/EG13UI EG13UIPreview --snapshot <dir>   write the Controls page PNGs and exit
 //   swift run --package-path ui/EG13UI EG13UIPreview --snapshot-editor <dir>   write the layout PNGs and exit
+//   swift run --package-path ui/EG13UI EG13UIPreview --editor [--drag-load]   editor page; --drag-load sweeps Part A's Level 30 times a second (for CPU sampling)
 
 private struct EG13PreviewRoot: View {
     enum Page: String, CaseIterable { case controls = "Controls", editor = "Editor" }
@@ -14,8 +15,10 @@ private struct EG13PreviewRoot: View {
     @State private var zoom = 1.0
     let demo: EG13ControlsDemo
     let synth: EG13Synth
+    let dragLoad: Bool
 
-    init(core: EG13PreviewCore, page: Page) {
+    init(core: EG13PreviewCore, page: Page, dragLoad: Bool = false) {
+        self.dragLoad = dragLoad
         _page = State(initialValue: page)
         demo = EG13ControlsDemo(core: core)
         synth = EG13Synth(core: core, kind: .instrument)
@@ -48,6 +51,13 @@ private struct EG13PreviewRoot: View {
             }
         }
         .onReceive(Timer.publish(every: 1.0 / 30, on: .main, in: .common).autoconnect()) { _ in synth.tick() }
+        .onReceive(Timer.publish(every: 1.0 / 30, on: .main, in: .common).autoconnect()) { date in
+            // A held knob: one gesture left open, a triangle sweep through the range at 30 Hz.
+            guard dragLoad, let level = synth.partParam(0, .level) else { return }
+            let phase = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2) / 2
+            if !synth.isEditing(level.id) { synth.begin(level.id) }
+            synth.edit(level.id, level.value(forNormalized: phase < 0.5 ? 2 * phase : 2 - 2 * phase))
+        }
     }
 
     private var contentSize: CGSize {
@@ -77,7 +87,7 @@ MainActor.assumeIsolated {
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
     let page: EG13PreviewRoot.Page = arguments.contains("--editor") ? .editor : .controls
-    let host = NSHostingView(rootView: EG13PreviewRoot(core: .standard(), page: page))
+    let host = NSHostingView(rootView: EG13PreviewRoot(core: .standard(), page: page, dragLoad: arguments.contains("--drag-load")))
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 900),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)

@@ -1,6 +1,6 @@
 # Interface
 
-EG13 opens its own window in the host. It shows one part at a time and lets you edit every control of that part and the master. The window has no on-screen keyboard yet: play the plugin from your host's MIDI. (A keyboard is planned for a later version.)
+EG13 opens its own window in the host. It shows one part at a time and lets you edit every control of that part and the master. The window has no on-screen keyboard yet: play the plugin from your host's MIDI. (A keyboard is planned for the next version; see [Known limitations](limitations.md).)
 
 ## Window and scaling
 
@@ -58,3 +58,11 @@ While you drag a knob, it shows the value you are setting even if the host or au
 ## Automation
 
 Turning a knob in the window counts as a touch: your host records the move as automation while you hold the knob, and stops when you let go. If the window closes while a knob is held, the touch ends at once.
+
+## Performance
+
+Measured on an Apple M1 (base), release build, with the preview app that runs the editor's views and its 30 Hz tick over a fake plugin (a host's own drawing and the real plugin are not included):
+
+- **Main thread, idle:** about 0.25 % of one core (CPU time over 20 s; `ps` shows 0.1 to 0.2 %). The budget is 5 %.
+- **Main thread, dragging:** about 24 % of one core while one knob sweeps its whole range 30 times a second. This is for information and is not held to a budget. A likely cause is that every knob watches the same edit state, so each edit refreshes all of them; narrowing that is the first thing to try if dragging feels heavy in a host.
+- **Audio thread:** applying 64 knob edits queued for one 128-sample block at 48 kHz (`UiBridge::drain`, which also reports them to the host) takes 2.3 microseconds, 0.088 % of that block's real-time budget (2667 microseconds). The budget is 0.1 %. A drag produces a few edits per block, so real use is far below this.

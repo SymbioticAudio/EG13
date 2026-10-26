@@ -7,7 +7,7 @@ the open-source Eurorack firmware by Émilie Gillet
 EG13 is not affiliated with or endorsed by Mutable Instruments. "Mutable Instruments" is a
 registered trademark; EG13 uses its own names for each engine.
 
-**Status:** M5 (Part FX): each part ends in a Part FX slot (Off, Granular, Granular Delay, Resonator, Reverb) with a Latency Mode (Live / Studio) and an input selector. M4 (modulation): two parts × 8 voices, each Source → Filter → Shaper → Amp → pan, with four mod slots per part (Envelope, LFO, Random / S&H, Function Generator; per voice or per part) and a 12-route modulation matrix (velocity, release velocity, keytrack, gate, random, MPE pressure / slide / per-note bend, mod wheel, pitch bend, channel pressure, four CCs, transport phase and the mod slots' outputs into any engine control, pitch, Amp, pan, part level and other mod slots). MPE (lower or upper zone per part), tempo sync, gain staging (−12 dB per voice, Source trims) and a master soft clipper. Sources: Macro Oscillator, Digital Oscillator, Modal Synth, Resonator, Audio Input. Filters: Analog Filter, Classic Filters (205 types), State Variable Filter. Shapers: Ring Mod / Vocoder and EQ. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design and `docs/manual/` for how EG13 behaves.
+**Status:** M6a (editor foundation): EG13 opens its own SwiftUI window with the A/B part tabs, the Source, Filter, Shaper and Part FX cards, four Mod cards, the matrix amounts, the bottom bar and the meters (see `docs/manual/interface.md`; live modulation display, matrix editing and the keyboard follow in M6b, presets in M7). M5 (Part FX): each part ends in a Part FX slot (Off, Granular, Granular Delay, Resonator, Reverb) with a Latency Mode (Live / Studio) and an input selector. M4 (modulation): two parts × 8 voices, each Source → Filter → Shaper → Amp → pan, with four mod slots per part (Envelope, LFO, Random / S&H, Function Generator; per voice or per part) and a 12-route modulation matrix (velocity, release velocity, keytrack, gate, random, MPE pressure / slide / per-note bend, mod wheel, pitch bend, channel pressure, four CCs, transport phase and the mod slots' outputs into any engine control, pitch, Amp, pan, part level and other mod slots). MPE (lower or upper zone per part), tempo sync, gain staging (−12 dB per voice, Source trims) and a master soft clipper. Sources: Macro Oscillator, Digital Oscillator, Modal Synth, Resonator, Audio Input. Filters: Analog Filter, Classic Filters (205 types), State Variable Filter. Shapers: Ring Mod / Vocoder and EQ. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design and `docs/manual/` for how EG13 behaves.
 Pre-1.0: saved projects and presets may not load in later versions until the parameter layout is frozen.
 
 ## Formats
@@ -46,6 +46,25 @@ cmake --build --preset mac --target EG13_all eg13_tests
 ctest --preset mac
 scripts/validate.sh            # clap-validator, auval, pluginval
 ```
+
+The SwiftUI editor (`ui/EG13UI`) is built into the plugins by default on macOS. It needs
+Swift 6.4 (Xcode 27.1) and a macOS 14.0 deployment target; the editor's one dependency,
+[symbiotic-design](https://github.com/SymbioticAudio/symbiotic-design), is pinned to exactly 0.1.0 and fetched by
+SwiftPM on the first build (network needed once). `scripts/build-ui.sh` builds the Swift package
+once per architecture and merges them into one static library, which `cmake/eg13_ui.cmake`
+links into the plugin. Configure with `-DEG13_BUILD_UI=OFF` to build the plugins without an
+editor (hosts then show their generic parameter view); Linux builds never include it.
+
+```bash
+swift test --package-path ui/EG13UI                      # the editor's unit tests
+swift run --package-path ui/EG13UI EG13UIPreview         # the editor in a plain window over a fake plugin
+swift run --package-path ui/EG13UI EG13UIPreview --editor   # straight to the editor page
+scripts/check-objc-prefix.sh build/mac/plugins/EG13.clap   # also EG13.vst3 and EG13.component
+```
+
+`scripts/check-objc-prefix.sh` fails when a bundle defines an Objective-C class that does not
+start with EG13: hosts load many plugins into one process and share one class namespace.
+Run it on each of the three built bundles before a release.
 
 A fresh Xcode install needs `sudo xcodebuild -runFirstLaunch` once. `scripts/validate.sh`
 installs EG13.component into `~/Library/Audio/Plug-Ins/Components`, restarts
@@ -92,6 +111,8 @@ Memory: a Part with every voice engine takes 6.76 MB constructed plus 3.10 MB wh
 The 50 % budget applies to the voice chain with a mono Source and no modulation; modulation has its own budget of 10 % of a core with every mod slot of every voice in use, and Part FX has its own of 5 %.
 
 The 50 % budget is met by the heaviest chain with a mono Source while the Ring Mod / Vocoder's Carrier and Modulator are the internal oscillator or the voice, and only just (the figure moves by about a point between runs). With one side input carrying a signal (Source AUX, Input or Other part) the same chain is just over it, and stereo chains of the heaviest engines can use much more. Engines that run at their own sample rate convert a side input only while it carries a signal, and their right channel only while it differs from the left; the result is the same as converting everything.
+
+Editor cost (Apple M1, release build). Main thread: the editor idles at about 0.25% of one core (budget 5%; the 30 Hz tick and the meters, measured as CPU time over 20 s in the preview app, which runs the same views and tick over a fake plugin). While a knob is being dragged the same app uses about 24% of one core (a full-range sweep at 30 edits a second, for information). Audio thread: `UiBridge::drain` with 64 edits waiting for every 128-sample block at 48 kHz takes 2.3 microseconds, 0.088% of the block's real-time budget (budget 0.1%; repeats 0.086 to 0.089%). Both figures are in `docs/manual/interface.md`.
 
 Plugins are written to `build/mac/plugins`. The first configure downloads the VST3 and
 AudioUnit SDKs.
