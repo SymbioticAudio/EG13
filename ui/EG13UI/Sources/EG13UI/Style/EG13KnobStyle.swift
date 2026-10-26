@@ -133,19 +133,42 @@ struct EG13SweepArc: Shape {
     }
 }
 
-/// Where the modulation arc sits: on the cap face, near its outer edge, over the cap and under the
-/// indicator, so the approved value arc in the skirt band is never touched (owner, round 2).
-enum EG13ModRingGeometry {
-    /// The least width, in points, at 100 %.
-    static let minWidth: CGFloat = 2.5
-    /// The gap between the arc and the cap's edge, as a part of the cap radius.
-    static let margin = 0.04
+/// The modulation mark: a generic wave, one and a half sine cycles, stroked, centred on the cap and
+/// covering most of it. It is drawn under the pointer, which stays fully visible on top (owner,
+/// round 3, clarified). It shows no amount; it only says the knob is modulated, and never moves.
+enum EG13ModMarkGeometry {
+    /// The mark's width as a part of the cap's diameter.
+    static let widthRatio: CGFloat = 0.75
+    /// Its height (peak to trough) as a part of its width.
+    static let heightRatio: CGFloat = 0.3
+    /// Sine cycles across the width.
+    static let cycles = 1.5
+    /// Its centre below the cap's centre, as a part of the cap's radius.
+    static let centreDrop: CGFloat = 0
+    /// The least stroke width, in points, at 100 %.
+    static let minStroke: CGFloat = 2
+    /// The least size of the click area, in points, at 100 %. It stays small and central so a click
+    /// elsewhere on the cap, and any drag, still adjusts the knob.
+    static let minHit = CGSize(width: 14, height: 10)
 
-    static func width(capRadius: CGFloat) -> CGFloat { max(minWidth, capRadius * 0.18) }
+    /// The mark's size (the curve, before its stroke is added).
+    static func size(capRadius: CGFloat) -> CGSize {
+        let width = capRadius * 2 * widthRatio
+        return CGSize(width: width, height: width * heightRatio)
+    }
 
-    /// Radius inset of the arc's centre line from the knob's outer edge, for a knob `d` across.
-    static func inset(d: CGFloat, capRadius: CGFloat) -> CGFloat {
-        d / 2 - (capRadius - width(capRadius: capRadius) / 2 - capRadius * margin)
+    static func strokeWidth(capRadius: CGFloat) -> CGFloat { max(minStroke, capRadius * 0.12) }
+
+    /// The mark's centre from the knob's centre, y down.
+    static func centre(capRadius: CGFloat) -> CGPoint { CGPoint(x: 0, y: capRadius * centreDrop) }
+
+    /// The click area in a knob `d` across, from its top left.
+    static func hitRect(d: CGFloat, capRadius: CGFloat) -> CGRect {
+        let mark = size(capRadius: capRadius), stroke = strokeWidth(capRadius: capRadius)
+        _ = (mark, stroke)
+        let width = minHit.width, height = minHit.height
+        let c = centre(capRadius: capRadius)
+        return CGRect(x: d / 2 + c.x - width / 2, y: d / 2 + c.y - height / 2, width: width, height: height)
     }
 
     /// The cap's radius in a knob drawn `d` across (EG13KnobShape's own arithmetic).
@@ -156,39 +179,27 @@ enum EG13ModRingGeometry {
         let skirt = d - 2 * (ticks + ring)
         return skirt * EG13KnobStyle.capRatio(for: size) / 2
     }
+
+    /// Dark on the white cap, white on pink, teal and black.
+    static func ink(_ style: EG13KnobStyle) -> Color {
+        style.cap == .white ? Color(red: 0.2, green: 0.2, blue: 0.2) : .white
+    }
 }
 
-/// The modulation arc, in one Canvas, in the LCD green: from the set value to the live value, or the
-/// route range at 35 % when nothing moves. A modulated knob redraws only this layer on a modulation
-/// tick (EG13Knob's live ring), not the knob.
-struct EG13ModRingLayer: View {
-    let ring: EG13ModRing
-    let style: EG13KnobStyle
-    let size: EG13KnobSize
-    @Environment(\.eg13ControlColors) private var colors
+/// A sine across its rect, from the left edge to the right, `cycles` cycles long.
+struct EG13SineCycle: Shape {
+    var cycles = EG13ModMarkGeometry.cycles
 
-    /// The opacity of the range-only arc.
-    static let rangeOpacity = 0.35
-    /// The dark outline around the arc, in points, in all.
-    static let outline: CGFloat = 1.2
-
-    var body: some View {
-        Canvas { context, canvas in
-            let d = min(canvas.width, canvas.height)
-            let capRadius = EG13ModRingGeometry.capRadius(d: d, style: style, size: size)
-            let inset = EG13ModRingGeometry.inset(d: d, capRadius: capRadius)
-            let rect = CGRect(x: (canvas.width - d) / 2, y: (canvas.height - d) / 2, width: d, height: d)
-            let arc = EG13SweepArc(from: ring.from, to: max(ring.to, ring.from + 0.004), inset: inset).path(in: rect)
-            let opacity = ring.live == nil ? Self.rangeOpacity : 1
-            let width = EG13ModRingGeometry.width(capRadius: capRadius)
-            // A thin dark outline keeps the green readable on the white cap (the same on every cap).
-            context.stroke(arc, with: .color(colors.lcdBackground.opacity(opacity)),
-                           style: StrokeStyle(lineWidth: width + Self.outline, lineCap: .butt))
-            context.stroke(arc, with: .color(colors.lcdText.opacity(opacity)),
-                           style: StrokeStyle(lineWidth: width, lineCap: .butt))
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let steps = 32
+        for i in 0...steps {
+            let t = Double(i) / Double(steps)
+            let point = CGPoint(x: rect.minX + rect.width * CGFloat(t),
+                                y: rect.midY - rect.height / 2 * CGFloat(sin(2 * Double.pi * cycles * t)))
+            if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        return path
     }
 }
 
@@ -224,13 +235,13 @@ public struct EG13KnobShape: View {
     let size: EG13KnobSize
     var isFocused = false
     var isEnabled = true
-    /// The modulation ring, in the knob's arc colour; nil for a knob nothing modulates.
-    var modulation: EG13ModRing?
+    /// Draws the modulation mark: some route targets this knob. Static; it says nothing of amount.
+    var showsModulationMark = false
     @Environment(\.eg13ControlColors) private var colors
 
     public init(normalized: Double, origin: Double = 0, style: EG13KnobStyle, size: EG13KnobSize,
-                isFocused: Bool = false, isEnabled: Bool = true, modulation: EG13ModRing? = nil) {
-        self.modulation = modulation
+                isFocused: Bool = false, isEnabled: Bool = true, showsModulationMark: Bool = false) {
+        self.showsModulationMark = showsModulationMark
         self.normalized = normalized
         self.origin = origin
         self.style = style
@@ -272,8 +283,17 @@ public struct EG13KnobShape: View {
                         .stroke(style.accent, style: StrokeStyle(lineWidth: arcWidth, lineCap: .butt))
                 }
                 Circle().fill(capColor).frame(width: cap, height: cap)
-                if let modulation {
-                    EG13ModRingLayer(ring: modulation, style: style, size: size)
+                if showsModulationMark {
+                    let capRadius = cap / 2
+                    let mark = EG13ModMarkGeometry.size(capRadius: capRadius)
+                    EG13SineCycle()
+                        .stroke(EG13ModMarkGeometry.ink(style),
+                                style: StrokeStyle(lineWidth: EG13ModMarkGeometry.strokeWidth(capRadius: capRadius),
+                                                   lineCap: .round, lineJoin: .round))
+                        .frame(width: mark.width, height: mark.height)
+                        .offset(y: EG13ModMarkGeometry.centre(capRadius: capRadius).y)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
                 Capsule()
                     .fill(style.cap == .black ? colors.indicatorOnDark : colors.indicator)

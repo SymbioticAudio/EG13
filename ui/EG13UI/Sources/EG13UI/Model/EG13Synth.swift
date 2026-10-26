@@ -58,7 +58,7 @@ public final class EG13Synth {
     @ObservationIgnored private var engineGeneration: UInt32 = 0
     /// The destination code of each parameter that is a P (never changes), and the parameter of
     /// each destination, per part.
-    @ObservationIgnored private var destinationByID: [UInt32: UInt16] = [:]
+    @ObservationIgnored var destinationByID: [UInt32: UInt16] = [:]
     @ObservationIgnored private var paramByDestination: [[UInt16: EG13Param]] = Array(
         repeating: [:], count: EG13ParamID.parts)
     /// The parameters the last tick showed as modulated.
@@ -432,8 +432,12 @@ public final class EG13Synth {
                 if !value.isNaN { live = min(max(Double(value), 0), 1) }
             }
             target.param.setModulation(normalized: live, range: low...high)
+            target.param.setRouted(true)
         }
-        for id in modulatedIDs.subtracting(targets.keys) { paramByID[id]?.setModulation(normalized: nil, range: nil) }
+        for id in modulatedIDs.subtracting(targets.keys) {
+            paramByID[id]?.setModulation(normalized: nil, range: nil)
+            paramByID[id]?.setRouted(false)
+        }
         modulatedIDs = Set(targets.keys)
     }
 

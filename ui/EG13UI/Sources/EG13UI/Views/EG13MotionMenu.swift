@@ -47,12 +47,16 @@ public struct EG13MotionList: View {
     let synth: EG13Synth
     let kind: EG13SlotKind
     let part: Int
+    /// Set: the list is only this parameter's routes (a knob's popover).
+    let parameter: UInt32?
     let onSelect: (Int) -> Void
 
-    public init(synth: EG13Synth, kind: EG13SlotKind, part: Int, onSelect: @escaping (Int) -> Void = { _ in }) {
+    public init(synth: EG13Synth, kind: EG13SlotKind, part: Int, parameter: UInt32? = nil,
+                onSelect: @escaping (Int) -> Void = { _ in }) {
         self.synth = synth
         self.kind = kind
         self.part = part
+        self.parameter = parameter
         self.onSelect = onSelect
     }
     @Environment(\.eg13ControlColors) private var colors
@@ -62,7 +66,8 @@ public struct EG13MotionList: View {
     static let barSize = CGSize(width: 44, height: 6)
 
     public var body: some View {
-        let items = synth.motionItems(kind: kind, part: part)
+        let items = parameter.map { synth.motionItems(into: $0, part: part) }
+            ?? synth.motionItems(kind: kind, part: part)
         VStack(alignment: .leading, spacing: 2) {
             ForEach(items) { item in
                 Button { onSelect(item.route) } label: {

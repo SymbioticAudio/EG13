@@ -1,3 +1,4 @@
+import EG13CBridge
 import SwiftUI
 import SymbioticTokens
 
@@ -51,6 +52,7 @@ private struct EG13KnobBody: View {
     let layout: EG13KnobLayout
     @State private var interaction: EG13ControlInteraction
     @FocusState private var isFocused: Bool
+    @State private var showsRoutes = false
     @Environment(\.symbioticTheme) private var theme  // typography and spacing only
     @Environment(\.eg13ControlColors) private var colors
 
@@ -67,10 +69,11 @@ private struct EG13KnobBody: View {
         VStack(spacing: theme.spacing.xxs) {
             VStack(spacing: theme.spacing.xxs) {
                 EG13KnobShape(normalized: param.normalized, origin: param.isBipolar ? 0.5 : 0,
-                              style: style, size: size, isFocused: isFocused)
-                    .overlay { EG13LiveRing(param: param, style: style, size: size) }
+                              style: style, size: size, isFocused: isFocused,
+                              showsModulationMark: param.isRouted)
                     .frame(width: diameter, height: diameter)
-                    .eg13ControlInput($interaction)
+                    .eg13ControlInput($interaction, clickRect: markRect, onClickRect: markAction)
+                    .overlay(alignment: .topLeading) { routesAnchor }
                     .frame(height: max(diameter, layout.boxHeight ?? diameter))
                 EG13ControlLabel(text: layout.label ?? EG13ParamLabels.short(param.name), style: style.label,
                                  chip: style.accentInk, font: theme.type.caption.font, width: layout.labelWidth)
@@ -78,22 +81,49 @@ private struct EG13KnobBody: View {
             }
             .modifier(EG13ControlAccess(interaction: $interaction, label: param.accessibilityLabel,
                                         valueText: param.text, focus: $isFocused))
+            .modifier(EG13RoutesAction(isRouted: param.isRouted, open: { showsRoutes = true }))
             .help("\(param.name): \(param.text)")
         }
         .onChange(of: param.descriptor) { _, _ in interaction.cancel(); interaction = param.makeInteraction() }
     }
 }
 
-/// The modulation ring of a knob, reading the ring itself: a modulation tick rebuilds this view
-/// and nothing else of the knob, and only for a modulated knob.
-private struct EG13LiveRing: View {
-    let param: EG13Param
-    let style: EG13KnobStyle
-    let size: EG13KnobSize
+extension EG13KnobBody {
+    /// The mark's click area, only while the knob is modulated.
+    var markRect: CGRect? {
+        guard param.isRouted else { return nil }
+        let d = EG13Knob.diameter(size)
+        return EG13ModMarkGeometry.hitRect(d: d, capRadius: EG13ModMarkGeometry.capRadius(d: d, style: style, size: size))
+    }
 
-    var body: some View {
-        if let ring = param.modRing {
-            EG13ModRingLayer(ring: ring, style: style, size: size)
+    var markAction: (() -> Void)? {
+        param.isRouted ? { showsRoutes.toggle() } : nil
+    }
+
+    /// An invisible box over the mark, the popover's anchor. It takes no clicks: the knob's surface does.
+    @ViewBuilder var routesAnchor: some View {
+        if let rect = markRect, let part = EG13ParamID.partIndex(of: param.id) {
+            Color.clear
+                .frame(width: rect.width, height: rect.height)
+                .allowsHitTesting(false)
+                .offset(x: rect.minX, y: rect.minY)
+                .popover(isPresented: $showsRoutes, arrowEdge: .bottom) {
+                    EG13MotionList(synth: param.owner, kind: EG13_SLOT_KIND_SOURCE, part: part, parameter: param.id)
+                }
+        }
+    }
+}
+
+/// VoiceOver and keyboard route to the mark's popover: a custom action on a modulated knob.
+private struct EG13RoutesAction: ViewModifier {
+    let isRouted: Bool
+    let open: () -> Void
+
+    func body(content: Content) -> some View {
+        if isRouted {
+            content.accessibilityAction(named: "Show modulation routes", open)
+        } else {
+            content
         }
     }
 }

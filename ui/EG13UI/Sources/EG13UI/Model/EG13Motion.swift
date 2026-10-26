@@ -59,6 +59,18 @@ extension EG13Synth {
         }
     }
 
+    /// The rows for one knob: every visible route into it, in route order (the knob's popover).
+    public func motionItems(into id: UInt32, part: Int) -> [EG13MotionItem] {
+        guard let destination = destinationByID[id] else { return [] }
+        return routes(part: part).enumerated().compactMap { index, route in
+            guard route.isActive, route.destination == destination, !route.destinationHidden, !route.sourceHidden,
+                  let source = route.sourceName, let name = route.destinationName else { return nil }
+            return EG13MotionItem(route: index, source: route.source,
+                                  text: source + " → " + EG13Motion.destinationText(name: name),
+                                  amountText: EG13Motion.amountText(route.amount))
+        }
+    }
+
     /// A source's live level, 0...1: the latest max of its mod output's trace (0 in a gap). Nil for a
     /// fixed source, which has no trace and shows steady.
     public func sourceLevel(part: Int, code: UInt16) -> Double? {

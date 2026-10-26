@@ -236,3 +236,23 @@ CPU, `--mod-load`, release, 20 s window from 6 s after launch, three runs: 5.1, 
 
 Status: awaiting owner feedback.
 
+
+## Modulation design log, round 3 (2026-10-26): the wave mark
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-modulation docs/superpowers/m6-design/modulation-r3` writes `editor-a.png`, `editor-b.png`, `editor-a-75.png`, `mark.png` (one knob per cap colour at 75, 100 and 200 %, at the minimum, the maximum and the middle), `motion-menu.png` and `traces.png`.
+
+Owner decisions from round 2:
+
+1. The green arc did not read at 75 %, read poorly at 100 % and fails for colour-blind users: removed, live and range-only, with its outline. Knobs no longer observe the modulated value and no longer redraw per frame.
+2. The MOTION button and its list are kept.
+3. A knob that is modulated shows a **shape on its cap** and no amount (a knob cannot convey two values well). Live detail stays in the MOTION list and traces. Clarified later the same day: a larger generic wave, 75 % of the cap's width, 1.5 sine cycles, centred, stroke at least 2 pt, drawn under the pointer; dark (#333333) on white, white on pink, teal and black. It is static and never the source's own shape.
+4. A colour-blind palette setting is deferred to M7.
+
+Built: the mark is `EG13SineCycle` stroked in `EG13KnobShape`, shown when `EG13Param.isRouted` (a visible route targets the knob; written only when it changes, so the knob ignores every modulation value update). Click: the knob's NSView surface takes a 14 x 10 pt click area at the cap's centre (a press that stays within 3 pt is a click and opens a popover with `EG13MotionList` filtered to the knob; a longer drag, or a double-click, is the normal knob gesture). The context-menu fallback was not needed. CPU with `--mod-load`: 3.8, 4.0, 4.0 % (round 2: 5.1, 5.1, 4.6).
+
+Open choices:
+
+- The wave is full opacity. If the pointer reads poorly over it on a white cap, lighten the wave to about 60 %.
+- The click area is small and central so most of the cap still behaves as a knob; the mark itself is larger than the click area.
+- The mark appears at the next modulation refresh (up to 67 ms) after a route is added or removed.
+- Popover behaviour inside the real plugin's NSHostingView and the click area's hit-testing are untested by automation (the preview renders cannot show them).

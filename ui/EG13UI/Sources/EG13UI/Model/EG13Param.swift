@@ -25,6 +25,9 @@ public final class EG13Param {
     /// clamped to 0...1; nil when no route targets it. Written only when an end moves by more than
     /// `modulationEpsilon`.
     public private(set) var modulationRange: ClosedRange<Double>?
+    /// Whether at least one visible route targets this parameter: the knob's modulation mark. Written
+    /// only when it changes, so a knob that reads it ignores every modulation value update.
+    public private(set) var isRouted = false
     /// Smaller changes are not written: the modulated value moves every tick, and each write
     /// would invalidate every control that reads it.
     public static let modulationEpsilon = 0.001
@@ -85,6 +88,13 @@ public final class EG13Param {
         value = shown
         text = synth.text(at: index, value: shown)
     }
+
+    func setRouted(_ new: Bool) {
+        if new != isRouted { isRouted = new }
+    }
+
+    /// The synth this parameter belongs to (the knob's route popover reads its routes).
+    var owner: EG13Synth { synth }
 
     /// The modulation the routes put on this parameter (EG13Synth, once per tick).
     func setModulation(normalized new: Double?, range newRange: ClosedRange<Double>?) {

@@ -154,7 +154,7 @@ struct EG13ModulationViewTests {
 
     // MARK: Ring
 
-    @Test("ring range is the clamped sum of amounts")
+    @Test("the route range is the clamped sum of amounts")
     func ringRange() {
         let id = filterP(2)
         let param = synth.param(id)!
@@ -165,42 +165,72 @@ struct EG13ModulationViewTests {
         core.values[core.index(of: id)] = 0.5
         reload()
         #expect(param.modulationRange == 0.5...1.0, "0.5 + 1.3 stops at 100 %")
-        #expect(param.modRing == EG13ModRing(from: 0.5, to: 1.0, live: nil), "no live value: the range")
         core.values[core.index(of: EG13ParamID.routeAmount(0, 0))] = -0.8
         core.values[core.index(of: EG13ParamID.routeAmount(0, 1))] = -0.5
         synth.tickModulation()
         #expect(param.modulationRange == 0.0...0.5, "0.5 - 1.3 stops at 0 %")
-        #expect(synth.param(filterP(1))?.modRing == nil, "an unrouted knob has no ring")
     }
 
-    @Test("with a live value the ring runs from the set value to it, with a dot there")
-    func ringLive() {
-        #expect(EG13ModRing.make(base: 0.4, live: 0.7, range: 0.4...0.9) == EG13ModRing(from: 0.4, to: 0.7, live: 0.7))
-        #expect(EG13ModRing.make(base: 0.4, live: 0.1, range: 0.0...0.4) == EG13ModRing(from: 0.1, to: 0.4, live: 0.1))
-        #expect(EG13ModRing.make(base: 0.4, live: 0.4, range: 0.4...0.9) == EG13ModRing(from: 0.4, to: 0.4, live: 0.4))
-        #expect(EG13ModRing.make(base: 0.4, live: nil, range: 0.4...0.9) == EG13ModRing(from: 0.4, to: 0.9, live: nil))
-        #expect(EG13ModRing.make(base: 0.4, live: nil, range: nil) == nil)
-        #expect(EG13ModRing.make(base: 0.4, live: 1.4, range: nil) == EG13ModRing(from: 0.4, to: 1, live: 1), "clamped")
+    @Test("the mark shows only for routed knobs")
+    func markOnlyForRoutedKnobs() {
+        #expect(synth.param(filterP(1))?.isRouted == false)
+        core.routes[0][0] = .init(source: Self.modWheel, destination: Self.filterP1, via: 0)
+        core.routes[0][1] = .init(source: Self.mod1, destination: Self.filterP4, via: 0)  // a P the engine hides
+        core.routes[0][2] = .init(source: 40, destination: Self.filterP2, via: 0)  // hidden source (Mod 2 Off)
+        reload()
+        synth.tickModulation()
+        #expect(synth.param(filterP(1))?.isRouted == true, "routes(into:) is not empty")
+        #expect(synth.param(filterP(2))?.isRouted == false, "its only route has a hidden source")
+        #expect(synth.param(filterP(1, part: 1))?.isRouted == false, "the other part")
+        #expect(synth.routes(into: filterP(1), part: 0).isEmpty == false && synth.routes(into: filterP(2), part: 0).isEmpty)
+        #expect(synth.motionItems(into: filterP(1), part: 0).map(\.route) == [0], "the popover lists this knob's routes")
+        #expect(synth.motionItems(into: filterP(2), part: 0).isEmpty)
+        core.routes[0][0] = .init()
+        reload()
+        synth.tickModulation()
+        #expect(synth.param(filterP(1))?.isRouted == false, "hidden again when the route goes")
     }
 
-    @Test("the arc sits on the cap: about 18 % of its radius wide, at least 2.5 pt, inside its edge")
-    func capArcGeometry() {
+    @Test("the mark doesn't change on modulation-value updates")
+    func markIgnoresModulationValues() {
+        core.routes[0][0] = .init(source: Self.modWheel, destination: Self.filterP1, via: 0)
+        reload()
+        synth.tickModulation()
+        let x = synth.param(filterP(1))!
+        let touched = Flag(), knobTouched = Flag()
+        /// What the mark reads (a knob's body reads nothing of the modulation).
+        withObservationTracking { _ = x.isRouted } onChange: { touched.fired = true }
+        withObservationTracking { _ = (x.value, x.text, x.normalized, x.isBipolar, x.isRouted) } onChange: {
+            knobTouched.fired = true
+        }
+        for step in 1...20 {
+            core.modValues[0][Int(Self.filterP1)] = Float(0.3 + 0.02 * Double(step))
+            synth.tickModulation()
+        }
+        #expect(x.modulatedNormalized != nil, "the values did update (the test can fail)")
+        #expect(!touched.fired && !knobTouched.fired)
+    }
+
+    @Test("the mark is 45-80 % of the cap wide, at least 2 pt, centred, with a 14 x 10 pt click area")
+    func markGeometry() {
         let style = EG13KnobStyle.default
         for size in [EG13KnobSize.large, .medium, .small] {
             let d = EG13Knob.diameter(size)
-            let capRadius = EG13ModRingGeometry.capRadius(d: d, style: style, size: size)
-            let width = EG13ModRingGeometry.width(capRadius: capRadius)
-            #expect(width >= 2.5)
-            #expect(width >= capRadius * 0.18 - 0.0001)
-            // The arc's centre line is a radius from the knob's centre; its outer edge stays inside the cap.
-            let centre = d / 2 - EG13ModRingGeometry.inset(d: d, capRadius: capRadius)
-            #expect(centre + width / 2 <= capRadius, "\(size) arc stays inside the cap")
-            #expect(centre - width / 2 > 0, "\(size) arc does not reach the cap's centre")
+            let capRadius = EG13ModMarkGeometry.capRadius(d: d, style: style, size: size)
+            let mark = EG13ModMarkGeometry.size(capRadius: capRadius)
+            #expect(abs(mark.width / (capRadius * 2) - EG13ModMarkGeometry.widthRatio) < 0.0001)
+            #expect(EG13ModMarkGeometry.widthRatio >= 0.7 && EG13ModMarkGeometry.widthRatio <= 0.8)
+            #expect(EG13ModMarkGeometry.strokeWidth(capRadius: capRadius) >= 2)
+            #expect(EG13ModMarkGeometry.cycles >= 1 && EG13ModMarkGeometry.cycles <= 1.5)
+            #expect(EG13ModMarkGeometry.centre(capRadius: capRadius) == .zero)
+            let hit = EG13ModMarkGeometry.hitRect(d: d, capRadius: capRadius)
+            #expect(hit.width >= 14 && hit.height >= 10)
+            #expect(abs(hit.midX - d / 2) < 0.0001 && abs(hit.midY - d / 2) < 0.0001)
+            // The whole mark and its stroke stay inside the cap.
+            let stroke = EG13ModMarkGeometry.strokeWidth(capRadius: capRadius)
+            let corner = hypot(mark.width / 2 + stroke / 2, mark.height / 2 + stroke / 2)
+            #expect(corner <= capRadius, "\(size) mark stays on the cap")
         }
-        let large = EG13Knob.diameter(.large)
-        let capRadius = EG13ModRingGeometry.capRadius(d: large, style: style, size: .large)
-        #expect(abs(EG13ModRingGeometry.width(capRadius: capRadius) - capRadius * 0.18) < 0.0001, "18 % on a large knob")
-        #expect(EG13ModRingLayer.rangeOpacity == 0.35)
     }
 
     // MARK: Trace scale
@@ -230,43 +260,6 @@ struct EG13ModulationViewTests {
         #expect(trace.frame(output: 0, at: 0) == EG13ModTraceFrame(min: 40, max: 41), "the oldest")
         #expect(trace.latest(output: 0) == EG13ModTraceFrame(min: 69, max: 70))
         #expect(trace.frame(output: 0, at: 30) == nil && trace.frame(output: 9, at: 0) == nil)
-    }
-
-    // MARK: Observation isolation
-
-    @Test("only modulated knobs re-render on a modulation change")
-    func ringIsolation() {
-        core.routes[0][0] = .init(source: Self.modWheel, destination: Self.filterP1, via: 0)
-        reload()
-        core.modValues[0][Int(Self.filterP1)] = 0.2
-        synth.tickModulation()
-        let x = synth.param(filterP(1))!  // modulated
-        let y = synth.param(filterP(2))!  // not
-        let other = synth.param(EG13ParamID.source(0, 1))!
-        let touchedX = Flag(), touchedY = Flag(), touchedOther = Flag()
-        /// What a knob's body reads from its parameter.
-        func read(_ param: EG13Param) {
-            _ = (param.value, param.text, param.normalized, param.isBipolar, param.modRing)
-        }
-        func track() {
-            touchedX.fired = false; touchedY.fired = false; touchedOther.fired = false
-            withObservationTracking { read(x) } onChange: { touchedX.fired = true }
-            withObservationTracking { read(y) } onChange: { touchedY.fired = true }
-            withObservationTracking { read(other) } onChange: { touchedOther.fired = true }
-        }
-        track()
-        core.modValues[0][Int(Self.filterP1)] = 0.5
-        synth.tickModulation()
-        #expect(touchedX.fired, "the modulated knob re-renders (the test can fail)")
-        #expect(!touchedY.fired && !touchedOther.fired, "the others do not")
-        track()
-        for step in 1...20 {  // twenty ticks of movement and trace data
-            core.modValues[0][Int(Self.filterP1)] = Float(0.5 + 0.02 * Double(step))
-            core.modOutMin[0][0][0] = 0
-            core.modOutMax[0][0][0] = Float(step) / 20
-            synth.tickModulation()
-        }
-        #expect(touchedX.fired && !touchedY.fired && !touchedOther.fired)
     }
 }
 

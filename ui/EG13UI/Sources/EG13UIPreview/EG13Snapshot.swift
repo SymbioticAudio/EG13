@@ -96,7 +96,7 @@ enum EG13Snapshot {
         synth.selectedPart = 1
         ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-b.png") && ok
         synth.selectedPart = 0
-        ok = writeFitted(EG13RingSheet(synth: synth), to: "\(directory)/ring.png", scale: 2) && ok
+        ok = writeFitted(EG13MarkSheet(synth: synth), to: "\(directory)/mark.png", scale: 2) && ok
         ok = writeFitted(EG13MotionSheet(synth: synth), to: "\(directory)/motion-menu.png", scale: 2) && ok
         ok = writeFitted(EG13ModCards(synth: synth, part: 0, width: EG13Layout.modCardWidth),
                          to: "\(directory)/traces.png", scale: 2) && ok
@@ -250,41 +250,39 @@ struct EG13ContactSheet: View {
     }
 }
 
-/// The ring close-up: the Filter card (Cutoff and Resonance ride on routes), then one knob of each
-/// cap colour with a live arc and with only a route range, labelled.
-struct EG13RingSheet: View {
+/// The mark close-up: the Filter card, then one knob per cap colour with the modulation mark at 75 %,
+/// 100 % and 200 %, set at both ends of the range and in the middle so the pointer's clearance shows.
+struct EG13MarkSheet: View {
     let synth: EG13Synth
     @Environment(\.symbioticTheme) private var theme
 
-    /// One knob drawn with an arc: its cap, where it is set, and the arc.
     private struct Sample: Identifiable {
         let id: String
         let emphasis: EG13ParamEmphasis
-        let base: Double
-        let live: Double
-        let range: ClosedRange<Double>
+        let value: Double
     }
 
     private let samples: [Sample] = [
-        Sample(id: "white", emphasis: .plain, base: 0.35, live: 0.75, range: 0.35...0.9),
-        Sample(id: "pink", emphasis: .pink, base: 0.6, live: 0.3, range: 0.2...0.6),
-        Sample(id: "teal", emphasis: .teal, base: 0.3, live: 0.65, range: 0.3...0.8),
-        Sample(id: "black", emphasis: .black, base: 0.45, live: 0.85, range: 0.45...1.0),
+        Sample(id: "white, min", emphasis: .plain, value: 0),
+        Sample(id: "pink, max", emphasis: .pink, value: 1),
+        Sample(id: "teal, mid", emphasis: .teal, value: 0.5),
+        Sample(id: "black, min", emphasis: .black, value: 0),
     ]
 
-    private func row(_ title: String, live: Bool) -> some View {
-        HStack(alignment: .top, spacing: theme.spacing.l) {
-            Text(title)
+    private func row(_ zoom: CGFloat) -> some View {
+        let d = EG13Layout.knobDiameter(.large)
+        return HStack(alignment: .top, spacing: theme.spacing.l) {
+            Text("\(Int(zoom * 100)) %")
                 .font(theme.type.caption.font)
                 .foregroundStyle(theme.text.secondary.color)
-                .frame(width: 90, alignment: .leading)
+                .frame(width: 50, alignment: .leading)
             ForEach(samples) { sample in
                 VStack(spacing: theme.spacing.xs) {
-                    EG13KnobShape(normalized: sample.base, style: EG13Palette.knobStyle(for: sample.emphasis),
-                                  size: .large,
-                                  modulation: EG13ModRing.make(base: sample.base, live: live ? sample.live : nil,
-                                                               range: sample.range))
-                        .frame(width: EG13Layout.knobDiameter(.large), height: EG13Layout.knobDiameter(.large))
+                    EG13KnobShape(normalized: sample.value, style: EG13Palette.knobStyle(for: sample.emphasis),
+                                  size: .large, showsModulationMark: true)
+                        .frame(width: d, height: d)
+                        .scaleEffect(zoom)
+                        .frame(width: d * zoom, height: d * zoom)
                     Text(sample.id)
                         .font(theme.type.caption.font)
                         .foregroundStyle(theme.text.secondary.color)
@@ -295,12 +293,13 @@ struct EG13RingSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.spacing.m) {
-            Text("Modulation arc on the cap, Part A (shown at 200 %)")
+            Text("Modulation mark on the cap (rows are 75 %, 100 % and 200 %)")
                 .font(.system(size: 16, weight: .light))
                 .foregroundStyle(theme.text.primary.color)
             EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0, width: 420)
-            row("live", live: true)
-            row("range only", live: false)
+            row(0.75)
+            row(1)
+            row(2)
         }
         .frame(width: 560, alignment: .leading)
     }

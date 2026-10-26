@@ -6,15 +6,23 @@ import SwiftUI
 /// in an inactive plugin window, which SwiftUI gestures on macOS 14 do not provide.
 struct EG13ControlSurface: NSViewRepresentable {
     let interaction: Binding<EG13ControlInteraction>
+    /// A click area inside the control (from its top left) that is a click, not a drag: the knob's
+    /// modulation mark. A drag that starts there adjusts the control like any other.
+    var clickRect: CGRect?
+    var onClickRect: (() -> Void)?
 
     func makeNSView(context: Context) -> EG13ControlSurfaceView {
         let view = EG13ControlSurfaceView()
         view.interaction = interaction
+        view.clickRect = clickRect
+        view.onClickRect = onClickRect
         return view
     }
 
     func updateNSView(_ view: EG13ControlSurfaceView, context: Context) {
         view.interaction = interaction
+        view.clickRect = clickRect
+        view.onClickRect = onClickRect
     }
 
     /// The surface goes away: end any open gesture, whatever state SwiftUI still holds.
@@ -30,6 +38,16 @@ final class EG13ControlSurfaceView: NSView {
     /// The gesture is owned here too, so ending it never depends on SwiftUI's @State.
     private var gesture: EG13Gesture?
     private var lastY: CGFloat = 0
+    var clickRect: CGRect?
+    var onClickRect: (() -> Void)?
+    /// A press on the click area, not yet a click or a drag: where it started.
+    private var pendingClick: (start: CGPoint, clickCount: Int)?
+
+    /// The event's position from the view's top left.
+    private func topLeft(_ event: NSEvent) -> CGPoint {
+        let p = convert(event.locationInWindow, from: nil)
+        return CGPoint(x: p.x, y: isFlipped ? p.y : bounds.height - p.y)
+    }
 
     /// A control that leaves the window mid-gesture (the editor closes, the view is
     /// replaced) ends its gesture, so no touch stays open in the host.
@@ -49,10 +67,22 @@ final class EG13ControlSurfaceView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         lastY = localY(event)
+        let point = topLeft(event)
+        if let clickRect, onClickRect != nil, event.clickCount == 1, clickRect.contains(point) {
+            pendingClick = (point, event.clickCount)
+            return
+        }
         interaction?.wrappedValue.mouseDown(clickCount: event.clickCount)
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let pending = pendingClick {
+            let point = topLeft(event)
+            guard hypot(point.x - pending.start.x, point.y - pending.start.y) > 3 else { return }
+            pendingClick = nil  // a drag: the control's own gesture, from where it started
+            lastY = localY(event)
+            interaction?.wrappedValue.mouseDown(clickCount: pending.clickCount)
+        }
         let y = localY(event)
         let delta = Double(y - lastY)
         lastY = y
@@ -60,6 +90,11 @@ final class EG13ControlSurfaceView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if pendingClick != nil {
+            pendingClick = nil
+            onClickRect?()
+            return
+        }
         interaction?.wrappedValue.mouseUp()
     }
 
@@ -132,18 +167,21 @@ extension EnvironmentValues {
 
 extension View {
     /// Mouse and scroll input for a control, unless the environment is non-interactive.
-    func eg13ControlInput(_ interaction: Binding<EG13ControlInteraction>) -> some View {
-        modifier(EG13ControlInput(interaction: interaction))
+    func eg13ControlInput(_ interaction: Binding<EG13ControlInteraction>, clickRect: CGRect? = nil,
+                          onClickRect: (() -> Void)? = nil) -> some View {
+        modifier(EG13ControlInput(interaction: interaction, clickRect: clickRect, onClickRect: onClickRect))
     }
 }
 
 private struct EG13ControlInput: ViewModifier {
     let interaction: Binding<EG13ControlInteraction>
+    let clickRect: CGRect?
+    let onClickRect: (() -> Void)?
     @Environment(\.eg13InteractiveControls) private var interactive
 
     func body(content: Content) -> some View {
         if interactive {
-            content.overlay(EG13ControlSurface(interaction: interaction))
+            content.overlay(EG13ControlSurface(interaction: interaction, clickRect: clickRect, onClickRect: onClickRect))
         } else {
             content
         }
