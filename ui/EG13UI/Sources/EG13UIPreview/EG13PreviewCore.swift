@@ -120,8 +120,13 @@ final class EG13PreviewCore: EG13Core {
         for index in values.indices where !descriptors[index].isStepped && descriptors[index].minValue == 0
             && descriptors[index].maxValue == 1 && descriptors[index].defaultValue == 0.5 {
             let id = descriptors[index].id
-            let seed = Double((id & 0xFF) * 37 + ((id >> 8) & 0xFF) * 11 + ((id >> 16) & 0xFF) * 5)
-            values[index] = 0.12 + 0.76 * (seed * 0.381966).truncatingRemainder(dividingBy: 1)
+            // Split up so every Swift version type-checks it quickly.
+            let low: UInt32 = (id & 0xFF) * 37
+            let mid: UInt32 = ((id >> 8) & 0xFF) * 11
+            let high: UInt32 = ((id >> 16) & 0xFF) * 5
+            let seed = Double(low + mid + high)
+            let fraction: Double = (seed * 0.381966).truncatingRemainder(dividingBy: 1)
+            values[index] = 0.12 + 0.76 * fraction
         }
     }
 
