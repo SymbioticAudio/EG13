@@ -28,13 +28,24 @@ public struct EG13DisplayFrame: Equatable, Sendable {
     public var activeVoices: [Int]
     /// Changes on every engine switch, state load or adopt: the cue to re-read descriptors.
     public var engineGeneration: UInt32
+    /// The final normalized value at each destination code: [part][destination]. NaN means none.
+    /// Pitch is semitones / 48 + 0.5 and pan 0...1; the editor reads the destinations of P's.
+    public var modValues: [[Float]]
+    /// Min and max of each mod output since the previous frame: [part][slot][output]. +inf (min)
+    /// and -inf (max) mean the output produced nothing.
+    public var modOutMin: [[[Float]]]
+    public var modOutMax: [[[Float]]]
 
     public init(values: [Double], partPeaks: [[Float]], activeVoices: [Int] = [0, 0],
-                engineGeneration: UInt32 = 0) {
+                engineGeneration: UInt32 = 0, modValues: [[Float]] = [],
+                modOutMin: [[[Float]]] = [], modOutMax: [[[Float]]] = []) {
         self.values = values
         self.partPeaks = partPeaks
         self.activeVoices = activeVoices
         self.engineGeneration = engineGeneration
+        self.modValues = modValues
+        self.modOutMin = modOutMin
+        self.modOutMax = modOutMax
     }
 }
 
@@ -56,5 +67,20 @@ public protocol EG13Core: AnyObject {
     func edit(_ id: UInt32, value: Double)
     func endEdit(_ id: UInt32)
     func displayFrame() -> EG13DisplayFrame
+    /// Matrix route `index` of the part: codes, names (nil when the part's engines hide the code)
+    /// and the amount. A part or index out of range gives an empty route.
+    func route(part: Int, index: Int) -> EG13Route
+    /// Sets a route's source, destination and via. False, and nothing changes, for a bad part,
+    /// route or code, including a code the part's current engines hide. The amount is a host
+    /// parameter: edit it through beginEdit, edit and endEdit.
+    func setRoute(part: Int, index: Int, source: UInt16, destination: UInt16, via: UInt16) -> Bool
+    /// "Velocity", "Mod 1 Envelope"; nil for 0, reserved codes and codes the engines hide.
+    func sourceName(part: Int, code: UInt16) -> String?
+    /// "Pitch", "Filter: Cutoff"; nil for 0, reserved codes and codes the engines hide.
+    func destinationName(part: Int, code: UInt16) -> String?
+    /// The destination code of a P parameter (Filter P1 is 32), 0 for any other parameter.
+    func destination(forParam id: UInt32) -> UInt16
+    /// "0.6.0 (abc1234)".
+    func version() -> String
     func requestResize(width: UInt32, height: UInt32)
 }

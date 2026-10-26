@@ -70,6 +70,8 @@ Each of a part's twelve routes has a **source**, a **destination**, an **amount*
 
 **Destinations**: any control of the Source, Filter or Shaper (P1, P2, …), *Pitch*, *Amp*, *Pan*, *Part Level*, any control of the part's Part FX (P1 to P16), and any control of the part's mod slots.
 
+**Making routes in the editor**: modulating a control from a source takes the part's first free route (one with no source, destination or via) and sets its amount to +25 %. When all twelve routes of the part are in use, a control cannot be modulated until one is removed. Removing a route frees it and sets its amount to 0 %. A route into a control that the engine does not use (a Filter P4 on a three-control filter, an output the mod engine does not have) shows nothing on the control, but the route keeps its setting; if you change another field of that route, the field the engine hides is cleared. A control's ring shows how far its routes can move it (its position plus the amounts of the routes into it, stopping at 0 % and 100 %), and its chip shows where modulation puts it now.
+
 **How routes add up**: every control is a position from 0 to 100 %. The routes into it are added to where its knob is, and the result stops at 0 % and 100 %. So a cutoff at 70 % with +30 % from an envelope opens fully at the envelope's peak; two routes of +80 % into a control at 50 % stop at 100 %. A stepped control (a mode or a model) moves through its options the same way.
 
 - **Pitch** is in semitones: ±100 % is ±24 semitones (so 2 % is about half a semitone). Pitch routes come on top of the part's pitch bend and transpose. Pitch routes sum to at most ±48 semitones.

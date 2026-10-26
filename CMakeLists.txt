@@ -22,6 +22,7 @@ add_library(eg13_nlohmann INTERFACE)
 target_include_directories(eg13_nlohmann SYSTEM INTERFACE ${CMAKE_SOURCE_DIR}/third_party/nlohmann)
 
 add_subdirectory(core)
+add_subdirectory(tools/ui_tables)
 
 # The UI bridge (edit queue to the synth and the host) has no Apple code, so it builds and is
 # tested on Linux too. The CLAP headers are all it needs from the plugin side.
@@ -67,6 +68,15 @@ if(EG13_BUILD_TESTS)
   enable_testing()
   add_subdirectory(third_party/Catch2)
   add_subdirectory(tests)
+
+  # The editor's engine tables (names and value strings) are generated from the core and committed;
+  # this fails when an engine changed without regenerating them.
+  add_dependencies(eg13_tests eg13_ui_tables)
+  add_test(NAME ui_tables_up_to_date
+    COMMAND ${CMAKE_COMMAND} -DTOOL=$<TARGET_FILE:eg13_ui_tables>
+      -DGOLDEN=${CMAKE_SOURCE_DIR}/ui/EG13UI/Sources/EG13UIFixtures/core-tables.json
+      -DOUT=${CMAKE_BINARY_DIR}/ui_tables_check.json
+      -P ${CMAKE_SOURCE_DIR}/tools/ui_tables/check_ui_tables.cmake)
 endif()
 
 if(EG13_BUILD_PLUGIN)

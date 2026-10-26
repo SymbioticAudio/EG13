@@ -1,4 +1,5 @@
 import EG13CBridge
+import EG13UIFixtures
 import EG13UI
 
 /// A fake plugin for the preview: parameters live in memory, nothing needs a DAW. It has the
@@ -230,4 +231,50 @@ final class EG13PreviewCore: EG13Core {
         EG13DisplayFrame(values: values, partPeaks: [[0.4, 0.35], [0.2, 0.25]], engineGeneration: generation)
     }
     func requestResize(width: UInt32, height: UInt32) {}
+
+    // MARK: Matrix
+
+    /// The init patch's routes (spec §6): Mod 1 to Amp via Velocity, Mod 2 to Filter P1, Mod 3 to
+    /// Pitch via the mod wheel; the rest are free.
+    private var routes: [[(source: UInt16, destination: UInt16, via: UInt16)]] = (0..<EG13ParamID.parts).map { _ in
+        [(32, 2, 1), (40, 32, 0), (48, 1, 9)] + Array(repeating: (0, 0, 0), count: EG13ParamID.routeCount - 3)
+    }
+
+    private func modEngineNames(part: Int) -> [String] {
+        (3...6).map { Self.engines($0)[current[$0][part]].name }
+    }
+
+    func route(part: Int, index: Int) -> EG13UI.EG13Route {
+        guard part >= 0, part < EG13ParamID.parts, index >= 0, index < EG13ParamID.routeCount else { return EG13UI.EG13Route() }
+        let r = routes[part][index]
+        let amount = values[indexByID[EG13ParamID.routeAmount(part, index)]!]
+        return makeRoute(part: part, source: r.source, destination: r.destination, via: r.via, amount: amount)
+    }
+
+    func setRoute(part: Int, index: Int, source: UInt16, destination: UInt16, via: UInt16) -> Bool {
+        guard part >= 0, part < EG13ParamID.parts, index >= 0, index < EG13ParamID.routeCount,
+              source == 0 || sourceName(part: part, code: source) != nil,
+              via == 0 || sourceName(part: part, code: via) != nil,
+              destination == 0 || destinationName(part: part, code: destination) != nil else { return false }
+        routes[part][index] = (source, destination, via)
+        return true
+    }
+
+    func sourceName(part: Int, code: UInt16) -> String? {
+        EG13MatrixNames.sourceName(code: code, modEngines: modEngineNames(part: part))
+    }
+
+    func destinationName(part: Int, code: UInt16) -> String? {
+        EG13MatrixNames.destinationName(code: code) { kind in
+            Self.engines(kind)[self.current[kind][part]].params
+        }
+    }
+
+    func destination(forParam id: UInt32) -> UInt16 {
+        guard let (kind, _, p) = slotOf(id), p >= 1, p <= EG13ParamID.slotParamCount(EG13SlotKind(rawValue: UInt32(kind))) else { return 0 }
+        let bases: [Int: Int] = [0: 16, 1: 32, 2: 48, 7: 64, 3: 80, 4: 96, 5: 112, 6: 128]
+        return UInt16(bases[kind]! + p - 1)
+    }
+
+    func version() -> String { "preview" }
 }

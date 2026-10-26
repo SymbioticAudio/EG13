@@ -33,6 +33,14 @@ public final class EG13Synth {
     /// Patch name; presets arrive in M7.
     public let patchName = "Init"
 
+    /// The matrix, per part: codes and names as the core reports them (amounts are read live from
+    /// the amount parameters). Reloaded on an engine generation change and after `setRoute`.
+    public private(set) var routeTable: [[EG13Route]] = Array(
+        repeating: Array(repeating: EG13Route(), count: EG13ParamID.routeCount), count: EG13ParamID.parts)
+    /// The matrix pickers' choices per part: the codes the part's current engines name.
+    private var sourceCodes: [[EG13MatrixCode]] = Array(repeating: [], count: EG13ParamID.parts)
+    private var destinationCodes: [[EG13MatrixCode]] = Array(repeating: [], count: EG13ParamID.parts)
+
     private var descriptors: [EG13ParamDescriptor] = []
     private var names: [String] = []
     private var slots: [EG13Slot] = []
@@ -47,6 +55,16 @@ public final class EG13Synth {
     @ObservationIgnored private var heldIDs: Set<UInt32> = []
     @ObservationIgnored private var openGestures: Set<UInt32> = []
     @ObservationIgnored private var engineGeneration: UInt32 = 0
+    /// The destination code of each parameter that is a P (never changes), and the parameter of
+    /// each destination, per part.
+    @ObservationIgnored private var destinationByID: [UInt32: UInt16] = [:]
+    @ObservationIgnored private var paramByDestination: [[UInt16: EG13Param]] = Array(
+        repeating: [:], count: EG13ParamID.parts)
+    /// The parameters the last tick showed as modulated.
+    @ObservationIgnored private var modulatedIDs: Set<UInt32> = []
+    @ObservationIgnored private var traces: [[EG13ModTrace]] = (0..<EG13ParamID.parts).map { _ in
+        (0..<Int(EG13_NUM_MOD_SLOTS)).map { _ in EG13ModTrace() }
+    }
     @ObservationIgnored private var ballistics = [[EG13MeterBallistics]](
         repeating: [EG13MeterBallistics(), EG13MeterBallistics()], count: EG13ParamID.parts)
     @ObservationIgnored private let clock: () -> Double
@@ -76,6 +94,13 @@ public final class EG13Synth {
         paramByID = Dictionary(params.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         rebuildSlots()
         activeVoices = frame.activeVoices
+        for param in params {
+            let destination = core.destination(forParam: param.id)
+            guard destination != 0, let part = EG13ParamID.partIndex(of: param.id) else { continue }
+            destinationByID[param.id] = destination
+            paramByDestination[part][destination] = param
+        }
+        reloadRoutes()
     }
 
     // MARK: Values
@@ -186,6 +211,7 @@ public final class EG13Synth {
         if regenerated {
             engineGeneration = frame.engineGeneration
             reloadDescriptors()
+            reloadRoutes()
         }
         // Only a parameter whose value changed is written, so only its controls are invalidated.
         for index in 0..<min(paramByIndex.count, frame.values.count) {
@@ -193,6 +219,8 @@ public final class EG13Synth {
         }
         if regenerated { for param in params { param.refreshText() } }
         expirePending()
+        updateModulation(frame)
+        updateTraces(frame)
         if frame.activeVoices != activeVoices { activeVoices = frame.activeVoices }
         updateMeters(frame.partPeaks, dt: dt)
     }
@@ -262,5 +290,151 @@ public final class EG13Synth {
     public func requestZoom(_ zoom: Double) {
         core.requestResize(width: UInt32((EG13Layout.baseSize.width * zoom).rounded()),
                            height: UInt32((EG13Layout.baseSize.height * zoom).rounded()))
+    }
+
+    // MARK: Matrix
+
+    /// The part's 12 routes with their amounts as the controls show them. Reads the routes and the
+    /// amount parameters, so a view that calls it follows both.
+    public func routes(part: Int) -> [EG13Route] {
+        guard routeTable.indices.contains(part) else { return [] }
+        return routeTable[part].enumerated().map { index, route in
+            var live = route
+            if let amount = paramByID[EG13ParamID.routeAmount(part, index)] { live.amount = amount.value }
+            return live
+        }
+    }
+
+    /// The routes that modulate a parameter: a source and the parameter's destination, both named
+    /// by the part's current engines. Routes into a P the engine hides (and routes from a source it
+    /// hides) are left out, so no chip or ring shows for them.
+    public func routes(into id: UInt32, part: Int) -> [EG13Route] {
+        guard let destination = destinationByID[id] else { return [] }
+        return routes(part: part).filter {
+            $0.isActive && $0.destination == destination && !$0.destinationHidden && !$0.sourceHidden
+        }
+    }
+
+    /// The first route with no source, destination or via, or nil when the matrix is full.
+    public func firstFreeRoute(part: Int) -> Int? {
+        guard routeTable.indices.contains(part) else { return nil }
+        return routeTable[part].firstIndex { $0.isFree }
+    }
+
+    /// Whether a parameter can be modulated: it has a destination code.
+    public func canModulate(_ id: UInt32) -> Bool { destinationByID[id] != nil }
+
+    /// Routes `source` into a parameter through the first free route at +25 %. False, changing
+    /// nothing, when the parameter has no destination or the matrix is full.
+    @discardableResult
+    public func modulate(id: UInt32, from source: UInt16) -> Bool {
+        guard let part = EG13ParamID.partIndex(of: id), let destination = destinationByID[id],
+              let route = firstFreeRoute(part: part),
+              setRoute(part: part, index: route, source: source, destination: destination, via: 0)
+        else { return false }
+        edit(EG13ParamID.routeAmount(part, route), Self.newRouteAmount)
+        return true
+    }
+
+    /// A route made by `modulate`.
+    public static let newRouteAmount = 0.25
+
+    /// Sets the fields given; a field left out keeps the route's code. A kept field that the part's
+    /// engines hide is sent as 0, so the core accepts the change (it rejects a hidden code). False
+    /// when the core rejects a code. Reloads the routes either way.
+    @discardableResult
+    public func setRoute(part: Int, index: Int, source: UInt16? = nil, destination: UInt16? = nil,
+                         via: UInt16? = nil) -> Bool {
+        guard routeTable.indices.contains(part), routeTable[part].indices.contains(index) else { return false }
+        let current = routeTable[part][index]
+        let ok = core.setRoute(part: part, index: index,
+                               source: source ?? (current.sourceHidden ? 0 : current.source),
+                               destination: destination ?? (current.destinationHidden ? 0 : current.destination),
+                               via: via ?? (current.viaHidden ? 0 : current.via))
+        reloadRoutes()
+        return ok
+    }
+
+    /// Frees the route and sets its amount to 0.
+    public func removeRoute(part: Int, index: Int) {
+        guard setRoute(part: part, index: index, source: 0, destination: 0, via: 0) else { return }
+        if let amount = paramByID[EG13ParamID.routeAmount(part, index)], amount.value != 0 {
+            edit(amount.id, 0)
+        }
+    }
+
+    /// The sources the part's engines name, for the matrix pickers (code order).
+    public func sources(part: Int) -> [(code: UInt16, name: String)] {
+        sourceCodes.indices.contains(part) ? sourceCodes[part].map { (code: $0.code, name: $0.name) } : []
+    }
+
+    public func destinations(part: Int) -> [(code: UInt16, name: String)] {
+        destinationCodes.indices.contains(part) ? destinationCodes[part].map { (code: $0.code, name: $0.name) } : []
+    }
+
+    /// The last 60 display frames of a mod slot's outputs (slot 0...3).
+    public func modTrace(part: Int, slot: Int) -> EG13ModTrace {
+        guard traces.indices.contains(part), traces[part].indices.contains(slot) else { return EG13ModTrace() }
+        return traces[part][slot]
+    }
+
+    /// Re-reads the routes and the pickers' lists. Writes only what changed.
+    private func reloadRoutes() {
+        var table = routeTable
+        var sourceList = sourceCodes, destinationList = destinationCodes
+        for part in 0..<EG13ParamID.parts {
+            table[part] = (0..<EG13ParamID.routeCount).map { core.route(part: part, index: $0) }
+            sourceList[part] = (1..<Int(EG13_NUM_SOURCES)).compactMap { code in
+                core.sourceName(part: part, code: UInt16(code)).map { EG13MatrixCode(code: UInt16(code), name: $0) }
+            }
+            destinationList[part] = (1..<Int(EG13_NUM_DESTINATIONS)).compactMap { code in
+                core.destinationName(part: part, code: UInt16(code)).map { EG13MatrixCode(code: UInt16(code), name: $0) }
+            }
+        }
+        if table != routeTable { routeTable = table }
+        if sourceList != sourceCodes { sourceCodes = sourceList }
+        if destinationList != destinationCodes { destinationCodes = destinationList }
+    }
+
+    /// Each tick: the modulated value and range of every parameter a route targets, and clears the
+    /// ones that stopped being targets. Each is written only when it moved by more than 0.001.
+    private func updateModulation(_ frame: EG13DisplayFrame) {
+        var sums: [UInt32: Double] = [:]
+        var targets: [UInt32: (param: EG13Param, part: Int, destination: UInt16)] = [:]
+        for part in 0..<EG13ParamID.parts {
+            for (index, route) in routeTable[part].enumerated()
+            where route.isActive && !route.destinationHidden && !route.sourceHidden {
+                guard let param = paramByDestination[part][route.destination] else { continue }
+                let amount = paramByID[EG13ParamID.routeAmount(part, index)]?.value ?? route.amount
+                sums[param.id, default: 0] += amount
+                targets[param.id] = (param, part, route.destination)
+            }
+        }
+        for (id, target) in targets {
+            let base = target.param.normalized
+            let low = min(max(min(base, base + (sums[id] ?? 0)), 0), 1)
+            let high = min(max(max(base, base + (sums[id] ?? 0)), 0), 1)
+            var live: Double?
+            if frame.modValues.indices.contains(target.part),
+               frame.modValues[target.part].indices.contains(Int(target.destination)) {
+                let value = frame.modValues[target.part][Int(target.destination)]
+                if !value.isNaN { live = min(max(Double(value), 0), 1) }
+            }
+            target.param.setModulation(normalized: live, range: low...high)
+        }
+        for id in modulatedIDs.subtracting(targets.keys) { paramByID[id]?.setModulation(normalized: nil, range: nil) }
+        modulatedIDs = Set(targets.keys)
+    }
+
+    private func updateTraces(_ frame: EG13DisplayFrame) {
+        for part in 0..<EG13ParamID.parts {
+            for slot in 0..<Int(EG13_NUM_MOD_SLOTS) {
+                let mins = frame.modOutMin.indices.contains(part) && frame.modOutMin[part].indices.contains(slot)
+                    ? frame.modOutMin[part][slot] : []
+                let maxs = frame.modOutMax.indices.contains(part) && frame.modOutMax[part].indices.contains(slot)
+                    ? frame.modOutMax[part][slot] : []
+                traces[part][slot].push(min: mins, max: maxs)
+            }
+        }
     }
 }

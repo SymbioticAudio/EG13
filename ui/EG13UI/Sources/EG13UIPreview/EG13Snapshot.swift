@@ -1,5 +1,6 @@
 import AppKit
 import EG13CBridge
+import EG13UIFixtures
 import SwiftUI
 import EG13UI
 import SymbioticTokens

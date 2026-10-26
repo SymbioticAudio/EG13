@@ -1,5 +1,6 @@
 import AppKit
 import EG13CBridge
+import EG13UIFixtures
 import Testing
 @testable import EG13UI
 

@@ -17,6 +17,18 @@ public final class EG13Param {
     /// times makes no core call).
     public private(set) var text: String
 
+    /// Where modulation puts this parameter now, 0...1 across its range (the core's final value,
+    /// the one chips and rings show); nil when no route modulates it or the core has no value.
+    /// Written only when it moves by more than `modulationEpsilon`.
+    public private(set) var modulatedNormalized: Double?
+    /// The span the routes into this parameter can sweep: its value plus the sum of their amounts,
+    /// clamped to 0...1; nil when no route targets it. Written only when an end moves by more than
+    /// `modulationEpsilon`.
+    public private(set) var modulationRange: ClosedRange<Double>?
+    /// Smaller changes are not written: the modulated value moves every tick, and each write
+    /// would invalidate every control that reads it.
+    public static let modulationEpsilon = 0.001
+
     @ObservationIgnored private unowned let synth: EG13Synth
     @ObservationIgnored private var snapshot: Double
     /// The user's value while the gesture is open.
@@ -72,6 +84,27 @@ public final class EG13Param {
         guard shown != value else { return }
         value = shown
         text = synth.text(at: index, value: shown)
+    }
+
+    /// The modulation the routes put on this parameter (EG13Synth, once per tick).
+    func setModulation(normalized new: Double?, range newRange: ClosedRange<Double>?) {
+        let epsilon = Self.modulationEpsilon
+        let valueMoved: Bool
+        switch (modulatedNormalized, new) {
+        case (nil, nil): valueMoved = false
+        case let (old?, fresh?): valueMoved = abs(old - fresh) > epsilon
+        default: valueMoved = true
+        }
+        if valueMoved { modulatedNormalized = new }
+        let rangeMoved: Bool
+        switch (modulationRange, newRange) {
+        case (nil, nil): rangeMoved = false
+        case let (old?, fresh?):
+            rangeMoved = abs(old.lowerBound - fresh.lowerBound) > epsilon
+                || abs(old.upperBound - fresh.upperBound) > epsilon
+        default: rangeMoved = true
+        }
+        if rangeMoved { modulationRange = newRange }
     }
 
     /// The text depends on the engine as well as the value: reformat after a generation change.

@@ -36,6 +36,12 @@ for arch in $ARCHS; do
   bin="$(swift build --package-path "$PKG" -c "$CONFIG" --arch "$arch" --show-bin-path)"
   # SwiftPM reuses one products directory for every --arch, so copy each result out at once.
   cp "$bin/libEG13UI.a" "$TMP/libEG13UI-$arch.a"
+  # The preview's and the tests' engine tables (EG13UIFixtures) come with a resource bundle; they
+  # must never reach the plugin's static library.
+  if nm "$TMP/libEG13UI-$arch.a" 2>/dev/null | grep -qE 'EG13UIFixtures|resource_bundle_accessor'; then
+    echo "build-ui.sh: libEG13UI.a contains EG13UIFixtures or a Swift resource bundle accessor" >&2
+    exit 1
+  fi
   PARTS+=("$TMP/libEG13UI-$arch.a")
 done
 
