@@ -23,8 +23,8 @@ public final class EG13ModTrace {
     private var count = 0
     /// How many stored frames, over all outputs, are values (not gaps).
     private var liveFrames = 0
-    /// Bumped whenever the trace changes; reading `frames` observes it.
-    private var revision = 0
+    /// Bumped whenever the trace changes; reading it (or `frames`, `frame`, `latest`) observes the trace.
+    public private(set) var revision = 0
 
     public init() {}
 
@@ -33,6 +33,23 @@ public final class EG13ModTrace {
         _ = revision
         return (0..<Self.outputCount).map { frames(output: $0) }
     }
+
+    /// How many frames are stored (at most `capacity`).
+    public var frameCount: Int {
+        _ = revision
+        return count
+    }
+
+    /// Frame `index` of an output, 0 the oldest; nil for a gap or an index out of range. Reads in
+    /// place: no array is made (the trace view draws with it).
+    public func frame(output: Int, at index: Int) -> EG13ModTraceFrame? {
+        _ = revision
+        guard ring.indices.contains(output), index >= 0, index < count else { return nil }
+        return ring[output][(head + index) % Self.capacity]
+    }
+
+    /// The newest frame of an output; nil when there is none or it is a gap.
+    public func latest(output: Int) -> EG13ModTraceFrame? { frame(output: output, at: count - 1) }
 
     public func frames(output: Int) -> [EG13ModTraceFrame?] {
         _ = revision

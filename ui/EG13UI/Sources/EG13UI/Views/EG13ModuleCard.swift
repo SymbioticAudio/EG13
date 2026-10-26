@@ -14,15 +14,23 @@ public struct EG13ModuleCard: View {
     /// 1...4 for a mod slot, nil for the others.
     let number: Int?
     let width: CGFloat
+    /// Called with a route's index (0...11) when its motion chip is clicked; the matrix editor
+    /// opens that route.
+    let onChipSelect: (Int) -> Void
     @Environment(\.symbioticTheme) private var theme
 
-    public init(synth: EG13Synth, kind: EG13SlotKind, part: Int, number: Int? = nil, width: CGFloat) {
+    public init(synth: EG13Synth, kind: EG13SlotKind, part: Int, number: Int? = nil, width: CGFloat,
+                onChipSelect: @escaping (Int) -> Void = { _ in }) {
         self.synth = synth
         self.kind = kind
         self.part = part
         self.number = number
         self.width = width
+        self.onChipSelect = onChipSelect
     }
+
+    /// The trace of a mod card's first output, on the right of the header strip.
+    static let traceSize = CGSize(width: 64, height: 20)
 
     static func category(_ kind: EG13SlotKind) -> EG13Category {
         switch kind {
@@ -77,7 +85,15 @@ public struct EG13ModuleCard: View {
                 }
                 if let engine = controls.engine { EG13ControlView(synth: synth, spec: engine, part: part) }
                 if let scope = controls.scope { EG13ControlView(synth: synth, spec: scope, part: part) }
-                Spacer(minLength: 0)
+                // The motion chips take what is left of the strip; a mod card's trace sits at its end.
+                GeometryReader { space in
+                    EG13CardChips(synth: synth, kind: kind, part: part, width: space.size.width, onSelect: onChipSelect)
+                        .frame(height: space.size.height)
+                }
+                if let number, !controls.params.isEmpty {
+                    EG13ModTraceView(trace: synth.modTrace(part: part, slot: number - 1))
+                        .frame(width: Self.traceSize.width, height: Self.traceSize.height)
+                }
             }
             .padding(.horizontal, EG13Layout.cardPadding)
             .frame(height: EG13Layout.cardHeaderHeight)
@@ -104,11 +120,13 @@ public struct EG13ModCards: View {
     let synth: EG13Synth
     let part: Int
     let width: CGFloat
+    let onChipSelect: (Int) -> Void
 
-    public init(synth: EG13Synth, part: Int, width: CGFloat) {
+    public init(synth: EG13Synth, part: Int, width: CGFloat, onChipSelect: @escaping (Int) -> Void = { _ in }) {
         self.synth = synth
         self.part = part
         self.width = width
+        self.onChipSelect = onChipSelect
     }
 
     static let kinds: [EG13SlotKind] = [EG13_SLOT_KIND_MOD1, EG13_SLOT_KIND_MOD2, EG13_SLOT_KIND_MOD3,
@@ -117,7 +135,8 @@ public struct EG13ModCards: View {
     public var body: some View {
         VStack(spacing: EG13Layout.gap) {
             ForEach(Self.kinds.indices, id: \.self) { index in
-                EG13ModuleCard(synth: synth, kind: Self.kinds[index], part: part, number: index + 1, width: width)
+                EG13ModuleCard(synth: synth, kind: Self.kinds[index], part: part, number: index + 1, width: width,
+                                onChipSelect: onChipSelect)
             }
         }
         .accessibilityElement(children: .contain)
@@ -130,11 +149,13 @@ public struct EG13SlotCards: View {
     let synth: EG13Synth
     let part: Int
     let width: CGFloat
+    let onChipSelect: (Int) -> Void
 
-    public init(synth: EG13Synth, part: Int, width: CGFloat) {
+    public init(synth: EG13Synth, part: Int, width: CGFloat, onChipSelect: @escaping (Int) -> Void = { _ in }) {
         self.synth = synth
         self.part = part
         self.width = width
+        self.onChipSelect = onChipSelect
     }
 
     static let kinds: [EG13SlotKind] = [EG13_SLOT_KIND_SOURCE, EG13_SLOT_KIND_FILTER, EG13_SLOT_KIND_SHAPER,
@@ -143,7 +164,8 @@ public struct EG13SlotCards: View {
     public var body: some View {
         VStack(spacing: EG13Layout.gap) {
             ForEach(Self.kinds.indices, id: \.self) { index in
-                EG13ModuleCard(synth: synth, kind: Self.kinds[index], part: part, width: width)
+                EG13ModuleCard(synth: synth, kind: Self.kinds[index], part: part, width: width,
+                                onChipSelect: onChipSelect)
             }
         }
     }

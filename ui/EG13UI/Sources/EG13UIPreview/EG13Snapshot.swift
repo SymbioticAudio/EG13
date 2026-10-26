@@ -37,7 +37,7 @@ enum EG13Snapshot {
 
     /// Writes `content` at its natural size on the window grey (contact sheets, whose height depends
     /// on how tall the cards are).
-    static func writeFitted<Content: View>(_ content: Content, to path: String) -> Bool {
+    static func writeFitted<Content: View>(_ content: Content, to path: String, scale: CGFloat = 1) -> Bool {
         let view = content
             .padding(16)
             .background(EG13Theme.theme.surface.window.color)
@@ -46,7 +46,7 @@ enum EG13Snapshot {
             .environment(\.eg13InteractiveControls, false)
             .environment(\.colorScheme, .light)
         let renderer = ImageRenderer(content: view)
-        renderer.scale = 1
+        renderer.scale = scale
         guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:])
         else {
@@ -77,6 +77,30 @@ enum EG13Snapshot {
             guard write(page, size: EG13ControlsPage.size, zoom: zoom, to: "\(directory)/controls-\(name).png") else { return 1 }
         }
         return 0
+    }
+
+    /// The modulation design set (gate 6a): both parts with modulation shown, Part A at 75 %, a ring
+    /// close-up at 200 %, card headers with chips, and the Mods column with traces. The preview
+    /// core's animation is a function of its tick count, so the same run draws the same PNGs.
+    static func runModulation(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let core = EG13PreviewCore.modulationDemo()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        // 70 ticks: past the 60 frames a trace holds, and 0.33 s into an envelope cycle.
+        for _ in 0..<70 { synth.tick() }
+        let base = EG13Layout.baseSize
+        var ok = true
+        synth.selectedPart = 0
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-a.png") && ok
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 0.75, to: "\(directory)/editor-a-75.png") && ok
+        synth.selectedPart = 1
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-b.png") && ok
+        synth.selectedPart = 0
+        ok = writeFitted(EG13RingSheet(synth: synth), to: "\(directory)/ring.png", scale: 2) && ok
+        ok = writeFitted(EG13ChipsSheet(synth: synth), to: "\(directory)/chips.png", scale: 2) && ok
+        ok = writeFitted(EG13ModCards(synth: synth, part: 0, width: EG13Layout.modCardWidth),
+                         to: "\(directory)/traces.png", scale: 2) && ok
+        return ok ? 0 : 1
     }
 
     /// The layout design set: both parts at 100%, Part A at 75%, the header close-up, a contact sheet
@@ -223,5 +247,82 @@ struct EG13ContactSheet: View {
             EG13ContactSheet(fileName: "partfx-engines", title: "Part FX", kind: EG13_SLOT_KIND_PART_FX),
             EG13ContactSheet(fileName: "mods-engines", title: "Mod slot", kind: EG13_SLOT_KIND_MOD1, number: 1),
         ]
+    }
+}
+
+/// The ring close-up: the Filter card (Cutoff and Resonance ride on routes), and every kind of
+/// knob in the states a ring has, labelled.
+struct EG13RingSheet: View {
+    let synth: EG13Synth
+    @Environment(\.symbioticTheme) private var theme
+
+    /// One knob drawn with a ring: its cap, where it is set, and the ring's state.
+    private struct Sample: Identifiable {
+        let id: String
+        let emphasis: EG13ParamEmphasis
+        let size: EG13KnobSize
+        let base: Double
+        let ring: EG13ModRing
+    }
+
+    private let samples: [Sample] = [
+        Sample(id: "white, live up", emphasis: .plain, size: .large, base: 0.35,
+               ring: EG13ModRing.make(base: 0.35, live: 0.7, range: 0.35...0.9)!),
+        Sample(id: "white, live down", emphasis: .plain, size: .large, base: 0.7,
+               ring: EG13ModRing.make(base: 0.7, live: 0.4, range: 0.0...0.7)!),
+        Sample(id: "teal, live", emphasis: .teal, size: .large, base: 0.3,
+               ring: EG13ModRing.make(base: 0.3, live: 0.62, range: 0.3...0.8)!),
+        Sample(id: "pink, live", emphasis: .pink, size: .large, base: 0.5,
+               ring: EG13ModRing.make(base: 0.5, live: 0.3, range: 0.2...0.5)!),
+        Sample(id: "pink, range only", emphasis: .pink, size: .large, base: 0.4,
+               ring: EG13ModRing.make(base: 0.4, live: nil, range: 0.4...0.85)!),
+        Sample(id: "white, range only", emphasis: .plain, size: .large, base: 0.4,
+               ring: EG13ModRing.make(base: 0.4, live: nil, range: 0.4...0.85)!),
+        Sample(id: "black, live", emphasis: .black, size: .medium, base: 0.45,
+               ring: EG13ModRing.make(base: 0.45, live: 0.75, range: 0.45...1.0)!),
+        Sample(id: "small, live", emphasis: .plain, size: .small, base: 0.45,
+               ring: EG13ModRing.make(base: 0.45, live: 0.75, range: 0.45...1.0)!),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Modulation ring, Part A (shown at 200 %)")
+                .font(.system(size: 16, weight: .light))
+                .foregroundStyle(theme.text.primary.color)
+            EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0, width: 420)
+            HStack(alignment: .top, spacing: theme.spacing.m) {
+                ForEach(samples) { sample in
+                    VStack(spacing: theme.spacing.xs) {
+                        EG13KnobShape(normalized: sample.base, style: EG13Palette.knobStyle(for: sample.emphasis),
+                                      size: sample.size, modulation: sample.ring)
+                            .frame(width: EG13Layout.knobDiameter(sample.size), height: EG13Layout.knobDiameter(sample.size))
+                            .frame(height: EG13Layout.largeKnobDiameter)
+                        Text(sample.id)
+                            .font(theme.type.caption.font)
+                            .foregroundStyle(theme.text.secondary.color)
+                            .frame(width: 60)
+                    }
+                }
+            }
+        }
+        .frame(width: 560, alignment: .leading)
+    }
+}
+
+/// Card headers with chips: Source (five chips, one steady), Filter, and Mod 1, whose strip has
+/// room for one chip and "+2".
+struct EG13ChipsSheet: View {
+    let synth: EG13Synth
+    @Environment(\.symbioticTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Motion chips in the card headers, Part A (shown at 200 %)")
+                .font(.system(size: 16, weight: .light))
+                .foregroundStyle(theme.text.primary.color)
+            EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_SOURCE, part: 0, width: EG13Layout.slotCardWidth)
+            EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0, width: EG13Layout.slotCardWidth)
+            EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_MOD1, part: 0, number: 1, width: EG13Layout.modCardWidth)
+        }
     }
 }
