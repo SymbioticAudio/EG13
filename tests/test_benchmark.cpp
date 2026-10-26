@@ -16,6 +16,7 @@
 #include "synth/param_table.h"
 #include "synth/synth.h"
 #include "synth_helpers.h"
+#include "ui_bridge.h"
 
 using namespace eg13;
 
@@ -409,4 +410,47 @@ TEST_CASE("CPU: the init patches", "[.benchmark]") {
     REQUIRE(peak > 1e-3f);  // the init patch really plays: an idle synth would measure less
     REQUIRE(load < 100.0);
   }
+}
+
+TEST_CASE("CPU: UiBridge::drain of 64 edits per block stays within its own budget", "[.benchmark]") {
+  // A realistic worst burst from the editor: 64 knob edits (on 64 different parameters) queued
+  // for every 128-sample block at 48 kHz. Only drain() is timed (it applies the edits to the
+  // synth and reports them to the host); the pushes happen on the main thread in the plugin.
+  constexpr double kRate = 48000.0;
+  constexpr int kBlock = 128;
+  constexpr int kEdits = 64;
+  constexpr int kBlocks = 20000;
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  UiBridge bridge(synth, [] {});
+  struct Sink {
+    size_t pushed = 0;
+  } sink;
+  clap_output_events_t out{};
+  out.ctx = &sink;
+  out.try_push = [](const clap_output_events_t* o, const clap_event_header_t*) {
+    ++static_cast<Sink*>(o->ctx)->pushed;
+    return true;
+  };
+  uint32_t ids[kEdits];
+  double lo[kEdits], hi[kEdits];
+  for (int i = 0; i < kEdits; ++i) {
+    const ParamSpec& spec = paramSpec(size_t(i));
+    ids[i] = spec.id;
+    lo[i] = double(spec.minValue);
+    hi[i] = double(spec.maxValue);
+  }
+  double drainSeconds = 0.0;
+  for (int b = 0; b < kBlocks; ++b) {
+    for (int i = 0; i < kEdits; ++i) bridge.edit(ids[i], (b & 1) ? hi[i] : lo[i]);
+    const auto start = std::chrono::steady_clock::now();
+    bridge.drain(&out);
+    drainSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+  }
+  const double budgetSeconds = double(kBlock) / kRate;  // real-time budget of one block
+  const double percent = 100.0 * (drainSeconds / double(kBlocks)) / budgetSeconds;
+  std::printf("UiBridge::drain, %d edits per %d-sample block at %.0f Hz: %.2f us per block, %.4f%% of the block's real-time budget (budget 0.1%%)\n",
+              kEdits, kBlock, kRate, 1e6 * drainSeconds / double(kBlocks), percent);
+  REQUIRE(sink.pushed >= size_t(kEdits) * size_t(kBlocks));
+  REQUIRE(percent < 0.1);
 }

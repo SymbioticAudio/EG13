@@ -1,0 +1,195 @@
+# M6 UI — resumed (2026-10-24)
+
+Resumed as M6a (foundation and part editor): see `docs/superpowers/plans/2026-10-24-m6a-ui-foundation.md`. Spec §8 now holds the decisions below. The notes below are kept as history.
+
+## Original pause note (owner, 2026-10-20)
+
+UI work is paused until M6 comes up in normal milestone order, after M5. The plan has not been written yet. These notes hold the state to resume from.
+
+## Owner decisions (supersede the "always dark" spec commit 8e5334b)
+
+- Layout: "Columns + motion chips". The main view shows one Part, picked with the A/B tabs. Column cards run Source, Filter, Shaper, Part FX, then a MODS column with the matrix below it. A bottom bar holds the part settings, master Dry/Out and the meters. A collapsible keyboard sits underneath. Filter, Shaper, Part FX and Mods are placeholder cards until M3–M5.
+- Palette: EG13 owns its colours (family rule: plugins share icons, type, layout and knob design; colours are per plugin). The palette is modelled on Mutable Instruments panels:
+  - two accents: teal #00A1A7 (ink #007F8A) and pink-red #DA4061 (ink #C42C4E);
+  - panels #E6E6E6 with a #D5D5D4 header strip and a lowercase engine title;
+  - rack grey #333333 for the header and keyboard bar;
+  - LCD readouts #383838 with #AFD22C;
+  - window mid-grey #8C8C89;
+  - Part A is teal, Part B is pink. Modules are not colour-coded.
+- Knobs are flat with no ticks. The value arc sits inside the black skirt band over a faint track. Caps are white, accent or black. Emphasised parameters get accent label chips. Style options: arc on/off and placement, inner ring, ticks, cap style, label style, injected colours.
+- Controls: custom EG13 SwiftUI controls with drawing kept separate from behaviour. AudioKit Controls is dropped. AudioKit Keyboard stays only if it can be styled to match. Whether the controls move into a shared SymbioticControls package is the owner's call.
+- Dependencies approved: symbiotic-design from 0.1.0 (Tokens and Icons; Brand behind `#if canImport`).
+- Approved mock (private to the owner): https://claude.ai/artifact/Dao1y9KMKtEV41Pvd5fwL3
+
+## Spike code (unreviewed and incomplete)
+
+`docs/superpowers/m6-spike/` holds the planning agent's experiments: a SwiftPM EG13UI package linked into a C++ bundle, a core-api C header and an SPSC queue test. Use it as research input for the M6 plan, not as finished code.
+
+## To resume
+
+1. Rebase this branch onto main after M2 to M5 have merged.
+2. Update spec §8 with the decisions above.
+3. Write the M6 plan with superpowers:writing-plans, then get owner review.
+
+## Design log, round 1 (2026-10-24): controls
+
+Run: `swift run --package-path ui/EG13UI EG13UIPreview` (interactive window, Controls page by default; `--editor` opens the editor page; the zoom control shows 75, 100 and 200 %). Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot docs/superpowers/m6-design/controls-r1` writes `controls-75.png`, `controls-100.png` and `controls-200.png` in that folder (ImageRenderer, no screen-recording permission). Each image shows Part A (teal) and Part B (pink).
+
+Shown, every option labelled with its `EG13KnobStyle` name:
+
+- Arc: off; on in the skirt band over a faint track (`.skirtBand`, the default); a ring outside the skirt (`.outside`); a thin ring hugging the cap (`.capRim`).
+- Inner ring: off, on. Ticks: off, on.
+- Cap: white (default), accent, black with an accent arc, black with the grey arc the master knobs use.
+- Label: plain (default), chip; also chips on an accent cap and on a black cap.
+- Sizes: hero, detail and bar knobs, a bipolar knob (arc from the centre) and a stepped knob.
+- Engine picker (menu of engine names) and three stepped controls (voices, voice mode, channel).
+
+Open choices for the owner:
+
+1. Arc placement: `.skirtBand`, `.outside` or `.capRim`; or arc off.
+2. Inner ring: yes or no.
+3. Ticks: yes or no (they cost 8 % of the diameter, so the skirt shrinks).
+4. Cap colours: white as the default with accent caps for emphasised knobs, and black caps for secondary knobs. Should a black cap keep the part's arc colour or the grey arc?
+5. Label style: plain everywhere, or chips on emphasised knobs only (the current palette rule).
+6. Stepped controls: the LCD well with minus and plus, as shown, or knobs for small stepped settings such as voices.
+7. Engine picker: black well with a menu, as shown, or something lighter.
+8. Whether chip ink colours (`#007F8A`, `#C42C4E`) read well under white text at 75 %.
+
+Status: awaiting owner feedback (round 1 is not approved).
+
+## Design log, round 2 (2026-10-24): controls
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot docs/superpowers/m6-design/controls-r2` writes `controls-75.png`, `controls-100.png` and `controls-200.png`.
+
+Owner decisions from round 1:
+
+1. Arc on, in the skirt band, only. The other placements stay in the code as unused options and are not shown.
+2. Ticks off. The tick variant is gone from the Controls page.
+3. Caps: white is the default, the accent cap marks emphasised knobs, and the black cap marks secondary knobs. A black cap keeps the part-colour arc, never grey (master Dry and Out follow the shown part's colour).
+4. Labels: plain by default, with the coloured accent chip on emphasised knobs.
+5. Stepped controls keep the minus and plus buttons.
+6. The engine picker uses the LCD look of the other wells (#AFD22C on #383838).
+7. The chip ink colours are fine.
+
+Changed in round 2:
+
+- Inner ring: now a thin mid-grey ring (the window grey, `#8C8C89`) on the cap's edge, 1.5 pt or 3 % of the diameter, drawn inside the cap. It was a faint ring on the skirt that could not be seen.
+- LCD wells: bold, at least 12 pt (was medium, 11 pt). The palette colours are unchanged; no brighter green was needed.
+- The Controls page shows the approved defaults (default, emphasised, secondary), the inner ring on and off for white and black caps, sizes (hero, detail, bar, bipolar, stepped), the engine picker and the steppers, in both part accents.
+
+Open question for the owner: inner ring on or off. It is visible on black caps and subtle on white ones; compare the second row.
+
+## Round 3 / approval (2026-10-24): controls approved by the owner; inner ring dropped
+
+The owner approved the round 2 controls ("it all looks pretty good") with one change: drop the inner ring entirely, because it could not be seen on white or black caps. `innerRing` is removed from `EG13KnobStyle` and the drawing. Screenshots: `docs/superpowers/m6-design/controls-r3/` (75, 100 and 200 %).
+
+Final choices:
+
+- An arc in the skirt band over a faint track, with no ticks and no inner ring.
+- A white cap by default.
+- Emphasis shown by an accent cap with an accent chip.
+- A black cap with the part-colour arc for secondary knobs.
+- Minus and plus steppers.
+- The engine picker drawn as an LCD (#AFD22C on #383838).
+- Bold LCD text, at least 12 pt.
+
+## Layout design log, round 1 (2026-10-25): the one-part editor
+
+Run: `swift run --package-path ui/EG13UI EG13UIPreview --editor` (the editor in a window over a fake plugin with the plugin's whole parameter table and the real engine and P names). Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-editor docs/superpowers/m6-design/layout-r1` writes the files below to that folder (ImageRenderer, so the engine menus show their closed state).
+
+Shown:
+
+- `editor-a.png`, `editor-b.png`: the editor at 100 % for Part A (teal) and Part B (pink). `editor-a-75.png`: Part A at 75 %.
+- `part-settings.png`: the Part settings popover content, for both parts.
+- `source-engines.png`, `filter-engines.png`, `shaper-engines.png`, `partfx-engines.png`, `mods-engines.png`: that slot's card for every engine (Part A colours; the mods sheet shows the mod 1 card).
+- Layout, top to bottom: header (EG13 name, A/B tabs, Mode, master settings, About); Source, Filter, Shaper and Part FX cards (four knobs to a row) with the MODS column (four compact mod cards, eight knobs to a row); the matrix row (Route 1 to 12); the bottom bar (part Level, Pan, Glide, Voice Mode, Voices; Part settings; master Dry and Out; a stereo meter per part).
+- The controls are the approved round 3 controls. Every parameter of the shown part and the master is reachable from exactly one control; `EG13LayoutTests` checks it for every engine of every slot, on both parts.
+
+Decisions for the owner to see:
+
+1. **No keyboard in M6a.** The mock's collapsible keyboard is left out: the core API has no note input yet, so it moves to M6b with the live modulation display (spec §8 split). The toggle strip is gone.
+2. **Peak-hold mark on the meters** (added in the Task 8 model, drawn here): a thin white line at the highest recent peak for 1.5 s. A bar turns white at 0 dBFS or above (pink was the clip colour, but pink is Part B's colour).
+
+Open choices:
+
+1. **Which knobs are emphasised** (accent cap + chip). Proposal: the first two P's of every Source, Filter, Shaper and Part FX engine (teal, then pink, in both parts), and the part Level in the bottom bar. Secondary (black cap, part-colour arc): master Dry and Out and the 12 route amounts. Mod knobs stay white. The first two P's are often a model or mode selector (Macro Oscillator's P1 is Model); a per-engine choice (the old table named Harmonics and Timbre for Macro Oscillator) is possible and is data only (`EG13Emphasis`).
+2. **Long knob names.** Four knobs per row at 1200 pt leaves about 45 pt a knob, so names such as Brightness, Structure or Smoothness shrink to 65 % and are then cut (`BRIGHTNE...`); on a chip (emphasised knob) the cut is worse. The full name is in the tooltip and for VoiceOver. Options: narrow the MODS column to widen the cards; give Filter and Shaper narrower cards and Source and Part FX five knobs to a row; or emphasise only knobs with short names.
+3. **Mod cards are dense.** To fit 16 knobs in two rows in a quarter of the strip, mod knobs are 28 pt with no value text (tooltip shows it). The alternative is a taller strip by dropping the matrix row or the bottom bar's height.
+4. **Master settings.** Split Note, Voice Gain, Soft Clip and Latency Mode have no place in the mock's header or bottom bar, so they are in a popover behind the cog next to About, with the window size choices. Spec §8 puts the Latency Mode in settings in M6b; it is here already so that all 7 master parameters are reachable.
+5. **Mode** is four LCD segments (green on dark) instead of the system segmented control, which cannot be drawn in the screenshots and did not match the LCD look.
+6. **Header.** The patch name with previous, next and save (presets are M7; the buttons did nothing) is gone. The wordmark is the SymbioticAudio brand logo and "EG13" when the brand package is linked, otherwise just "EG13". Each part tab names the part's Source engine.
+7. **Inner gaps in an engine's P range are hidden** too (the LFO's unused P8 and P9), so the knobs pack to the left.
+8. **Matrix:** only the amounts are knobs. Route sources and destinations keep their init-patch values until M6b.
+9. **Control tweaks:** the stepper well is 88 pt wide (was 64) so "Per voice", "Other part" and "Part mix" fit; knob names may shrink to 65 %; a knob can take a label, a smaller diameter and no value text (`EG13KnobLayout`). The knob drawing is unchanged.
+
+Status: awaiting owner feedback (round 1 is not approved).
+
+## Layout design log, round 2 (2026-10-25): horizontal module cards
+
+Run: `swift run --package-path ui/EG13UI EG13UIPreview --editor` (add `--variant-b` for B; the page has an A / B switch). Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-editor docs/superpowers/m6-design/layout-r2` writes `editor-a-A.png`, `editor-b-A.png`, `editor-a-75-A.png` (variant A), the same three ending `-B`, `editor-a-mods-B.png` (B's Mods page), `master.png` (header close-up), `part-settings.png`, `worst-case-A.png` (the tallest engines in every slot, to show A's scroll) and the five `*-engines.png` contact sheets (every engine of a slot, one card under another, so the varying heights show).
+
+### Owner's round-1 feedback, as decisions
+
+1. The layout was crowded and small, with unused space and cut names. Fixed by horizontal cards and short labels that never cut.
+2. Q1, emphasis: match the real modules (the VCV Rack Audible Instruments replicas), and the emphasis colour is always the shown part's accent. This is review finding I1 (P1 teal and P2 pink were hard-coded); fixed in this commit: `EG13ParamEmphasis.accent` has no colour, and `EG13Palette.knobStyle` resolves it to the shown part's accent. Test: `emphasisColourIsPartAccent`.
+3. Q4: the master settings move to the header, in a labelled MASTER group (Mode, Latency, Split, Gain, Clip). The cog keeps only window size and About.
+4. Q5: the Mode LCD segments are approved.
+5. Q2 and Q3 (long names, dense mod cards) were not approved; they are solved by the new layout, not by a choice.
+6. **Knob sizes (owner, 2026-10-25, replacing "2 basic sizes"): three sizes, large, medium and small, following the real panels.** First round 2 pass had two sizes; the owner changed it to three before review.
+
+### What changed
+
+- **Layout:** horizontal cards (header strip with the slot name and the LCD engine menu, then knob rows). Height follows content: one row for up to about 10 knobs in A's slot cards (13 in B), two rows for more; an Off engine is the header strip alone. Rows are balanced (16 knobs are 2 rows of 8) and a cell is at most 96 pt wide, so few knobs pack to the left. Mods are the same card, compact.
+  - **A:** Mods in a 470 pt right-hand column of mini-cards; slot cards 698 pt wide. Typical states fit (editor-a-A.png). With four 16-knob engines the columns exceed the strip and scroll (worst-case-A.png).
+  - **B:** slot cards full width (1176 pt, one row each); a VOICE / MODS switch in the header swaps to four full-width Mods cards. Never scrolls; the strip has spare height. The cost: Mods and slot cards are never on screen together.
+  - Same views, one enum (`EG13EditorVariant`).
+- **Header:** 56 pt (was 44) to give the MASTER group a label row. The part tabs lost the Source engine name (A and B only) to make room; the name is on the Source card.
+- **Matrix row and bottom bar:** unchanged. A needs more height in the worst case; a possible proposal is to drop the matrix row's own strip and put the 12 route knobs in a 2-row block under the Mods column. Not done; owner call.
+- **Knob sizes:** large 48 pt, medium 38 pt, small 28 pt (scaled from the panels' 52, 40-43 and 18 px components so a small knob is still usable). Every knob shows its value, mod knobs too. Mixed sizes in a row share a label line (each knob sits centred in a box as tall as the row's largest).
+- **Labels:** one table, `EG13ParamLabels` (short name per parameter name; the full name is the tooltip and the VoiceOver label). A two-word label wraps to two lines before it shrinks or cuts; `EG13LabelFit` decides, and `labelsFit` measures every label of every engine at the narrowest cell of its card (slot 64 pt, mod 50 pt). Bar and matrix labels sit in wide cells.
+- **Engine menu:** 190 pt wide so "State Variable Filter" is not cut (test `engineNamesFit`). The menu is now drawn from the card's engine control spec, so a card that drops the spec drops the menu (round-1 review minor), and the reachability list holds the menu.
+- **Stepper well** is 64 pt again by default (round-1 review minor 1); the wider well (88 pt) is only for "Per voice", "Part mix" and the like.
+- **Part settings** popover and part bar use the wide stepper.
+
+### Emphasis and size per engine (data: `EG13PanelLayout`)
+
+Rule: size = the real panel's knob component for that parameter (Rogan 3 and 6 large; Rogan 1 and 2 medium; trimmers and buttons small), except where the owner pointed at a panel (Liquid Filter: large Freq, small Res; Random Sampler: large Rate and Spread, medium the rest). Emphasis (accent cap and chip, the part's accent) = the panel's large knobs. A mod's sizes drop one step (owner: mods use small or medium). Modules: Macro Oscillator = Plaits, Digital Oscillator = Braids, Modal Synth = Elements, Resonator (Source and Part FX) = Rings, Analog Filter = Ripples (Liquid Filter), Ring Mod / Vocoder = Warps (Meta Modulator), EQ = Shelves, LFO = Tides 2, Random / S&H = Marbles (Random Sampler), Granular = Clouds (Texture Synthesizer). Details are in the report. Fallbacks (no replica panel, or a panel with equal knobs) are listed there and in the `EG13PanelLayout` comment: Audio Input, Classic Filters, State Variable Filter, Envelope, Function Generator, Granular Delay, Reverb, Digital Oscillator and EQ.
+
+Not mapped: Frames (Keyframer/Mixer) and Veils (Quad VCA): EG13 has no engine derived from them.
+
+### Open choices for the owner
+
+1. **A or B first** (see above). B is calmer; A shows Mods and voice together but scrolls with four big engines.
+2. Whether emphasis should be "large knobs" (now) or "coloured knobs on the panel" (Plaits has none; Clouds has five). Size and colour are independent here.
+3. Matrix row: keep, or fold into A's Mods column.
+4. The part tabs without the engine name.
+
+Status: awaiting owner feedback (round 2 is not approved).
+
+## Layout design log, round 3 (2026-10-25): panel colours, variant A
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-editor docs/superpowers/m6-design/layout-r3` writes `editor-a.png`, `editor-b.png` (Part B), `editor-a-75.png`, `master.png`, `worst-case-a.png` (both columns at full height with a line where the visible strip ends) and the five `*-engines.png` contact sheets.
+
+### Owner's round 2 feedback, as decisions
+
+1. **Knobs are not coloured by part** ("it lessens the value of the coloured knobs from the originals"). Each knob's cap (white, pink or teal), chip and size come from the real panel, the same in Part A and Part B. This **supersedes the round 3 controls rule** "emphasised = accent cap in the part's accent" and the round 2 "emphasis is the part's accent" (review I1 is therefore moot: no knob uses a part colour). Part identity stays on the A/B tabs, the bottom-bar badge and the meters (teal A, pink B).
+2. Chips follow the knob colour: a pink or teal knob gets a chip in its colour, a white knob a plain label. A pink or teal knob's arc matches its cap.
+3. **Variant A is chosen.** Variant B, its enum and the VOICE / MODS switch are deleted.
+4. The part tab that is shown also names its Source engine; the other tab is a plain letter.
+5. Engines with no usable panel, and all mods: white caps, the main one or two controls large.
+
+### What changed
+
+- `EG13PanelLayout` holds size and cap colour per P (`L M S` plus `p` pink or `t` teal). Colours read from the Audible Instruments sources (`Rogan*Red` = pink, `Green` = teal, `White` and `Gray` = white). `EG13ParamEmphasis` is now `plain`, `pink`, `teal`, `black`; the part is gone from `knobStyle`.
+- Elements-derived Modal Synth matches the panel: pink Blow, Flow, Blow Timbre; teal Strike, Mallet, Strike Timbre; the rest white. Others: Clouds-derived Granular (Position, Density, Spread, In Gain pink; Size, Texture, Feedback, Reverb teal), Braids-derived Digital Oscillator (Color pink, Timbre teal), Liquid Filter-derived Analog Filter (Resonance pink), Shelves-derived EQ (Mid 1 pink, Mid 2 teal). Plaits, Rings, Warps, Tides 2 and Marbles are white panels.
+- Variant A's worst case (four 16-knob engines in the slots and mods) is taller than the strip; each column scrolls (`worst-case-a.png`). It shows the full content height, since an image render cannot draw a scroll view.
+
+### Open choices for the owner
+
+1. **Arc colour of white knobs:** the panel grey #E6E6E6 (`EG13Palette.whiteKnobArc`), light on the black skirt band and not a part colour. Alternative: pure white.
+2. **Black (secondary) caps** (master Dry and Out, route amounts): a mid grey arc #A8A8A5 (`EG13Palette.blackKnobArc`), quieter than a white knob's, so the secondary knobs stay secondary. Alternative: the same as white knobs. This reverses round 2's "a black cap keeps the part-colour arc, never grey", at the owner's request.
+3. **Blue knobs** (Plaits' LPG Colour and Decay, Clouds' Reverb are blue on the panel): shown teal, since EG13 has only pink and teal. Alternative: white.
+4. **Fallback engines (no replica panel): white caps, main controls large.** Audio Input (Gain large), Envelope (Attack, Decay, Sustain, Release large in the panel table, medium in a mod), Function Generator (Attack, Rate), Reverb (Amount, Time), Digital Oscillator and Shelves EQ have a panel but no size difference (all medium). Pink or teal added only by analogy: Classic Filters and State Variable Filter take Liquid Filter's pink Resonance (small); Granular Delay takes Clouds' pink Time (as Position) and teal Size. Mods: white throughout.
+5. Matrix row stays; the part tab names (from round 2) are now shown for the selected part only.
+
+Status: **approved by the owner on 2026-10-25** ("round 3 approved"), with the open choices accepted as shown: white-knob arc #E6E6E6, black-cap arc #A8A8A5, blue panel knobs shown teal, and the fallback engines as listed.

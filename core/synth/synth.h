@@ -13,6 +13,7 @@
 #include "part/part.h"
 #include "synth/param_table.h"
 #include "synth/plugin_kind.h"
+#include "synth/ui_snapshot.h"
 #include "util/smoothed_value.h"
 #include "voice/source_factory.h"
 
@@ -180,6 +181,10 @@ class Synth {
   // through setParam switches at once: that slot's P values go to the old
   // engine's stash entry and the new engine's entry is loaded.
   int takeHostUpdates(HostUpdate* out, int max);
+  // Main thread: the editor's view of the synth (param values, part output peaks, active voices,
+  // engine generation). Reading the peaks resets them (hold-until-read), hence the mutable
+  // atomics. No allocation, no locks.
+  void uiSnapshot(UiSnapshot* out) const;
   // Main thread: true once after any engine switch (names and text changed).
   bool takeEngineChanged() { return engineChanged_.exchange(false, std::memory_order_acq_rel); }
 
@@ -245,6 +250,11 @@ class Synth {
   HostUpdate hostUpdates_[kMaxHostUpdates] = {};
   int hostUpdateCount_ = 0;
   std::atomic<bool> engineChanged_{false};
+  std::atomic<uint32_t> engineGeneration_{0};  // bumped wherever an engine switch is committed
+  std::atomic<int> activeVoices_[kNumParts] = {};  // published once per chunk for uiSnapshot
+  // Per part and channel: the absolute peak of the part's output (after level, pan and the B mute) since the
+  // last uiSnapshot. The audio thread raises it once per chunk; uiSnapshot reads and zeroes it.
+  mutable std::atomic<float> partPeak_[kNumParts][2] = {};
   std::vector<float> partIn_[kNumParts][2];
   std::vector<float> otherIn_[kNumParts][2];  // the other part's output, soft-limited
   std::vector<float> feedRing_[2];  // B's output for A, delayed by feedDelay_
