@@ -50,4 +50,11 @@ struct EG13ValueTextTests {
             #expect(all.contains { $0.contains(full) }, "phrase \"\(full)\" matches no value string")
         }
     }
+
+    @Test("Numbers keep their units")
+    func numbersKeepUnits() {
+        for text in ["-18.0 dB", "-6 dB", "+3 dB", "12 dB", "1234 Hz", "100%"] {
+            #expect(EG13ValueLabels.short(text) == text)
+        }
+    }
 }

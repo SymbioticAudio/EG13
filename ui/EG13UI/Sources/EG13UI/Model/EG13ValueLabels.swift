@@ -37,6 +37,9 @@ public enum EG13ValueLabels {
     /// The text to draw under a knob for the core's full value text.
     public static func short(_ text: String) -> String {
         if let short = table[text] { return short }
+        // The phrases are for model names. A number ("-6 dB", "1234 Hz") keeps its unit.
+        if let first = text.unicodeScalars.first(where: { $0 != "-" && $0 != "+" }),
+           CharacterSet.decimalDigits.contains(first) { return text }
         var result = text
         for (full, short) in phrases { result = result.replacingOccurrences(of: full, with: short) }
         return result
