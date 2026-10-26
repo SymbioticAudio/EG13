@@ -148,7 +148,8 @@ void PartModulation::processPart(const ModParams& params, const ModPartInputs& p
   const ModContext ctx = contextFor(part, part.gate, part.retrigger);
   for (int s = 0; s < kNumModSlots; ++s) {
     if (!perPart_[s]) continue;
-    partSlots_[size_t(s)].process(ctx, modulatedSlot(params.slot[s], sums, s), params.shapes[s], n);
+    partModulated_[s] = modulatedSlot(params.slot[s], sums, s);
+    partSlots_[size_t(s)].process(ctx, partModulated_[s], params.shapes[s], n);
   }
   fillMods(partSource_, part.lastVoice, true);
   sumRoutes(params.routes, partSource_, DestinationKind::Part, &partSums_);
@@ -165,7 +166,8 @@ void PartModulation::processVoice(int v, const ModParams& params, const ModPartI
   const ModContext ctx = contextFor(part, voice.gate, voice.retrigger);
   for (int s = 0; s < kNumModSlots; ++s) {
     if (perPart_[s]) continue;
-    voiceSlot(v, s).process(ctx, modulatedSlot(params.slot[s], sums, s), params.shapes[s], n);
+    voiceModulated_[size_t(v * kNumModSlots + s)] = modulatedSlot(params.slot[s], sums, s);
+    voiceSlot(v, s).process(ctx, voiceModulated_[size_t(v * kNumModSlots + s)], params.shapes[s], n);
   }
   fillMods(source, v, true);
   sumRoutes(params.routes, source, DestinationKind::Voice, &sums);

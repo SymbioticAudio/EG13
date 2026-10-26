@@ -1,8 +1,13 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 #include "alloc_counter.h"
+#include "mod/mod_routes.h"
 #include "synth/param_table.h"
 #include "synth/synth.h"
 #include "synth/ui_snapshot.h"
@@ -154,6 +159,125 @@ TEST_CASE("uiSnapshot allocates nothing") {
   {
     test::ScopedAllocationCounter counter;
     for (int i = 0; i < 20; ++i) synth.uiSnapshot(&snap);
+    allocations = counter.count();
+  }
+  REQUIRE(allocations == 0);
+  synth.setActive(false);
+}
+
+TEST_CASE("modValue shows the route's effect") {
+  // The init patch: Mod 2 out 1 -> Filter P1 at +30 %.
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.noteOn(0, 60, 1.0f);
+  runBlocks(synth, 20);  // the envelope has settled on its sustain
+  UiSnapshot snap;
+  synth.uiSnapshot(&snap);
+  int voice = -1;
+  float env = 0.0f;
+  for (int v = 0; v < 8; ++v) {
+    const float out = synth.part(0).modulation().outputs(1, v)[0];
+    if (out > env) {
+      env = out;
+      voice = v;
+    }
+  }
+  REQUIRE(voice >= 0);
+  REQUIRE(env > 0.0f);
+  const float base = snap.values[filterParamIndex(0, 0)];
+  const float expected = std::clamp(base + env * 0.3f, 0.0f, 1.0f);
+  CHECK(snap.modValue[0][kDestFilterP + 0] == Catch::Approx(expected).margin(1e-3));
+  CHECK(snap.modValue[0][kDestFilterP + 0] != Catch::Approx(base).margin(1e-3));
+  CHECK(snap.modValue[0][kDestFilterP + 1] == Catch::Approx(snap.values[filterParamIndex(0, 1)]).margin(1e-3));
+  CHECK(snap.modValue[0][kDestPitch] == Catch::Approx(0.5f).margin(1e-3));  // the mod wheel is down
+  CHECK(snap.modValue[0][kDestPan] == Catch::Approx(0.5f).margin(1e-6));
+  synth.setActive(false);
+}
+
+TEST_CASE("per-part destinations use the part value") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.setRoute(0, 5, Route{kSrcGate, kDestPartLevel, kSrcNone});
+  synth.setParam(paramSpec(routeAmountParamIndex(0, 5)).id, -0.25);
+  synth.noteOn(0, 60, 1.0f);
+  runBlocks(synth, 10);
+  UiSnapshot snap;
+  synth.uiSnapshot(&snap);
+  const float level = snap.values[partParamIndex(0, PartParam::Level)];
+  CHECK(snap.modValue[0][kDestPartLevel] == Catch::Approx(std::clamp(level - 0.25f, 0.0f, 1.0f)).margin(1e-3));
+  CHECK(snap.modValue[0][kDestPartLevel] < level);
+  synth.setActive(false);
+}
+
+TEST_CASE("mod output min and max are read and reset") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  UiSnapshot snap;
+  synth.uiSnapshot(&snap);  // nothing has run: no data
+  CHECK(std::isinf(snap.modOutMin[0][1][0]));
+  CHECK(snap.modOutMin[0][1][0] > 0.0f);
+  CHECK(snap.modOutMax[0][1][0] < 0.0f);
+  synth.noteOn(0, 60, 1.0f);
+  runBlocks(synth, 20);
+  synth.uiSnapshot(&snap);
+  CHECK(snap.modOutMin[0][1][0] <= snap.modOutMax[0][1][0]);
+  CHECK(snap.modOutMax[0][1][0] > 0.0f);  // Mod 2's envelope rose
+  CHECK(snap.modOutMin[0][1][0] < snap.modOutMax[0][1][0]);  // from silence, within the window
+  synth.uiSnapshot(&snap);  // read and reset, no audio in between
+  CHECK(snap.modOutMin[0][1][0] > snap.modOutMax[0][1][0]);
+  CHECK(std::isinf(snap.modOutMin[0][1][0]));
+  runBlocks(synth, 1);
+  synth.uiSnapshot(&snap);
+  CHECK(snap.modOutMin[0][1][0] <= snap.modOutMax[0][1][0]);  // sampling resumes
+  synth.setActive(false);
+}
+
+TEST_CASE("unused destinations are NaN") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.noteOn(0, 60, 1.0f);
+  runBlocks(synth, 5);
+  UiSnapshot snap;
+  synth.uiSnapshot(&snap);
+  for (int p = 0; p < kNumParts; ++p) {
+    CHECK(std::isnan(snap.modValue[p][kDestNone]));
+    for (int d = 5; d < kDestSourceP; ++d) CHECK(std::isnan(snap.modValue[p][d]));
+    CHECK(std::isfinite(snap.modValue[p][kDestPitch]));
+    CHECK(std::isfinite(snap.modValue[p][kDestPartLevel]));
+  }
+  // Init patch: Mod 4 is Off, so its P's have no value; Mod 1 runs.
+  int off = 0;
+  for (int s = 0; s < kNumModSlots; ++s) {
+    if (snap.values[modEngineParamIndex(0, s)] < 0.5f) {
+      ++off;
+      CHECK(std::isnan(snap.modValue[0][modParamDestination(s, 0)]));
+    } else {
+      CHECK(std::isfinite(snap.modValue[0][modParamDestination(s, 0)]));
+    }
+  }
+  CHECK(off >= 1);
+  synth.setActive(false);
+}
+
+TEST_CASE("publishing the modulation allocates nothing") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.noteOn(0, 60, 1.0f);
+  runBlocks(synth, 5);
+  std::vector<float> l(kBlock), r(kBlock);
+  float* out[2] = {l.data(), r.data()};
+  size_t allocations = 0;
+  {
+    test::ScopedAllocationCounter counter;
+    for (int b = 0; b < 50; ++b) {
+      synth.beginBlock();
+      synth.process(nullptr, out, nullptr, kBlock);
+    }
     allocations = counter.count();
   }
   REQUIRE(allocations == 0);

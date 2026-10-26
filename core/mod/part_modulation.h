@@ -86,6 +86,11 @@ class PartModulation {
   void partFxParams(const ParamValues& base, ParamValues* out) const;
 
   const float* outputs(int slot, int voice) const;  // voice < 0: the part instance
+  // The mod slot's P1..P16 after the routes into them, as of the last tick that ran the
+  // instance (voice < 0: the part instance). For the editor's display (Part::modDisplay).
+  const ParamValues& modulatedParams(int slot, int voice) const {
+    return voice < 0 ? partModulated_[slot] : voiceModulated_[size_t(voice * kNumModSlots + slot)];
+  }
 
  private:
   ModSlot& voiceSlot(int v, int slot) { return voiceSlots_[size_t(v * kNumModSlots + slot)]; }
@@ -101,6 +106,8 @@ class PartModulation {
   float partPrevious_[kNumModSlots][kMaxModOutputs] = {};
   float partSource_[kNumSources] = {};
   RouteSums partSums_ = {};  // Part-kind sums for this tick
+  ParamValues partModulated_[kNumModSlots];                      // modulatedSlot() of the last run
+  ParamValues voiceModulated_[size_t(kVoices * kNumModSlots)];  // same, per voice instance
 };
 
 }  // namespace eg13

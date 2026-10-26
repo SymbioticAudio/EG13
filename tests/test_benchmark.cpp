@@ -15,6 +15,7 @@
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 #include "synth/synth.h"
+#include "synth/ui_snapshot.h"
 #include "synth_helpers.h"
 #include "ui_bridge.h"
 
@@ -453,4 +454,39 @@ TEST_CASE("CPU: UiBridge::drain of 64 edits per block stays within its own budge
               kEdits, kBlock, kRate, 1e6 * drainSeconds / double(kBlocks), percent);
   REQUIRE(sink.pushed >= size_t(kEdits) * size_t(kBlocks));
   REQUIRE(percent < 0.1);
+}
+
+TEST_CASE("CPU: modulation publish stays within its own budget", "[.benchmark][modulation publish]") {
+  // The once-per-chunk publish into the UI snapshot (Synth::publishModulation: modulated values and
+  // mod output ranges), both parts, with every voice playing. Only the publish is timed.
+  constexpr double kRate = 48000.0;
+  constexpr int kBlock = 128;
+  constexpr int kBlocks = 200000;
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  std::vector<float> l(kBlock), r(kBlock);
+  float* out[2] = {l.data(), r.data()};
+  for (int key = 48; key < 56; ++key) synth.noteOn(0, key, 0.8f);
+  for (int b = 0; b < 50; ++b) synth.process(nullptr, out, nullptr, kBlock);
+  PartParams params;
+  double seconds = 0.0;
+  float sink = 0.0f;
+  UiSnapshot snap;
+  for (int b = 0; b < kBlocks; ++b) {
+    const auto start = std::chrono::steady_clock::now();
+    for (int p = 0; p < kNumParts; ++p) synth.publishModulation(p, params);
+    seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    if (b % 1000 == 0) {  // the editor's reads reset the ranges, as in use
+      synth.uiSnapshot(&snap);
+      sink += snap.modValue[0][kDestPitch];
+    }
+  }
+  synth.setActive(false);
+  const double budgetSeconds = double(kBlock) / kRate;
+  const double percent = 100.0 * (seconds / double(kBlocks)) / budgetSeconds;
+  std::printf("modulation publish, both parts per %d-sample block at %.0f Hz: %.3f us per block, %.4f%% of the block's real-time budget (budget 0.5%%)\n",
+              kBlock, kRate, 1e6 * seconds / double(kBlocks), percent);
+  REQUIRE(std::isfinite(sink));
+  REQUIRE(percent < 0.5);
 }
