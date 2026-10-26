@@ -20,6 +20,12 @@ OUT="$3"
 case "$CONFIG" in debug | release) ;; *) echo "build-ui.sh: unknown config '$1'" >&2; exit 2 ;; esac
 [ -n "$ARCHS" ] || ARCHS="$(uname -m)"
 
+# Global constraint: no SF Symbols in the editor (icons come from symbiotic-design or are drawn).
+if grep -rnE 'systemName:|systemImage:|NSImage\(systemSymbolName' "$PKG/Sources" --include='*.swift'; then
+  echo "build-ui.sh: SF Symbols are not allowed in the editor (see above)" >&2
+  exit 1
+fi
+
 mkdir -p "$OUT"
 TMP="$(mktemp -d "$OUT/lipo.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT

@@ -43,7 +43,7 @@ struct EG13BottomBar: View {
                 }
                 Text("OUTPUT").font(theme.type.caption.font.weight(.bold)).foregroundStyle(theme.text.secondary.color)
             }
-            EG13MeterView(meters: synth.meters, holds: synth.meterHolds)
+            EG13MeterView(synth: synth)
         }
         .padding(.horizontal, theme.spacing.m)
         .frame(height: EG13Layout.bottomBarHeight)
@@ -93,10 +93,12 @@ public struct EG13PartSettingsView: View {
 
 /// Peak meters: a stereo pair for each part, in the part's accent colour, with a peak-hold mark.
 struct EG13MeterView: View {
+    /// Read here, not in the bar: the meters change at 30 Hz and only this view rebuilds.
+    let synth: EG13Synth
     /// Linear levels after ballistics: [part][left, right].
-    let meters: [[Float]]
+    private var meters: [[Float]] { synth.meters }
     /// Peak holds, same shape.
-    let holds: [[Float]]
+    private var holds: [[Float]] { synth.meterHolds }
     @Environment(\.symbioticTheme) private var theme
 
     var body: some View {

@@ -122,3 +122,41 @@ TEST_CASE("set_size clamps an out-of-range size", "[gui]") {
   CHECK(gui.width() == 2400);
   CHECK(gui.height() == 1520);
 }
+
+TEST_CASE("A host that accepts request_resize without calling set_size still resizes the editor", "[gui]") {
+  Fixture f;
+  uint32_t askedWidth = 0, askedHeight = 0;
+  bool accept = true;
+  eg13::Gui gui(f.api, 0, f.bridge, {}, [&](uint32_t w, uint32_t h) {
+    askedWidth = w;  // the host records the request and, like a native CLAP host may, never calls set_size
+    askedHeight = h;
+    return accept;
+  });
+  REQUIRE(gui.create());
+
+  CHECK(gui.requestResize(1800, 1140));
+  CHECK(askedWidth == 1800);
+  CHECK(askedHeight == 1140);
+  CHECK(gui.width() == 1800);
+  CHECK(gui.height() == 1140);
+
+  // An off-aspect request is clamped to the editor's aspect before the host is asked.
+  CHECK(gui.requestResize(100, 100));
+  CHECK(askedWidth == 900);
+  CHECK(gui.width() == 900);
+  CHECK(gui.height() == 570);
+
+  // A refusal leaves the size alone.
+  accept = false;
+  CHECK_FALSE(gui.requestResize(2400, 1520));
+  CHECK(gui.width() == 900);
+  CHECK(gui.height() == 570);
+}
+
+TEST_CASE("Without a host resize hook the request is refused", "[gui]") {
+  Fixture f;
+  eg13::Gui gui(f.api, 0, f.bridge, {});
+  REQUIRE(gui.create());
+  CHECK_FALSE(gui.requestResize(1800, 1140));
+  CHECK(gui.width() == 1200);
+}

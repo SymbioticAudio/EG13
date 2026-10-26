@@ -261,3 +261,17 @@ TEST_CASE("Overflow asks for one pump, and asks again while a backlog remains") 
   bridge.pump();
   CHECK(pumpRequests == settled);
 }
+
+TEST_CASE("A detached bridge asks the host for nothing, even when gestures close") {
+  eg13::Synth synth(eg13::PluginKind::Instrument);
+  int flushes = 0, pumps = 0;
+  UiBridge bridge(synth, [&flushes] { ++flushes; }, [&pumps] { ++pumps; });
+  const uint32_t a = idAt(0);
+  bridge.beginEdit(a);
+  const int before = flushes;
+  bridge.detach();
+  bridge.closeAllGestures();  // what destroying the editor does
+  for (int i = 0; i < 2000; ++i) bridge.edit(a, 0.0);  // overflow would ask for a pump
+  CHECK(flushes == before);
+  CHECK(pumps == 0);
+}

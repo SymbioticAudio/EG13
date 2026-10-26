@@ -80,6 +80,15 @@ struct EG13ControlInteractionTests {
         #expect(r.events == [.begin, .edit(0.25), .end])
     }
 
+    @Test func doubleClickAtTheDefaultSendsNothing() {
+        let r = Recorder(value: 0.25)
+        var knob = r.interaction(defaultValue: 0.25)
+        knob.mouseDown(clickCount: 2)
+        knob.mouseDragged(deltaY: 30, fine: false)
+        knob.mouseUp()
+        #expect(r.events.isEmpty)
+    }
+
     @Test func steppedValuesSnapToIntegerSteps() {
         let r = Recorder(value: 1)
         var voices = r.interaction(min: 1, max: 8, defaultValue: 8, stepped: true)

@@ -17,8 +17,10 @@ void adjustGuiSize(uint32_t& width, uint32_t& height) {
   height = 19 * units;
 }
 
-Gui::Gui(const EG13CoreAPI& api, int32_t kind, UiBridge& bridge, std::function<void()> requestFlush)
-    : api_(api), kind_(kind), bridge_(bridge), requestFlush_(std::move(requestFlush)) {}
+Gui::Gui(const EG13CoreAPI& api, int32_t kind, UiBridge& bridge, std::function<void()> requestFlush,
+         std::function<bool(uint32_t, uint32_t)> hostResize)
+    : api_(api), kind_(kind), bridge_(bridge), requestFlush_(std::move(requestFlush)),
+      hostResize_(std::move(hostResize)) {}
 
 Gui::~Gui() { destroy(false); }
 
@@ -48,6 +50,13 @@ void Gui::setSize(uint32_t width, uint32_t height) {
   width_ = width;
   height_ = height;
   if (handle_ != nullptr) eg13_ui_set_size(handle_, width, height);
+}
+
+bool Gui::requestResize(uint32_t width, uint32_t height) {
+  adjustGuiSize(width, height);
+  if (!hostResize_ || !hostResize_(width, height)) return false;
+  setSize(width, height);  // idempotent if the host also called set_size
+  return true;
 }
 
 void Gui::setVisible(bool visible) {

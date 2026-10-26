@@ -22,6 +22,8 @@ final class EG13FakeCore: EG13Core {
     var generation: UInt32 = 0
     var voices = [0, 0]
     var calls: [Call] = []
+    /// How many times the editor asked for value text (it should ask once per change).
+    var textCalls = 0
     /// The full table (`full()`): each engine slot's engines, by slot kind, and the engine each
     /// part has selected. Names of P's follow the selected engine, like the real core.
     struct FakeEngine { var name: String; var params: [String] }
@@ -135,7 +137,8 @@ final class EG13FakeCore: EG13Core {
         return p <= engine.params.count ? engine.params[p - 1] : EG13Slot.unusedName
     }
     func paramText(at index: Int, value: Double) -> String {
-        descriptors[index].isStepped ? "\(Int(value))" : "\(Int((value * 100).rounded()))%"
+        textCalls += 1
+        return descriptors[index].isStepped ? "\(Int(value))" : "\(Int((value * 100).rounded()))%"
     }
     func engineCount(slot: UInt32) -> Int {
         dynamicNames ? slotEngines[Int(slot)]!.count : slot == EG13ParamID.sourceKind ? engines.count : 0

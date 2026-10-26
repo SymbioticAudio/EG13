@@ -33,19 +33,18 @@ public final class EG13Synth {
     /// Patch name; presets arrive in M7.
     public let patchName = "Init"
 
-    private var values: [Double] = []
     private var descriptors: [EG13ParamDescriptor] = []
     private var names: [String] = []
-    /// The user's value for each parameter being dragged.
-    private var overrides: [UInt32: Double] = [:]
-    /// The last value of a gesture that ended, held until the snapshot shows it (the edit
-    /// reaches the snapshot only after the host drains the bridge) or pendingTicks pass.
-    private var pending: [UInt32: (value: Double, age: Int)] = [:]
     private var slots: [EG13Slot] = []
 
     @ObservationIgnored private unowned let core: any EG13Core
     @ObservationIgnored private var indexByID: [UInt32: Int] = [:]
     @ObservationIgnored private var paramByID: [UInt32: EG13Param] = [:]
+    /// Per-parameter state (the user's value during a drag, the held last value, the shown
+    /// value and its text) lives in EG13Param, the observation unit; the synth drives it.
+    @ObservationIgnored private var paramByIndex: [EG13Param?] = []
+    /// The parameters holding a gesture's last value (a subset of the table, usually empty).
+    @ObservationIgnored private var heldIDs: Set<UInt32> = []
     @ObservationIgnored private var openGestures: Set<UInt32> = []
     @ObservationIgnored private var engineGeneration: UInt32 = 0
     @ObservationIgnored private var ballistics = [[EG13MeterBallistics]](
@@ -61,16 +60,19 @@ public final class EG13Synth {
         lastTick = clock()
         let frame = core.displayFrame()
         engineGeneration = frame.engineGeneration
+        var initial: [Double] = []
         for index in 0..<core.paramCount() {
             // Arrays stay aligned with the table: a missing descriptor leaves an unindexed placeholder.
             let descriptor = core.paramDescriptor(at: index) ?? Self.placeholder
             descriptors.append(descriptor)
             if descriptor.id != Self.placeholder.id { indexByID[descriptor.id] = index }
-            values.append(index < frame.values.count ? frame.values[index] : descriptor.defaultValue)
+            initial.append(index < frame.values.count ? frame.values[index] : descriptor.defaultValue)
         }
         names = (0..<descriptors.count).map { core.paramName(at: $0) }
         params = descriptors.indices.filter { descriptors[$0].id != Self.placeholder.id }
-            .map { EG13Param(synth: self, index: $0) }
+            .map { EG13Param(synth: self, index: $0, snapshot: initial[$0]) }
+        paramByIndex = [EG13Param?](repeating: nil, count: descriptors.count)
+        for param in params { paramByIndex[param.index] = param }
         paramByID = Dictionary(params.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         rebuildSlots()
         activeVoices = frame.activeVoices
@@ -79,17 +81,9 @@ public final class EG13Synth {
     // MARK: Values
 
     /// The value a control shows: the user's while its gesture is open, else the snapshot's.
-    public func value(_ id: UInt32) -> Double {
-        if let user = overrides[id] { return user }
-        if let held = pending[id] { return held.value }
-        guard let index = indexByID[id], index < values.count else { return 0 }
-        return values[index]
-    }
+    public func value(_ id: UInt32) -> Double { paramByID[id]?.value ?? 0 }
 
-    public func text(_ id: UInt32) -> String {
-        guard let index = indexByID[id] else { return "" }
-        return core.paramText(at: index, value: value(id))
-    }
+    public func text(_ id: UInt32) -> String { paramByID[id]?.text ?? "" }
 
     /// The parameter's current name (engine-aware: "Density" for Granular's P5).
     public func name(_ id: UInt32) -> String {
@@ -98,6 +92,8 @@ public final class EG13Synth {
     }
 
     func descriptorAt(_ index: Int) -> EG13ParamDescriptor { descriptors[index] }
+
+    func nameAt(_ index: Int) -> String { index < names.count ? names[index] : "" }
 
     public func descriptor(_ id: UInt32) -> EG13ParamDescriptor? {
         guard let index = indexByID[id], index < descriptors.count else { return nil }
@@ -112,7 +108,8 @@ public final class EG13Synth {
 
     public func begin(_ id: UInt32) {
         guard openGestures.insert(id).inserted else { return }
-        pending[id] = nil
+        paramByID[id]?.setHeld(nil)
+        heldIDs.remove(id)
         core.beginEdit(id)
     }
 
@@ -120,7 +117,7 @@ public final class EG13Synth {
     public func edit(_ id: UInt32, _ newValue: Double) {
         let opened = !openGestures.contains(id)
         if opened { begin(id) }
-        overrides[id] = newValue
+        paramByID[id]?.setOverride(newValue)
         core.edit(id, value: newValue)
         if opened { end(id) }
     }
@@ -129,8 +126,10 @@ public final class EG13Synth {
     /// (see `pending`), then follows the snapshot. A no-op when none is open.
     public func end(_ id: UInt32) {
         guard openGestures.remove(id) != nil else { return }
-        if let last = overrides[id] { pending[id] = (last, 0) }
-        overrides[id] = nil
+        if let param = paramByID[id] {
+            if param.hasOverride { heldIDs.insert(id) }
+            param.endGesture()
+        }
         core.endEdit(id)
     }
 
@@ -183,13 +182,16 @@ public final class EG13Synth {
         let dt = max(0, now - lastTick)
         lastTick = now
         let frame = core.displayFrame()
-        if frame.engineGeneration != engineGeneration {
+        let regenerated = frame.engineGeneration != engineGeneration
+        if regenerated {
             engineGeneration = frame.engineGeneration
             reloadDescriptors()
         }
-        var updated = values
-        for index in 0..<min(updated.count, frame.values.count) { updated[index] = frame.values[index] }
-        if updated != values { values = updated }  // an unchanged array must not invalidate views
+        // Only a parameter whose value changed is written, so only its controls are invalidated.
+        for index in 0..<min(paramByIndex.count, frame.values.count) {
+            paramByIndex[index]?.setSnapshot(frame.values[index])
+        }
+        if regenerated { for param in params { param.refreshText() } }
         expirePending()
         if frame.activeVoices != activeVoices { activeVoices = frame.activeVoices }
         updateMeters(frame.partPeaks, dt: dt)
@@ -197,13 +199,16 @@ public final class EG13Synth {
 
     /// Drops held values the snapshot now shows, or that waited long enough.
     private func expirePending() {
-        guard !pending.isEmpty else { return }
-        var next = pending
-        for (id, held) in pending {
-            let seen = indexByID[id].map { $0 < values.count && abs(values[$0] - held.value) <= Self.pendingEpsilon } ?? true
-            if seen || held.age + 1 >= Self.pendingTicks { next[id] = nil } else { next[id] = (held.value, held.age + 1) }
+        for id in heldIDs {
+            guard let param = paramByID[id], let held = param.held else { heldIDs.remove(id); continue }
+            let seen = abs(param.snapshotValue - held.value) <= Self.pendingEpsilon
+            if seen || held.age + 1 >= Self.pendingTicks {
+                param.setHeld(nil)
+                heldIDs.remove(id)
+            } else {
+                param.held = (held.value, held.age + 1)  // age is not shown: no notification
+            }
         }
-        pending = next
     }
 
     private func updateMeters(_ peaks: [[Float]], dt: Double) {
@@ -222,10 +227,12 @@ public final class EG13Synth {
 
     /// Re-reads names, ranges and slots (the engine generation changed).
     private func reloadDescriptors() {
-        for index in descriptors.indices {
-            if let descriptor = core.paramDescriptor(at: index) { descriptors[index] = descriptor }
+        var fresh = descriptors
+        for index in fresh.indices {
+            if let descriptor = core.paramDescriptor(at: index) { fresh[index] = descriptor }
         }
-        names = descriptors.indices.map { core.paramName(at: $0) }
+        descriptors = fresh
+        names = fresh.indices.map { core.paramName(at: $0) }
         rebuildSlots()
     }
 

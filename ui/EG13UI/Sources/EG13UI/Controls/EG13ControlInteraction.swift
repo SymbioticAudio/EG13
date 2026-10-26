@@ -113,9 +113,11 @@ public struct EG13ControlInteraction {
     public mutating func mouseDown(clickCount: Int) {
         if clickCount >= 2 {
             close()
-            begin()
-            edit(defaultValue)
-            end()
+            if current() != defaultValue {  // already at the default: no empty gesture for the host
+                begin()
+                edit(defaultValue)
+                end()
+            }
             ignoringDrag = true
             return
         }

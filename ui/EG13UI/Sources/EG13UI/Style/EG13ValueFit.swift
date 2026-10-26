@@ -6,12 +6,13 @@ import AppKit
 /// asserts it is true for every value string of every engine.
 public enum EG13ValueFit {
     /// The font the value is set in: the theme's caption, regular, digits of equal width.
-    public static var font: NSFont {
-        NSFont.monospacedDigitSystemFont(ofSize: EG13Theme.theme.type.caption.size, weight: .regular)
-    }
+    nonisolated(unsafe) public static let font = NSFont.monospacedDigitSystemFont(ofSize: EG13Theme.theme.type.caption.size,
+                                                              weight: .regular)
+    /// Built once: the theme is fixed, and a body measures several strings.
+    nonisolated(unsafe) private static let attributes: [NSAttributedString.Key: Any] = [.font: font]
 
     public static func width(_ text: String) -> CGFloat {
-        ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        ceil((text as NSString).size(withAttributes: attributes).width)
     }
 
     /// The lines to draw for a value text (its short form, EG13ValueLabels) in `limit` points.

@@ -363,9 +363,11 @@ bool pluginInit(const clap_plugin_t* p) {
   plugin->uiBridge.store(plugin->bridge.get(), std::memory_order_release);
   plugin->coreContext = std::make_unique<CoreApiContext>(CoreApiContext{
       plugin->synth, *plugin->bridge, [plugin](uint32_t width, uint32_t height) {
-        if (plugin->hostGui && plugin->hostGui->request_resize) {
-          plugin->hostGui->request_resize(plugin->host, width, height);
-        }
+#if EG13_HAS_UI
+        if (plugin->gui) plugin->gui->requestResize(width, height);
+#else
+        (void)plugin; (void)width; (void)height;
+#endif
       }});
   plugin->coreApi = makeCoreApi(*plugin->coreContext);
 #if EG13_HAS_UI
@@ -376,6 +378,10 @@ bool pluginInit(const clap_plugin_t* p) {
         if (plugin->hostParams && plugin->hostParams->request_flush) {
           plugin->hostParams->request_flush(plugin->host);
         }
+      },
+      [plugin](uint32_t width, uint32_t height) {
+        return plugin->hostGui && plugin->hostGui->request_resize &&
+               plugin->hostGui->request_resize(plugin->host, width, height);
       });
 #endif
   return true;
@@ -383,6 +389,8 @@ bool pluginInit(const clap_plugin_t* p) {
 
 void pluginDestroy(const clap_plugin_t* p) {
   Plugin* plugin = self(p);
+  // Destroying the editor closes its gestures: that must not ask the host to flush or call back.
+  if (plugin->bridge) plugin->bridge->detach();
 #if EG13_HAS_UI
   plugin->gui.reset();  // closes an editor the host left open
 #endif

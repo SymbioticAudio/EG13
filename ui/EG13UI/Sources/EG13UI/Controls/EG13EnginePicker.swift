@@ -1,4 +1,5 @@
 import SwiftUI
+import SymbioticIcons
 import SymbioticTokens
 
 /// A menu of engine names that edits the slot's selector parameter. Choosing an engine is
@@ -32,18 +33,19 @@ public struct EG13EnginePicker: View {
             if interactive {
                 Menu {
                     ForEach(names.indices, id: \.self) { index in
-                        Button {
-                            selector.setValue(Double(index))
-                        } label: {
-                            if index == selected { Label(names[index], systemImage: "checkmark") } else { Text(names[index]) }
-                        }
+                        // A Toggle in a menu is drawn with the menu's own check mark (menu state, not an image).
+                        Toggle(names[index], isOn: Binding(get: { index == selected },
+                                                          set: { _ in selector.setValue(Double(index)) }))
                     }
                 } label: { well }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.visible)
             } else {
                 // An image render cannot draw the AppKit menu: show its closed state.
-                HStack(spacing: 4) { well; Image(systemName: "chevron.up.chevron.down").font(.system(size: 8)) }
+                HStack(spacing: 4) {
+                    well
+                    VStack(spacing: -3) { Icon(.navUp, size: 8); Icon(.navDown, size: 8) }
+                }
             }
         }
         .fixedSize()

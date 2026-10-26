@@ -29,7 +29,10 @@ class Gui {
  public:
   // kind: 0 = EG13 (instrument), 1 = EG13 FX. requestFlush asks the host for a params flush
   // so the gesture ends that destroy() queues reach it; it may be empty.
-  Gui(const EG13CoreAPI& api, int32_t kind, UiBridge& bridge, std::function<void()> requestFlush);
+  // hostResize asks the host for a window of that size (clap_host_gui->request_resize) and
+  // returns whether the host accepted it; it may be empty (a request is then refused).
+  Gui(const EG13CoreAPI& api, int32_t kind, UiBridge& bridge, std::function<void()> requestFlush,
+      std::function<bool(uint32_t, uint32_t)> hostResize = {});
   ~Gui();
   Gui(const Gui&) = delete;
   Gui& operator=(const Gui&) = delete;
@@ -43,6 +46,11 @@ class Gui {
 
   bool setParent(void* nsView);
   void setSize(uint32_t width, uint32_t height);
+  // The editor asks for another size (the cog menu's 75-200 %). The size is clamped like
+  // adjust_size and offered to the host. If the host accepts, the editor takes that size at once:
+  // CLAP does not require the host to call set_size after accepting. Returns whether it was
+  // accepted; on false the size is unchanged.
+  bool requestResize(uint32_t width, uint32_t height);
   void setVisible(bool visible);
   uint32_t width() const { return width_; }
   uint32_t height() const { return height_; }
@@ -52,6 +60,7 @@ class Gui {
   int32_t kind_;
   UiBridge& bridge_;
   std::function<void()> requestFlush_;
+  std::function<bool(uint32_t, uint32_t)> hostResize_;
   void* handle_ = nullptr;
   uint32_t width_ = kGuiBaseWidth;
   uint32_t height_ = kGuiBaseHeight;

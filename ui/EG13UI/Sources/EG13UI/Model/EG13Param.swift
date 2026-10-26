@@ -1,25 +1,84 @@
 import Observation
 
-/// One host parameter as the controls see it: a handle on EG13Synth, which holds the
-/// value (the user's during a drag, the snapshot's otherwise). Edits are CLAP gestures:
-/// beginEdit, any number of setValue calls, endEdit (spec §8).
+/// One host parameter as the controls see it, and the observation unit of the editor: a
+/// control that reads this parameter's `value` or `text` is invalidated only when this
+/// parameter's shown value changes, never by an edit or a snapshot change to another one.
+/// The value is the user's during a drag, the held last value of a gesture that ended until
+/// the snapshot catches up, else the snapshot's (EG13Synth decides when, this holds the
+/// state). Edits are CLAP gestures: beginEdit, any number of setValue calls, endEdit (spec §8).
 @MainActor
+@Observable
 public final class EG13Param {
     public let index: Int
     public let id: UInt32
-    @ObservationIgnored private unowned let synth: EG13Synth
+    /// The value shown. Written only when it changes.
+    public private(set) var value: Double
+    /// The core's text for `value`, formatted once per change (a body that reads it three
+    /// times makes no core call).
+    public private(set) var text: String
 
-    init(synth: EG13Synth, index: Int) {
+    @ObservationIgnored private unowned let synth: EG13Synth
+    @ObservationIgnored private var snapshot: Double
+    /// The user's value while the gesture is open.
+    @ObservationIgnored private var override: Double?
+    /// The last value of a gesture that ended, held until the snapshot shows it or `age`
+    /// reaches EG13Synth.pendingTicks.
+    @ObservationIgnored var held: (value: Double, age: Int)?
+
+    init(synth: EG13Synth, index: Int, snapshot: Double) {
         self.synth = synth
         self.index = index
         id = synth.descriptorAt(index).id
+        self.snapshot = snapshot
+        value = snapshot
+        text = synth.text(at: index, value: snapshot)
     }
 
-    public var descriptor: EG13ParamDescriptor { synth.descriptor(id) ?? synth.descriptorAt(index) }
-    public var name: String { synth.name(id) }
-    public var value: Double { synth.value(id) }
-    public var text: String { synth.text(id) }
+    public var descriptor: EG13ParamDescriptor { synth.descriptorAt(index) }
+    public var name: String { synth.nameAt(index) }
     public var isEditing: Bool { synth.isEditing(id) }
+
+    // MARK: State, driven by EG13Synth
+
+    var snapshotValue: Double { snapshot }
+
+    func setSnapshot(_ new: Double) {
+        guard new != snapshot else { return }
+        snapshot = new
+        refresh()
+    }
+
+    func setOverride(_ new: Double?) {
+        override = new
+        refresh()
+    }
+
+    var hasOverride: Bool { override != nil }
+
+    /// The gesture ended: its last value is held (age 0) until the snapshot shows it.
+    func endGesture() {
+        if let last = override { held = (last, 0) }
+        override = nil
+    }
+
+    func setHeld(_ new: (value: Double, age: Int)?) {
+        held = new
+        refresh()
+    }
+
+    /// Recomputes the shown value; writes (and so notifies) only if it changed.
+    private func refresh() {
+        let shown = override ?? held?.value ?? snapshot
+        guard shown != value else { return }
+        value = shown
+        text = synth.text(at: index, value: shown)
+    }
+
+    /// The text depends on the engine as well as the value: reformat after a generation change.
+    func refreshText() {
+        let fresh = synth.text(at: index, value: value)
+        if fresh != text { text = fresh }
+    }
 
     /// 0...1 across the parameter's range.
     public var normalized: Double {

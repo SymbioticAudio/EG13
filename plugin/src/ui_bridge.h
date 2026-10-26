@@ -54,6 +54,9 @@ class UiBridge {
   void endEdit(uint32_t id);
   void pump();
   void closeAllGestures();
+  // Main thread. Drops the requestFlush and requestPump callbacks: the plugin is going away and
+  // must not ask the host for anything. Queued events stay (nothing drains them).
+  void detach();
   size_t overflowSize() const { return overflow_.size(); }
   // Host events the host's output queue refused (try_push returned false).
   size_t droppedHostEvents() const { return dropped_.load(std::memory_order_relaxed); }

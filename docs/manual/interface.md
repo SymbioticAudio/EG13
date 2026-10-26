@@ -10,7 +10,7 @@ The window works in points, so on a Retina display it is drawn sharp at every si
 
 ## Layout
 
-The layout below is the owner's chosen arrangement (Mods in a column on the right) with round 3's knob colours.
+The editor is one window with the two parts as tabs, the Mods in a column on the right and the output bar along the bottom.
 
 ## Header
 
@@ -30,7 +30,7 @@ The shown part is laid out as horizontal cards, one under another: **Source**, *
 - **Value text:** the text under a knob is the engine's value. A long one is shown in a short form (for example "Vocoder (long release)" reads "Vocoder long", and the Classic Filters models read "Cls LP 12 Std" for "Vember Classic Lowpass 12 dB Standard"); if it still needs room it wraps onto a second line. It is never cut with "..." and never shrunk. The full text is in the knob's tooltip and is what VoiceOver reads.
 - **Names:** a knob shows a short name, taken from the abbreviation printed on the real module panel where there is one (BRIGHT, STRUCT, RES, LPG COL, S.RATE). A name is never cut and never shrunk: a name of two words that does not fit wraps to two lines. Hover over a knob for its full name and value; VoiceOver reads the full name.
 - **Three knob sizes: large, medium and small**, following the real module's panel for the engine. For example, Granular follows the Clouds panel: Position, Size and Pitch are large, Density and Texture medium, Freeze small. An engine with no matching panel has medium knobs and one or two large main controls. A mod card's knobs are one step smaller (no large knob). Every knob shows its value under it.
-- **Knob colours** come from the real panel, so they are the same in Part A and Part B (a part is told apart by the A and B tabs, the part badge in the bottom bar and the meters, not by knob colour). A knob has a white, pink or teal cap. A pink or teal knob has a name tag in its colour and an arc in its colour; a white knob has a plain name and a light grey arc. For example, the Modal Synth follows the Elements panel: Blow, Flow and Blow Timbre are pink, Strike, Mallet and Strike Timbre teal, the rest white. Engines with no matching panel (and every mod) have white caps, with the main one or two controls large; see the design log for the few exceptions. **Secondary** knobs have a black cap with a grey arc: master **Dry** and **Out** and the matrix routes.
+- **Knob colours** come from the real panel, so they are the same in Part A and Part B (a part is told apart by the A and B tabs, the part badge in the bottom bar and the meters, not by knob colour). A knob has a white, pink or teal cap. A pink or teal knob has a name tag in its colour and an arc in its colour; a white knob has a plain name and a light grey arc. For example, the Modal Synth follows the Elements panel: Blow, Flow and Blow Timbre are pink, Strike, Mallet and Strike Timbre teal, the rest white. Engines with no matching panel (and every mod) have white caps, with the main one or two controls large. **Secondary** knobs have a black cap with a grey arc: master **Dry** and **Out** and the matrix routes.
 - The **matrix** row has the part's 12 route amounts, labelled Route 1 to Route 12. Choosing each route's source and destination is not in this version: routes keep the sources and destinations they have, and you can set their amounts. (Source and destination choices arrive with the matrix editor in a later version.)
 
 ## Knobs and steppers
@@ -64,5 +64,5 @@ Turning a knob in the window counts as a touch: your host records the move as au
 Measured on an Apple M1 (base), release build, with the preview app that runs the editor's views and its 30 Hz tick over a fake plugin (a host's own drawing and the real plugin are not included):
 
 - **Main thread, idle:** about 0.25 % of one core (CPU time over 20 s; `ps` shows 0.1 to 0.2 %). The budget is 5 %.
-- **Main thread, dragging:** about 24 % of one core while one knob sweeps its whole range 30 times a second. This is for information and is not held to a budget. A likely cause is that every knob watches the same edit state, so each edit refreshes all of them; narrowing that is the first thing to try if dragging feels heavy in a host.
+- **Main thread, dragging:** about 13 % of one core while one knob sweeps its whole range 30 times a second (it was 24 % while every knob watched the same edit state). Each parameter is now its own observation unit, so an edit, or a host automation move, rebuilds only the controls that show that parameter (one knob per edit in the preview); the rest is SwiftUI's own per-frame work over the whole window. This is for information and is not held to a budget.
 - **Audio thread:** applying 64 knob edits queued for one 128-sample block at 48 kHz (`UiBridge::drain`, which also reports them to the host) takes 2.3 microseconds, 0.088 % of that block's real-time budget (2667 microseconds). The budget is 0.1 %. A drag produces a few edits per block, so real use is far below this.

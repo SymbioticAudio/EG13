@@ -67,6 +67,11 @@ void UiBridge::closeAllGestures() {
   for (const uint32_t id : open) push({UiEvent::Type::EndEdit, id, 0.0});
 }
 
+void UiBridge::detach() {
+  requestFlush_ = {};
+  requestPump_ = {};
+}
+
 void UiBridge::push(const UiEvent& event) {
   moveBacklog();
   if (!overflow_.empty() || !queue_.push(event)) overflow_.push_back(event);
