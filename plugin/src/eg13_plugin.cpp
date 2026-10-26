@@ -25,6 +25,7 @@ struct Plugin {
   clap_plugin_t clap{};
   const clap_host_t* host;
   const clap_host_params_t* hostParams = nullptr;
+  const clap_host_state_t* hostState = nullptr;
   PluginKind kind;
   const clap_host_latency_t* hostLatency = nullptr;
   uint32_t reportedLatency = 0;
@@ -346,6 +347,8 @@ bool pluginInit(const clap_plugin_t* p) {
   Plugin* plugin = self(p);
   plugin->hostParams = static_cast<const clap_host_params_t*>(
       plugin->host->get_extension(plugin->host, CLAP_EXT_PARAMS));
+  plugin->hostState = static_cast<const clap_host_state_t*>(
+      plugin->host->get_extension(plugin->host, CLAP_EXT_STATE));
   plugin->hostLatency = static_cast<const clap_host_latency_t*>(
       plugin->host->get_extension(plugin->host, CLAP_EXT_LATENCY));
   plugin->hostGui = static_cast<const clap_host_gui_t*>(
@@ -368,6 +371,9 @@ bool pluginInit(const clap_plugin_t* p) {
 #else
         (void)plugin; (void)width; (void)height;
 #endif
+      },
+      [plugin] {
+        if (plugin->hostState && plugin->hostState->mark_dirty) plugin->hostState->mark_dirty(plugin->host);
       }});
   plugin->coreApi = makeCoreApi(*plugin->coreContext);
 #if EG13_HAS_UI
