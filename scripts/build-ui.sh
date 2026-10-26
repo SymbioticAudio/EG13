@@ -38,7 +38,15 @@ for arch in $ARCHS; do
   cp "$bin/libEG13UI.a" "$TMP/libEG13UI-$arch.a"
   # The preview's and the tests' engine tables (EG13UIFixtures) come with a resource bundle; they
   # must never reach the plugin's static library.
-  if nm "$TMP/libEG13UI-$arch.a" 2>/dev/null | grep -qE 'EG13UIFixtures|resource_bundle_accessor'; then
+  # nm output goes into a variable first: under pipefail, `nm | grep -q` dies of SIGPIPE when grep
+  # exits early and the guard silently never fires.
+  syms="$(nm "$TMP/libEG13UI-$arch.a")" || { echo "build-ui.sh: nm failed on libEG13UI-$arch.a" >&2; exit 1; }
+  # Positive control: the module's own symbols must be found, or the grep below proves nothing.
+  if ! grep -qE "EG13UI" <<<"$syms"; then
+    echo "build-ui.sh: self-check failed: no EG13UI symbol found in nm output" >&2
+    exit 1
+  fi
+  if grep -qE "EG13UIFixtures|resource_bundle_accessor" <<<"$syms"; then
     echo "build-ui.sh: libEG13UI.a contains EG13UIFixtures or a Swift resource bundle accessor" >&2
     exit 1
   fi

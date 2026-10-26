@@ -244,8 +244,8 @@ final class EG13PreviewCore: EG13Core {
         (3...6).map { Self.engines($0)[current[$0][part]].name }
     }
 
-    func route(part: Int, index: Int) -> EG13UI.EG13Route {
-        guard part >= 0, part < EG13ParamID.parts, index >= 0, index < EG13ParamID.routeCount else { return EG13UI.EG13Route() }
+    func route(part: Int, index: Int) -> EG13ModRoute {
+        guard part >= 0, part < EG13ParamID.parts, index >= 0, index < EG13ParamID.routeCount else { return EG13ModRoute() }
         let r = routes[part][index]
         let amount = values[indexByID[EG13ParamID.routeAmount(part, index)]!]
         return makeRoute(part: part, source: r.source, destination: r.destination, via: r.via, amount: amount)
@@ -271,6 +271,7 @@ final class EG13PreviewCore: EG13Core {
     }
 
     func destination(forParam id: UInt32) -> UInt16 {
+        if id >> 16 < UInt32(EG13ParamID.parts), (id >> 8) & 0xFF == 0, id & 0xFF == 1 { return 4 }  // Part Level
         guard let (kind, _, p) = slotOf(id), p >= 1, p <= EG13ParamID.slotParamCount(EG13SlotKind(rawValue: UInt32(kind))) else { return 0 }
         let bases: [Int: Int] = [0: 16, 1: 32, 2: 48, 7: 64, 3: 80, 4: 96, 5: 112, 6: 128]
         return UInt16(bases[kind]! + p - 1)

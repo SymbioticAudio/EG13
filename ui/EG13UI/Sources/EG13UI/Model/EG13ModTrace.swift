@@ -16,27 +16,55 @@ public final class EG13ModTrace {
     public static let capacity = 60
     public static let outputCount = Int(EG13_MAX_MOD_OUTPUTS)
 
-    /// Per output, oldest first, at most `capacity` frames.
-    public private(set) var frames: [[EG13ModTraceFrame?]] = Array(repeating: [], count: EG13ModTrace.outputCount)
+    /// Ring storage: per output, `capacity` slots; `head` is the slot of the oldest frame.
+    private var ring: [[EG13ModTraceFrame?]] = Array(
+        repeating: Array(repeating: nil, count: EG13ModTrace.capacity), count: EG13ModTrace.outputCount)
+    private var head = 0
+    private var count = 0
+    /// How many stored frames, over all outputs, are values (not gaps).
+    private var liveFrames = 0
+    /// Bumped whenever the trace changes; reading `frames` observes it.
+    private var revision = 0
 
     public init() {}
 
-    public func frames(output: Int) -> [EG13ModTraceFrame?] {
-        frames.indices.contains(output) ? frames[output] : []
+    /// Per output, oldest first, at most `capacity` frames.
+    public var frames: [[EG13ModTraceFrame?]] {
+        _ = revision
+        return (0..<Self.outputCount).map { frames(output: $0) }
     }
 
-    /// Adds one display frame. Writes only when the trace changes (a run of gaps on a full trace
-    /// changes nothing), so an idle slot never invalidates its card.
+    public func frames(output: Int) -> [EG13ModTraceFrame?] {
+        _ = revision
+        guard ring.indices.contains(output) else { return [] }
+        var out: [EG13ModTraceFrame?] = []
+        out.reserveCapacity(count)
+        for i in 0..<count { out.append(ring[output][(head + i) % Self.capacity]) }
+        return out
+    }
+
+    /// Adds one display frame in place (no copies of the storage). Writes nothing when the trace
+    /// does not change (a run of gaps on a full trace), so an idle slot never invalidates its card.
     func push(min mins: [Float], max maxs: [Float]) {
-        var next = frames
+        var incoming = [EG13ModTraceFrame?](repeating: nil, count: Self.outputCount)
+        var incomingLive = 0
         for output in 0..<Self.outputCount {
             let low = output < mins.count ? mins[output] : .infinity
             let high = output < maxs.count ? maxs[output] : -.infinity
-            let frame: EG13ModTraceFrame? = low.isFinite && high.isFinite && low <= high
-                ? EG13ModTraceFrame(min: low, max: high) : nil
-            next[output].append(frame)
-            if next[output].count > Self.capacity { next[output].removeFirst(next[output].count - Self.capacity) }
+            if low.isFinite && high.isFinite && low <= high {
+                incoming[output] = EG13ModTraceFrame(min: low, max: high)
+                incomingLive += 1
+            }
         }
-        if next != frames { frames = next }
+        let full = count == Self.capacity
+        if full && incomingLive == 0 && liveFrames == 0 { return }
+        let slot = full ? head : (head + count) % Self.capacity
+        for output in 0..<Self.outputCount {
+            if full && ring[output][slot] != nil { liveFrames -= 1 }
+            ring[output][slot] = incoming[output]
+        }
+        liveFrames += incomingLive
+        if full { head = (head + 1) % Self.capacity } else { count += 1 }
+        revision += 1
     }
 }

@@ -86,10 +86,10 @@ public final class EG13CoreAPIClient: EG13Core {
                                 modValues: modValues, modOutMin: outMin, modOutMax: outMax)
     }
 
-    public func route(part: Int, index: Int) -> EG13Route {
+    public func route(part: Int, index: Int) -> EG13ModRoute {
         var raw = EG13CBridge.EG13Route()
         guard part >= 0, index >= 0,
-              api.pointee.route_get(context, UInt32(part), UInt32(index), &raw) else { return EG13Route() }
+              api.pointee.route_get(context, UInt32(part), UInt32(index), &raw) else { return EG13ModRoute() }
         return makeRoute(part: part, source: raw.source, destination: raw.destination, via: raw.via,
                          amount: raw.amount)
     }

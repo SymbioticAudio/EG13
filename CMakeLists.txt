@@ -75,7 +75,7 @@ if(EG13_BUILD_TESTS)
   add_test(NAME ui_tables_up_to_date
     COMMAND ${CMAKE_COMMAND} -DTOOL=$<TARGET_FILE:eg13_ui_tables>
       -DGOLDEN=${CMAKE_SOURCE_DIR}/ui/EG13UI/Sources/EG13UIFixtures/core-tables.json
-      -DOUT=${CMAKE_BINARY_DIR}/ui_tables_check.json
+      -DOUT=${CMAKE_CURRENT_BINARY_DIR}/ui_tables_up_to_date.json
       -P ${CMAKE_SOURCE_DIR}/tools/ui_tables/check_ui_tables.cmake)
 endif()
 

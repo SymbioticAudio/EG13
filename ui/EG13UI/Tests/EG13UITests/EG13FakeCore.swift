@@ -128,8 +128,8 @@ final class EG13FakeCore: EG13Core {
         }
     }
 
-    func route(part: Int, index: Int) -> EG13UI.EG13Route {
-        guard routes.indices.contains(part), routes[part].indices.contains(index) else { return EG13UI.EG13Route() }
+    func route(part: Int, index: Int) -> EG13ModRoute {
+        guard routes.indices.contains(part), routes[part].indices.contains(index) else { return EG13ModRoute() }
         let r = routes[part][index]
         let id = EG13ParamID.routeAmount(part, index)
         let amount = descriptors.firstIndex { $0.id == id }.map { values[$0] } ?? 0
@@ -161,6 +161,7 @@ final class EG13FakeCore: EG13Core {
 
     func destination(forParam id: UInt32) -> UInt16 {
         let part = Int(id >> 16), slot = Int((id >> 8) & 0xFF), p = Int(id & 0xFF)
+        if slot == 0 && p == 1 && part < 2 { return 4 }  // Part Level
         let bases = [1: 16, 2: 32, 3: 48, 4: 64, 5: 80, 6: 96, 7: 112, 8: 128]
         guard part < 2, let base = bases[slot], p >= 1, p <= 16 else { return 0 }
         if slot == 2 && p > 4 || slot == 3 && p > 12 { return 0 }

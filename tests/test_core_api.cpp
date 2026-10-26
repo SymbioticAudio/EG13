@@ -270,7 +270,11 @@ TEST_CASE("destination_for_param maps Filter P1 to 32 and P2 to 33") {
   REQUIRE(dest(0, Slot::Filter, 0) == 0);  // the selector
   REQUIRE(dest(0, Slot::Mod1, 17) == 0);   // the scope
   REQUIRE(dest(0, Slot::Matrix, 1) == 0);
-  REQUIRE(dest(0, Slot::Part, 1) == 0);
+  REQUIRE(dest(0, Slot::Part, 1) == eg13::kDestPartLevel);  // Part Level
+  REQUIRE(dest(1, Slot::Part, 1) == 4);
+  REQUIRE(dest(0, Slot::Part, 2) == 0);  // Pan is not a route destination
+  REQUIRE(dest(0, Slot::Part, 0) == 0);
+  REQUIRE(f.api.destination_for_param(f.api.context, eg13::params::kMasterLevel) == 0);
   REQUIRE(f.api.destination_for_param(f.api.context, 0xFFFFFFFFu) == 0);
 }
 

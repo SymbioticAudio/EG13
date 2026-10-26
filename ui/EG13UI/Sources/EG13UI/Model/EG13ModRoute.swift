@@ -4,7 +4,7 @@
 /// A name is nil when the code is 0 or when the part's current engines hide it (a mod output the
 /// mod engine does not have, a P the engine does not use): the route keeps the code, and the
 /// editor shows it as hidden rather than guessing a name.
-public struct EG13Route: Equatable, Sendable {
+public struct EG13ModRoute: Equatable, Sendable {
     public var source: UInt16
     public var destination: UInt16
     public var via: UInt16
@@ -34,13 +34,12 @@ public struct EG13Route: Equatable, Sendable {
     public var sourceHidden: Bool { source != 0 && sourceName == nil }
     public var destinationHidden: Bool { destination != 0 && destinationName == nil }
     public var viaHidden: Bool { via != 0 && viaName == nil }
-    public var hasHiddenField: Bool { sourceHidden || destinationHidden || viaHidden }
 }
 
 extension EG13Core {
     /// A route with its names looked up, for the Core implementations to return.
-    public func makeRoute(part: Int, source: UInt16, destination: UInt16, via: UInt16, amount: Double) -> EG13Route {
-        EG13Route(source: source, destination: destination, via: via, amount: amount,
+    public func makeRoute(part: Int, source: UInt16, destination: UInt16, via: UInt16, amount: Double) -> EG13ModRoute {
+        EG13ModRoute(source: source, destination: destination, via: via, amount: amount,
                   sourceName: source == 0 ? nil : sourceName(part: part, code: source),
                   destinationName: destination == 0 ? nil : destinationName(part: part, code: destination),
                   viaName: via == 0 ? nil : sourceName(part: part, code: via))

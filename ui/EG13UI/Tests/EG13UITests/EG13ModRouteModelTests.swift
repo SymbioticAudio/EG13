@@ -5,7 +5,7 @@ import Testing
 
 /// The matrix and modulation model: routes, chips and rings, the hidden-field rule, the mod trace.
 @MainActor
-struct EG13RouteModelTests {
+struct EG13ModRouteModelTests {
     private final class Flag: @unchecked Sendable { var fired = false }
 
     // Source codes the fake names (core/mod/mod_routes.h).
@@ -57,9 +57,16 @@ struct EG13RouteModelTests {
 
     @Test("A parameter with no destination cannot be modulated")
     func noDestination() {
-        #expect(!synth.modulate(id: EG13ParamID.part(0, .level), from: Self.modWheel))
+        #expect(!synth.modulate(id: EG13ParamID.part(0, .pan), from: Self.modWheel))
         #expect(!synth.modulate(id: EG13ParamID.master(.level), from: Self.modWheel))
         #expect(core.setRouteCalls.isEmpty && core.calls.isEmpty)
+    }
+
+    @Test("Part Level maps to destination 4 and can be modulated")
+    func partLevelIsModulatable() {
+        #expect(core.destination(forParam: EG13ParamID.part(0, .level)) == 4)
+        #expect(synth.modulate(id: EG13ParamID.part(1, .level), from: Self.modWheel))
+        #expect(synth.routes(part: 1).first { $0.isActive }?.destination == 4)
     }
 
     @Test("Matrix full disables modulate")

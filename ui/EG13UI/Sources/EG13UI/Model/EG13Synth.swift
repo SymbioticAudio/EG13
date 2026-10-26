@@ -35,8 +35,8 @@ public final class EG13Synth {
 
     /// The matrix, per part: codes and names as the core reports them (amounts are read live from
     /// the amount parameters). Reloaded on an engine generation change and after `setRoute`.
-    public private(set) var routeTable: [[EG13Route]] = Array(
-        repeating: Array(repeating: EG13Route(), count: EG13ParamID.routeCount), count: EG13ParamID.parts)
+    public private(set) var routeTable: [[EG13ModRoute]] = Array(
+        repeating: Array(repeating: EG13ModRoute(), count: EG13ParamID.routeCount), count: EG13ParamID.parts)
     /// The matrix pickers' choices per part: the codes the part's current engines name.
     private var sourceCodes: [[EG13MatrixCode]] = Array(repeating: [], count: EG13ParamID.parts)
     private var destinationCodes: [[EG13MatrixCode]] = Array(repeating: [], count: EG13ParamID.parts)
@@ -296,7 +296,7 @@ public final class EG13Synth {
 
     /// The part's 12 routes with their amounts as the controls show them. Reads the routes and the
     /// amount parameters, so a view that calls it follows both.
-    public func routes(part: Int) -> [EG13Route] {
+    public func routes(part: Int) -> [EG13ModRoute] {
         guard routeTable.indices.contains(part) else { return [] }
         return routeTable[part].enumerated().map { index, route in
             var live = route
@@ -308,7 +308,7 @@ public final class EG13Synth {
     /// The routes that modulate a parameter: a source and the parameter's destination, both named
     /// by the part's current engines. Routes into a P the engine hides (and routes from a source it
     /// hides) are left out, so no chip or ring shows for them.
-    public func routes(into id: UInt32, part: Int) -> [EG13Route] {
+    public func routes(into id: UInt32, part: Int) -> [EG13ModRoute] {
         guard let destination = destinationByID[id] else { return [] }
         return routes(part: part).filter {
             $0.isActive && $0.destination == destination && !$0.destinationHidden && !$0.sourceHidden

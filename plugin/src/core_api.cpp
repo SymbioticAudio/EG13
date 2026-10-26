@@ -204,6 +204,10 @@ bool destinationName(void* context, uint32_t part, uint16_t code, char* buffer, 
 }
 
 uint16_t destinationForParam(void*, uint32_t id) noexcept {
+  // Part Level is the one Part-slot parameter a route can target.
+  if (((id >> 8) & 0xFFu) == uint32_t(params::Slot::Part) && (id & 0xFFu) == uint32_t(PartParam::Level) &&
+      (id >> 16) < uint32_t(kNumParts))
+    return kDestPartLevel;
   const int32_t index = int32_t(paramIndex(id));
   if (index < 0) return kDestNone;
   if (size_t(index) >= size_t(kNumParts) * kParamsPerPart) return kDestNone;  // master

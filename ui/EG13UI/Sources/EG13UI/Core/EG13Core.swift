@@ -69,7 +69,7 @@ public protocol EG13Core: AnyObject {
     func displayFrame() -> EG13DisplayFrame
     /// Matrix route `index` of the part: codes, names (nil when the part's engines hide the code)
     /// and the amount. A part or index out of range gives an empty route.
-    func route(part: Int, index: Int) -> EG13Route
+    func route(part: Int, index: Int) -> EG13ModRoute
     /// Sets a route's source, destination and via. False, and nothing changes, for a bad part,
     /// route or code, including a code the part's current engines hide. The amount is a host
     /// parameter: edit it through beginEdit, edit and endEdit.
@@ -78,7 +78,7 @@ public protocol EG13Core: AnyObject {
     func sourceName(part: Int, code: UInt16) -> String?
     /// "Pitch", "Filter: Cutoff"; nil for 0, reserved codes and codes the engines hide.
     func destinationName(part: Int, code: UInt16) -> String?
-    /// The destination code of a P parameter (Filter P1 is 32), 0 for any other parameter.
+    /// The destination code of a P parameter (Filter P1 is 32) or of Part Level (4), 0 for any other parameter.
     func destination(forParam id: UInt32) -> UInt16
     /// "0.6.0 (abc1234)".
     func version() -> String
