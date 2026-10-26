@@ -298,6 +298,6 @@ Task 1 writes these into spec §8. The owner can veto any of them here, or at th
   - Drag CPU: Task 6's budget covers the same hot path.
   - CI Xcode pin: Task 1.
 - **Names used across tasks:**
-  - `modValue`, `modOutMin`, `modOutMax`, `EG13Route`, `route_get`, `route_set`, `destination_for_param`;
+  - `modValue`, `modOutMin`, `modOutMax`, `EG13ModRoute` (Swift; the C struct is `EG13Route`), `route_get`, `route_set`, `destination_for_param`;
   - `EG13Param.modulatedNormalized`, `modulationRange`, `EG13ModTrace`, `modulate(id:from:)`;
   - `EG13KeyRangeView`.
