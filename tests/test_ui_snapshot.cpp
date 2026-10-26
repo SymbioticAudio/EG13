@@ -283,3 +283,37 @@ TEST_CASE("publishing the modulation allocates nothing") {
   REQUIRE(allocations == 0);
   synth.setActive(false);
 }
+
+TEST_CASE("modValue Pitch is semitones / 48 + 0.5") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.setRoute(0, 6, Route{kSrcGate, kDestPitch, kSrcNone});  // gate is 1 while held
+  synth.setParam(paramSpec(routeAmountParamIndex(0, 6)).id, 12.0 / kPitchRangeSemitones);
+  synth.noteOn(0, 60, 1.0f);
+  runBlocks(synth, 10);
+  UiSnapshot snap;
+  synth.uiSnapshot(&snap);
+  CHECK(snap.modValue[0][kDestPitch] == Catch::Approx(12.0f / 48.0f + 0.5f).margin(1e-3));
+  synth.setActive(false);
+}
+
+TEST_CASE("modValue follows the last-started voice") {
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  // Pitch follows the key (Note source, keytrack (note - 60) / 120, amount 1 = 24 semitones).
+  synth.setRoute(0, 6, Route{kSrcNote, kDestPitch, kSrcNone});
+  synth.setParam(paramSpec(routeAmountParamIndex(0, 6)).id, 1.0);
+  synth.noteOn(0, 72, 1.0f);
+  runBlocks(synth, 5);
+  synth.noteOn(0, 48, 1.0f);  // the second note, a different voice
+  runBlocks(synth, 10);
+  UiSnapshot snap;
+  synth.uiSnapshot(&snap);
+  const float second = (48.0f - 60.0f) / 120.0f * 24.0f / 48.0f + 0.5f;
+  const float first = (72.0f - 60.0f) / 120.0f * 24.0f / 48.0f + 0.5f;
+  CHECK(snap.modValue[0][kDestPitch] == Catch::Approx(second).margin(1e-3));
+  CHECK(snap.modValue[0][kDestPitch] != Catch::Approx(first).margin(1e-3));
+  synth.setActive(false);
+}

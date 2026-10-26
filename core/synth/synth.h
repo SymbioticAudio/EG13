@@ -185,6 +185,11 @@ class Synth {
   // engine generation). Reading the peaks resets them (hold-until-read), hence the mutable
   // atomics. No allocation, no locks.
   void uiSnapshot(UiSnapshot* out) const;
+  // Benchmark baseline only: off skips the modulation publish and the per-tick sampling.
+  void setModulationPublish(bool on) {
+    publishModulation_ = on;
+    for (auto& part : parts_) part->setDisplayEnabled(on);
+  }
   void publishModulation(int part, const PartParams& params);  // audio thread: once per chunk, after process
   // Main thread: true once after any engine switch (names and text changed).
   bool takeEngineChanged() { return engineChanged_.exchange(false, std::memory_order_acq_rel); }
@@ -258,6 +263,7 @@ class Synth {
   mutable std::atomic<float> partPeak_[kNumParts][2] = {};
   // The modulation display (Part::ModDisplay), published once per chunk. modOutMin_ starts at +inf and
   // modOutMax_ at -inf and are left there when nothing ran: the UI reads inf as "no data".
+  bool publishModulation_ = true;
   std::atomic<float> modValue_[kNumParts][kNumDestinations] = {};
   mutable std::atomic<float> modOutMin_[kNumParts][kNumModSlots][kMaxModOutputs] = {};
   mutable std::atomic<float> modOutMax_[kNumParts][kNumModSlots][kMaxModOutputs] = {};

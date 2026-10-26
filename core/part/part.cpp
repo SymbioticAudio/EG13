@@ -390,6 +390,7 @@ void Part::startTick(const PartParams& params, int offset) {
 }
 
 void Part::sampleModOutputs() {
+  if (!displayEnabled_) return;
   for (int s = 0; s < kNumModSlots; ++s) {
     if (modulation_.engine(s) == 0) continue;  // Off
     const bool perPart = modulation_.perPart(s);

@@ -689,7 +689,7 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
     part.process(inputs, out, params, n);
     // Published for the editor's main-thread read (Voice::active_ is plain, audio-thread only).
     activeVoices_[p].store(part.activeVoiceCount(), std::memory_order_relaxed);
-    publishModulation(p, params);
+    if (publishModulation_) publishModulation(p, params);
     const int output = part.settings().output;
     heard[p] = output != 2;  // Other part only: feeds the other part, not heard
     toBus2[p] = bus2Out != nullptr && output == 1;

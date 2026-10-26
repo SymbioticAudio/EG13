@@ -164,6 +164,7 @@ class Part {
   const ModDisplay& modDisplay() const { return display_; }
   void refreshModValues(const PartParams& params);  // end of a modulated process() call
   void clearModOutRange();
+  void setDisplayEnabled(bool on) { displayEnabled_ = on; }  // benchmark baseline: skip the per-tick sampling
 
  private:
   void perform(const VoiceActions& actions);
@@ -212,6 +213,7 @@ class Part {
   bool modulated_ = false;   // the last process() call was the modulated path
   ParamValues fxParams_;     // its Part FX P's after the routes at the last tick
   ModDisplay display_;
+  bool displayEnabled_ = true;
   float partLevel_ = 1.0f;   // its Part Level (base + routes) at the last tick
   float outputLevel_ = 1.0f;  // the Part Level applied now: partLevel_, latencySamples() later
   std::vector<float> levelLine_;  // partLevel_ per sample, latencySamples() long
