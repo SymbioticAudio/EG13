@@ -93,7 +93,8 @@ extension EG13KnobBody {
     var markRect: CGRect? {
         guard param.isRouted else { return nil }
         let d = EG13Knob.diameter(size)
-        return EG13ModMarkGeometry.hitRect(d: d, capRadius: EG13ModMarkGeometry.capRadius(d: d, style: style, size: size))
+        return EG13ModMarkGeometry.hitRect(d: d, capRadius: EG13ModMarkGeometry.capRadius(d: d, style: style, size: size),
+                                           normalized: param.normalized)
     }
 
     var markAction: (() -> Void)? {

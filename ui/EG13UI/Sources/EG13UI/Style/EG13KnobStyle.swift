@@ -133,23 +133,29 @@ struct EG13SweepArc: Shape {
     }
 }
 
-/// The modulation mark: a generic wave, one and a half sine cycles, stroked, centred on the cap and
-/// covering most of it. It is drawn under the pointer, which stays fully visible on top (owner,
-/// round 3, clarified). It shows no amount; it only says the knob is modulated, and never moves.
+/// The modulation mark: a generic wave, one and a half sine cycles, stroked, small, in the top or
+/// bottom third of the cap, whichever the pointer is not in, so the two never cross (owner, round 4).
+/// It moves only when the value takes the pointer across horizontal; it is never animated, shows no
+/// amount and is never the source's own shape.
 enum EG13ModMarkGeometry {
     /// The mark's width as a part of the cap's diameter.
-    static let widthRatio: CGFloat = 0.75
+    static let widthRatio: CGFloat = 0.45
     /// Its height (peak to trough) as a part of its width.
     static let heightRatio: CGFloat = 0.3
     /// Sine cycles across the width.
     static let cycles = 1.5
-    /// Its centre below the cap's centre, as a part of the cap's radius.
-    static let centreDrop: CGFloat = 0
-    /// The least stroke width, in points, at 100 %.
+    /// Its centre's distance from the cap's centre, as a part of the cap's radius.
+    static let centreOffset: CGFloat = 0.55
+    /// The least stroke width, in points, at 100 % (1.5 pt at 75 %).
     static let minStroke: CGFloat = 2
-    /// The least size of the click area, in points, at 100 %. It stays small and central so a click
-    /// elsewhere on the cap, and any drag, still adjusts the knob.
+    /// The least size of the click area, in points, at 100 %.
     static let minHit = CGSize(width: 14, height: 10)
+
+    /// Whether the pointer is in the upper half of the cap (above horizontal), from its actual angle,
+    /// so the wave sits in the bottom third. Horizontal counts as upper.
+    static func pointerIsUp(_ normalized: Double) -> Bool {
+        cos(EG13Sweep.rotation(normalized).radians) >= -1e-9
+    }
 
     /// The mark's size (the curve, before its stroke is added).
     static func size(capRadius: CGFloat) -> CGSize {
@@ -159,15 +165,17 @@ enum EG13ModMarkGeometry {
 
     static func strokeWidth(capRadius: CGFloat) -> CGFloat { max(minStroke, capRadius * 0.12) }
 
-    /// The mark's centre from the knob's centre, y down.
-    static func centre(capRadius: CGFloat) -> CGPoint { CGPoint(x: 0, y: capRadius * centreDrop) }
+    /// The mark's centre from the knob's centre, y down: below it while the pointer is up, else above.
+    static func centre(capRadius: CGFloat, normalized: Double) -> CGPoint {
+        CGPoint(x: 0, y: capRadius * centreOffset * (pointerIsUp(normalized) ? 1 : -1))
+    }
 
     /// The click area in a knob `d` across, from its top left.
-    static func hitRect(d: CGFloat, capRadius: CGFloat) -> CGRect {
+    static func hitRect(d: CGFloat, capRadius: CGFloat, normalized: Double) -> CGRect {
         let mark = size(capRadius: capRadius), stroke = strokeWidth(capRadius: capRadius)
         _ = (mark, stroke)
         let width = minHit.width, height = minHit.height
-        let c = centre(capRadius: capRadius)
+        let c = centre(capRadius: capRadius, normalized: normalized)
         return CGRect(x: d / 2 + c.x - width / 2, y: d / 2 + c.y - height / 2, width: width, height: height)
     }
 
@@ -291,7 +299,7 @@ public struct EG13KnobShape: View {
                                 style: StrokeStyle(lineWidth: EG13ModMarkGeometry.strokeWidth(capRadius: capRadius),
                                                    lineCap: .round, lineJoin: .round))
                         .frame(width: mark.width, height: mark.height)
-                        .offset(y: EG13ModMarkGeometry.centre(capRadius: capRadius).y)
+                        .offset(y: EG13ModMarkGeometry.centre(capRadius: capRadius, normalized: n).y)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }

@@ -256,3 +256,13 @@ Open choices:
 - The click area is small and central so most of the cap still behaves as a knob; the mark itself is larger than the click area.
 - The mark appears at the next modulation refresh (up to 67 ms) after a route is added or removed.
 - Popover behaviour inside the real plugin's NSHostingView and the click area's hit-testing are untested by automation (the preview renders cannot show them).
+
+## Modulation design log, round 4 (2026-10-26): a small wave that dodges the pointer
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-modulation docs/superpowers/m6-design/modulation-r4` (`mark.png`, `editor-a.png`, `editor-a-75.png` are the round's files; the run also writes others).
+
+Owner feedback on round 3: the large wave crossed the pointer and cluttered the cap. Decision: shrink it to about 45 % of the cap's width (1.5 cycles, stroke at least 2 pt, so 1.5 pt at 75 %) and place it in the top or bottom third of the cap, whichever the pointer is not in. Pointer in the upper half (from its actual angle, horizontal counts as upper): wave in the bottom third; pointer in the lower half (near min or max): wave in the top third. Same inks (#333333 on white; white on pink, teal, black), full opacity. The wave moves only when the value crosses horizontal; it is never animated.
+
+Built: `EG13ModMarkGeometry.pointerIsUp` and `centre(capRadius:normalized:)` (the wave's centre is 0.55 cap radii from the cap's centre); the click area follows the wave. Test "the wave never intersects the pointer" sweeps 0 to 1 in 1 % steps on all three knob sizes against the wave's stroked bounding box and the pointer's width.
+
+Open choices: the wave jumps between the two places at horizontal; a small knob's wave is close to the cap's edge; the 14 x 10 pt click area moves with the wave.

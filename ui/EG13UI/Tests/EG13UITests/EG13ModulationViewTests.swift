@@ -211,25 +211,63 @@ struct EG13ModulationViewTests {
         #expect(!touched.fired && !knobTouched.fired)
     }
 
-    @Test("the mark is 45-80 % of the cap wide, at least 2 pt, centred, with a 14 x 10 pt click area")
+    @Test("the mark is 45 % of the cap wide, at least 2 pt, 1.5 cycles, with a 14 x 10 pt click area")
     func markGeometry() {
         let style = EG13KnobStyle.default
         for size in [EG13KnobSize.large, .medium, .small] {
             let d = EG13Knob.diameter(size)
             let capRadius = EG13ModMarkGeometry.capRadius(d: d, style: style, size: size)
             let mark = EG13ModMarkGeometry.size(capRadius: capRadius)
-            #expect(abs(mark.width / (capRadius * 2) - EG13ModMarkGeometry.widthRatio) < 0.0001)
-            #expect(EG13ModMarkGeometry.widthRatio >= 0.7 && EG13ModMarkGeometry.widthRatio <= 0.8)
-            #expect(EG13ModMarkGeometry.strokeWidth(capRadius: capRadius) >= 2)
-            #expect(EG13ModMarkGeometry.cycles >= 1 && EG13ModMarkGeometry.cycles <= 1.5)
-            #expect(EG13ModMarkGeometry.centre(capRadius: capRadius) == .zero)
-            let hit = EG13ModMarkGeometry.hitRect(d: d, capRadius: capRadius)
-            #expect(hit.width >= 14 && hit.height >= 10)
-            #expect(abs(hit.midX - d / 2) < 0.0001 && abs(hit.midY - d / 2) < 0.0001)
-            // The whole mark and its stroke stay inside the cap.
+            #expect(abs(mark.width / (capRadius * 2) - 0.45) < 0.0001)
+            #expect(EG13ModMarkGeometry.strokeWidth(capRadius: capRadius) >= 2, "1.5 pt at 75 %")
+            #expect(EG13ModMarkGeometry.cycles == 1.5)
+            for n in [0.0, 0.5, 1.0] {
+                let hit = EG13ModMarkGeometry.hitRect(d: d, capRadius: capRadius, normalized: n)
+                #expect(hit.width >= 14 && hit.height >= 10)
+                let c = EG13ModMarkGeometry.centre(capRadius: capRadius, normalized: n)
+                #expect(abs(hit.midX - (d / 2 + c.x)) < 0.0001 && abs(hit.midY - (d / 2 + c.y)) < 0.0001)
+                let stroke = EG13ModMarkGeometry.strokeWidth(capRadius: capRadius)
+                let corner = hypot(abs(c.x) + mark.width / 2 + stroke / 2, abs(c.y) + mark.height / 2 + stroke / 2)
+                #expect(corner <= capRadius, "\(size) mark stays on the cap")
+            }
+        }
+    }
+
+    @Test("the wave sits in the bottom third while the pointer is up, the top third while it is down")
+    func markPlacement() {
+        #expect(EG13ModMarkGeometry.pointerIsUp(0.5) && EG13ModMarkGeometry.pointerIsUp(0.2))
+        #expect(!EG13ModMarkGeometry.pointerIsUp(0.0) && !EG13ModMarkGeometry.pointerIsUp(1.0))
+        #expect(!EG13ModMarkGeometry.pointerIsUp(0.1) && !EG13ModMarkGeometry.pointerIsUp(0.9))
+        let r: CGFloat = 20
+        #expect(EG13ModMarkGeometry.centre(capRadius: r, normalized: 0.5).y > 0, "bottom")
+        #expect(EG13ModMarkGeometry.centre(capRadius: r, normalized: 1.0).y < 0, "top")
+    }
+
+    @Test("the wave never intersects the pointer")
+    func waveNeverIntersectsPointer() {
+        let style = EG13KnobStyle.default
+        for size in [EG13KnobSize.large, .medium, .small] {
+            let d = EG13Knob.diameter(size)
+            let capRadius = EG13ModMarkGeometry.capRadius(d: d, style: style, size: size)
+            let mark = EG13ModMarkGeometry.size(capRadius: capRadius)
             let stroke = EG13ModMarkGeometry.strokeWidth(capRadius: capRadius)
-            let corner = hypot(mark.width / 2 + stroke / 2, mark.height / 2 + stroke / 2)
-            #expect(corner <= capRadius, "\(size) mark stays on the cap")
+            let half = max(2, d * 0.07) / 2  // the pointer's half width
+            for step in 0...100 {
+                let n = Double(step) / 100
+                let c = EG13ModMarkGeometry.centre(capRadius: capRadius, normalized: n)
+                let box = CGRect(x: c.x - mark.width / 2 - stroke / 2, y: c.y - mark.height / 2 - stroke / 2,
+                                 width: mark.width + stroke, height: mark.height + stroke)
+                // The pointer: a segment from 0.08 to 0.92 cap radii along its angle (y down), as drawn.
+                let angle = EG13Sweep.rotation(n).radians
+                let dx = CGFloat(sin(angle)), dy = CGFloat(-cos(angle))
+                var overlaps = false
+                for i in 0...200 {
+                    let rho = capRadius * (0.08 + 0.84 * CGFloat(i) / 200)
+                    let p = CGPoint(x: dx * rho, y: dy * rho)
+                    if box.insetBy(dx: -half, dy: -half).contains(p) { overlaps = true }
+                }
+                #expect(!overlaps, "\(size) at \(n): the wave's box clears the pointer")
+            }
         }
     }
 

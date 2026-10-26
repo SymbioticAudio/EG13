@@ -256,36 +256,23 @@ struct EG13MarkSheet: View {
     let synth: EG13Synth
     @Environment(\.symbioticTheme) private var theme
 
-    private struct Sample: Identifiable {
-        let id: String
-        let emphasis: EG13ParamEmphasis
-        let value: Double
-    }
-
-    private let samples: [Sample] = [
-        Sample(id: "white, min", emphasis: .plain, value: 0),
-        Sample(id: "pink, max", emphasis: .pink, value: 1),
-        Sample(id: "teal, mid", emphasis: .teal, value: 0.5),
-        Sample(id: "black, min", emphasis: .black, value: 0),
-    ]
-
+    private let values: [(String, Double)] = [("min", 0), ("25 %", 0.25), ("mid", 0.5), ("75 %", 0.75), ("max", 1)]
+    private let caps: [(String, EG13ParamEmphasis)] = [("white", .plain), ("pink", .pink), ("teal", .teal), ("black", .black)]
     private func row(_ zoom: CGFloat) -> some View {
         let d = EG13Layout.knobDiameter(.large)
-        return HStack(alignment: .top, spacing: theme.spacing.l) {
+        return VStack(alignment: .leading, spacing: theme.spacing.xs) {
             Text("\(Int(zoom * 100)) %")
                 .font(theme.type.caption.font)
                 .foregroundStyle(theme.text.secondary.color)
-                .frame(width: 50, alignment: .leading)
-            ForEach(samples) { sample in
-                VStack(spacing: theme.spacing.xs) {
-                    EG13KnobShape(normalized: sample.value, style: EG13Palette.knobStyle(for: sample.emphasis),
-                                  size: .large, showsModulationMark: true)
-                        .frame(width: d, height: d)
-                        .scaleEffect(zoom)
-                        .frame(width: d * zoom, height: d * zoom)
-                    Text(sample.id)
-                        .font(theme.type.caption.font)
-                        .foregroundStyle(theme.text.secondary.color)
+            ForEach(caps, id: \.0) { cap in
+                HStack(spacing: theme.spacing.m) {
+                    ForEach(values, id: \.0) { value in
+                        EG13KnobShape(normalized: value.1, style: EG13Palette.knobStyle(for: cap.1),
+                                      size: .large, showsModulationMark: true)
+                            .frame(width: d, height: d)
+                            .scaleEffect(zoom)
+                            .frame(width: d * zoom, height: d * zoom)
+                    }
                 }
             }
         }
@@ -293,7 +280,7 @@ struct EG13MarkSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.spacing.m) {
-            Text("Modulation mark on the cap (rows are 75 %, 100 % and 200 %)")
+            Text("Modulation mark: white, pink, teal, black; min, 25 %, mid, 75 %, max")
                 .font(.system(size: 16, weight: .light))
                 .foregroundStyle(theme.text.primary.color)
             EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0, width: 420)
@@ -301,7 +288,7 @@ struct EG13MarkSheet: View {
             row(1)
             row(2)
         }
-        .frame(width: 560, alignment: .leading)
+        .frame(width: 640, alignment: .leading)
     }
 }
 
