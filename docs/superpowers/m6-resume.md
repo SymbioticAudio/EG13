@@ -189,3 +189,24 @@ Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-editor
 5. Matrix row stays; the part tab names (from round 2) are now shown for the selected part only.
 
 Status: **approved by the owner on 2026-10-25** ("round 3 approved"), with the open choices accepted as shown: white-knob arc #E6E6E6, black-cap arc #A8A8A5, blue panel knobs shown teal, and the fallback engines as listed.
+
+## Modulation design log, round 1 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-modulation docs/superpowers/m6-design/modulation-r1` writes `editor-a.png`, `editor-b.png` (Part B), `editor-a-75.png`, `ring.png` (200 %), `chips.png` (200 %) and `traces.png` (200 %). The preview core animates its mod outputs from its tick count, so the PNGs are the same on every run: the patch is the init patch plus eight more routes, a chord held, 70 ticks in (an envelope 0.33 s into its cycle). The rulings below are the controller's (M6b Task 6 brief), not yet the owner's.
+
+### What is shown
+
+- **Ring** (`ring.png`): the Filter card (Cutoff and Resonance ride on routes) and eight knobs in each state: live above and below the set value, teal and pink caps, range only (no live value, no dot), black cap, small knob. The ring is a thin second arc in the knob's arc colour, drawn just inside the skirt band against the cap, under the value arc; the dot is the same colour. Nothing else on the knob changes.
+- **Chips** (`chips.png`, and in `editor-a.png`): each card's header strip, to the right of the engine menu. A chip is a small LCD well (the engine menu's colours): dark at rest, lit green with the source's live level (the source trace's latest max); the steady source (velocity) shows at 70 %. Source has five routes (the fifth, "VEL → TIMBRE", is the "+1"), Filter two, Mod 1 has three routes into its own knobs and room for only "+3".
+- **Traces** (`traces.png`, and in `editor-a.png`): the 64 x 20 pt well at the right end of a mod card's header strip, the slot's first output over 2 s, a min-max bar per frame and a line through the middles; the line breaks where an envelope is idle. The LFO (Mod 3) is bipolar and centred; the envelopes are bottom-up. Mod 4 is Off and has none.
+
+### Open choices for the owner
+
+1. **Ring placement and weight.** It sits in the 15 % of the skirt band the value arc leaves free next to the cap, so at 100 % it is about 1 pt wide on a large knob and 0.8 pt on a small one. On a pink or teal knob the ring and the dot are the same colour as the cap, so the dot reads as a bump on the cap's rim. Alternatives: thicken the ring by shrinking the value arc (this changes the approved arc), or put the ring outside the skirt.
+2. **Chip colour.** LCD (dark to green) rather than the part colour or a grey; it matches the engine menus and adds no colour. Alternative: the part's ink colour (teal or pink) with the fill following the level.
+3. **Mod card header is full.** The badge, engine menu and Scope leave room for the 64 pt trace and about one short chip; any more become "+k". Alternative: a narrower trace, or the trace in its own row (taller mod cards, which scroll sooner with four large engines), or chips only in the slot cards.
+4. **Where Pitch and Amp chips go.** The Source card (they have no knob). Pan and Part Level routes show no chip (their controls are in the bottom bar). Alternative: chips on the bottom bar's Level and Pan.
+5. **Trace scale.** A trace is centred when it has gone negative in the last 2 s, bottom-up otherwise (the core does not say which an output is), so an LFO that has only been positive for 2 s would redraw bottom-up.
+6. **CPU.** The display costs about 11 % of one core in the preview with the init patch, a chord, three modulated knobs and three traces (budget 10 %): see the Task 6 report.
+
+Status: awaiting owner feedback.
