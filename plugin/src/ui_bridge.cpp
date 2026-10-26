@@ -68,17 +68,41 @@ void UiBridge::closeAllGestures() {
 }
 
 void UiBridge::detach() {
+  // requestPump_ is not reassigned: drain() reads it on the audio thread, so the flag is the
+  // only thing that changes. Both sides check detached_ before calling the hook.
+  detached_.store(true, std::memory_order_release);
   requestFlush_ = {};
-  requestPump_ = {};
 }
 
 void UiBridge::push(const UiEvent& event) {
   moveBacklog();
   if (!overflow_.empty() || !queue_.push(event)) overflow_.push_back(event);
   requestFlush();
-  if (!overflow_.empty() && requestPump_ && !pumpPending_.exchange(true, std::memory_order_acq_rel)) {
-    requestPump_();  // nothing else would retry the backlog if no further edit comes
+  if (overflow_.empty()) return;
+  markBacklog();
+  // The first request for a backlog. Nothing may be draining (host idle, no params flush), and
+  // without a pump the backlog would wait for the next edit. While the editor is open the 30 Hz
+  // snapshot calls pump() as well, so a backlog is retried even if the host ignores this
+  // request. Coalesced: one outstanding request until pump() runs. pump() never asks again;
+  // every later request comes from drain().
+  if (requestPump_ && !detached_.load(std::memory_order_acquire) &&
+      !pumpPending_.exchange(true, std::memory_order_acq_rel)) {
+    requestPump_();
   }
+}
+
+// No lost wake-up. The main thread fails queue_.push (queue full), then sets backlogPending_
+// (acq_rel read-modify-write), then retries moveBacklog. drain() pops, then clears the flag
+// (acq_rel exchange) and asks for a pump if it was set. The flag operations are totally
+// ordered. If drain's exchange comes after the set, it sees true and requests a pump. If it
+// comes before the set, every pop that freed space happened before the exchange, hence before
+// the set, hence before the retry, which therefore sees the space and moves the backlog (and
+// requestFlush asks for a drain). A pop that comes after the retry belongs to a later drain,
+// whose exchange follows the set. So a backlog that exists after the retry always has a
+// drain still to come that requests a pump. A stale true flag costs one extra, harmless pump.
+void UiBridge::markBacklog() {
+  backlogPending_.exchange(true, std::memory_order_acq_rel);
+  moveBacklog();
 }
 
 // The flag is a read-modify-write on both sides (acq_rel), so drain's clear and a push's
@@ -101,9 +125,9 @@ void UiBridge::moveBacklog() {
 void UiBridge::pump() {
   pumpPending_.store(false, std::memory_order_release);
   moveBacklog();
-  if (!overflow_.empty() && requestPump_ && !pumpPending_.exchange(true, std::memory_order_acq_rel)) {
-    requestPump_();  // the queue is still full: try again after the audio thread drains
-  }
+  // Never asks for another pump itself: with a host that does not drain, that loops through
+  // on_main_thread forever. If the queue is still full, the flag makes the next drain ask.
+  if (!overflow_.empty()) markBacklog();
 }
 
 void UiBridge::drain(const clap_output_events_t* out) {
@@ -129,6 +153,12 @@ void UiBridge::drain(const clap_output_events_t* out) {
         break;
       }
     }
+  }
+  // Space was freed: ask for exactly one pump if the main thread has a backlog. CLAP allows
+  // request_callback from any thread. Order argument: see markBacklog.
+  if (backlogPending_.exchange(false, std::memory_order_acq_rel) && requestPump_ &&
+      !detached_.load(std::memory_order_acquire)) {
+    requestPump_();
   }
 }
 
