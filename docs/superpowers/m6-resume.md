@@ -21,10 +21,6 @@ UI work is paused until M6 comes up in normal milestone order, after M5. The pla
 - Dependencies approved: symbiotic-design from 0.1.0 (Tokens and Icons; Brand behind `#if canImport`).
 - Approved mock (private to the owner): https://claude.ai/artifact/Dao1y9KMKtEV41Pvd5fwL3
 
-## Spike code (unreviewed and incomplete)
-
-`docs/superpowers/m6-spike/` holds the planning agent's experiments: a SwiftPM EG13UI package linked into a C++ bundle, a core-api C header and an SPSC queue test. Use it as research input for the M6 plan, not as finished code.
-
 ## To resume
 
 1. Rebase this branch onto main after M2 to M5 have merged.

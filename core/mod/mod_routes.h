@@ -57,7 +57,7 @@ enum ModDestinationCode : uint16_t {
 constexpr int kNumDestinations = kDestModP + kNumModSlots * kModParamCount;  // 144
 constexpr uint16_t modParamDestination(int slot, int p) { return uint16_t(kDestModP + slot * kModParamCount + p); }
 
-// Which evaluation a destination belongs to. Part FX P's are None until M5.
+// Which evaluation a destination belongs to.
 enum class DestinationKind { None, ModParam, Voice, Part };
 DestinationKind destinationKind(uint16_t destination);
 

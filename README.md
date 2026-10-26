@@ -48,7 +48,7 @@ scripts/validate.sh            # clap-validator, auval, pluginval
 ```
 
 The SwiftUI editor (`ui/EG13UI`) is built into the plugins by default on macOS. It needs
-Swift 6.4 (Xcode 27.1) and a macOS 14.0 deployment target; the editor's one dependency,
+Swift 6.0 or later (developed with 6.4 / Xcode 27.1) and a macOS 14.0 deployment target; the editor's one dependency,
 [symbiotic-design](https://github.com/SymbioticAudio/symbiotic-design), is pinned to exactly 0.1.0 and fetched by
 SwiftPM on the first build (network needed once). `scripts/build-ui.sh` builds the Swift package
 once per architecture and merges them into one static library, which `cmake/eg13_ui.cmake`
