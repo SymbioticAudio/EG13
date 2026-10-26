@@ -35,7 +35,7 @@ public enum EG13Layout {
     public static let rowGap: CGFloat = 4
     /// The engine menu's well: wide enough for the longest engine name ("State Variable Filter").
     public static let enginePickerWidth: CGFloat = 190
-    public static let motionChipHeight: CGFloat = 14
+    public static let motionButtonHeight: CGFloat = 18
     public static let stepperWidth: CGFloat = 64
     /// The wider stepper well for "Per voice", "Other part", "Part mix" and the like.
     public static let wideStepperWidth: CGFloat = 88

@@ -5,7 +5,8 @@ import QuartzCore
 /// The editor's model of one plugin instance: every host parameter, the part shown, meters
 /// and the engine slots. The single source of truth the views read, over the core API.
 ///
-/// `tick()` runs at display rate (30 Hz, driven by a Timer the editor owns). It copies the
+/// `tick()` runs at display rate (30 Hz, driven by a Timer the editor owns); the modulation fields
+/// (rings, Motion lists, traces) refresh on every second tick, 15 Hz (owner, gate 6a round 2). It copies the
 /// snapshot into the model and never calls begin, edit or end: only the user's gestures
 /// do. While a gesture is open on a parameter, `value(_:)` returns the user's last edit for
 /// it, not the snapshot's; the override ends with the gesture, whichever way it ends.
@@ -62,6 +63,14 @@ public final class EG13Synth {
         repeating: [:], count: EG13ParamID.parts)
     /// The parameters the last tick showed as modulated.
     @ObservationIgnored private var modulatedIDs: Set<UInt32> = []
+    /// Whether the next `tick()` refreshes the modulation fields (tests align on it).
+    var nextTickRefreshesModulation: Bool { tickCount % 2 == 0 }
+    /// Ticks run so far; the modulation fields refresh on the odd ones (and whenever the engines changed).
+    @ObservationIgnored private var tickCount = 0
+    /// The trace ranges of the tick between two modulation ticks: the core resets its range on every
+    /// read, so the skipped tick's range is folded into the next frame, [part][slot][output].
+    @ObservationIgnored private var pendingMin: [[[Float]]] = []
+    @ObservationIgnored private var pendingMax: [[[Float]]] = []
     @ObservationIgnored private var traces: [[EG13ModTrace]] = (0..<EG13ParamID.parts).map { _ in
         (0..<Int(EG13_NUM_MOD_SLOTS)).map { _ in EG13ModTrace() }
     }
@@ -219,8 +228,10 @@ public final class EG13Synth {
         }
         if regenerated { for param in params { param.refreshText() } }
         expirePending()
-        updateModulation(frame)
-        updateTraces(frame)
+        tickCount += 1
+        let modulationTick = regenerated || tickCount % 2 == 1
+        if modulationTick { updateModulation(frame) }
+        updateTraces(frame, push: modulationTick)
         if frame.activeVoices != activeVoices { activeVoices = frame.activeVoices }
         updateMeters(frame.partPeaks, dt: dt)
     }
@@ -372,7 +383,7 @@ public final class EG13Synth {
         destinationCodes.indices.contains(part) ? destinationCodes[part].map { (code: $0.code, name: $0.name) } : []
     }
 
-    /// The last 60 display frames of a mod slot's outputs (slot 0...3).
+    /// The last 30 modulation frames (2 s at 15 Hz) of a mod slot's outputs (slot 0...3).
     public func modTrace(part: Int, slot: Int) -> EG13ModTrace {
         guard traces.indices.contains(part), traces[part].indices.contains(slot) else { return EG13ModTrace() }
         return traces[part][slot]
@@ -426,15 +437,33 @@ public final class EG13Synth {
         modulatedIDs = Set(targets.keys)
     }
 
-    private func updateTraces(_ frame: EG13DisplayFrame) {
+    /// Folds this tick's trace ranges into the pending ones and, on a modulation tick, pushes them as
+    /// one trace frame.
+    private func updateTraces(_ frame: EG13DisplayFrame, push: Bool) {
+        let slots = Int(EG13_NUM_MOD_SLOTS), outputs = EG13ModTrace.outputCount
+        if pendingMin.isEmpty { resetPending() }
         for part in 0..<EG13ParamID.parts {
-            for slot in 0..<Int(EG13_NUM_MOD_SLOTS) {
-                let mins = frame.modOutMin.indices.contains(part) && frame.modOutMin[part].indices.contains(slot)
-                    ? frame.modOutMin[part][slot] : []
-                let maxs = frame.modOutMax.indices.contains(part) && frame.modOutMax[part].indices.contains(slot)
-                    ? frame.modOutMax[part][slot] : []
-                traces[part][slot].push(min: mins, max: maxs)
+            for slot in 0..<slots {
+                for output in 0..<outputs {
+                    if frame.modOutMin.indices.contains(part), frame.modOutMin[part].indices.contains(slot),
+                       frame.modOutMin[part][slot].indices.contains(output) {
+                        pendingMin[part][slot][output] = min(pendingMin[part][slot][output], frame.modOutMin[part][slot][output])
+                    }
+                    if frame.modOutMax.indices.contains(part), frame.modOutMax[part].indices.contains(slot),
+                       frame.modOutMax[part][slot].indices.contains(output) {
+                        pendingMax[part][slot][output] = max(pendingMax[part][slot][output], frame.modOutMax[part][slot][output])
+                    }
+                }
+                if push { traces[part][slot].push(min: pendingMin[part][slot], max: pendingMax[part][slot]) }
             }
         }
+        if push { resetPending() }
+    }
+
+    private func resetPending() {
+        let slots = Int(EG13_NUM_MOD_SLOTS), outputs = EG13ModTrace.outputCount
+        let low = [Float](repeating: .infinity, count: outputs), high = [Float](repeating: -.infinity, count: outputs)
+        pendingMin = Array(repeating: Array(repeating: low, count: slots), count: EG13ParamID.parts)
+        pendingMax = Array(repeating: Array(repeating: high, count: slots), count: EG13ParamID.parts)
     }
 }

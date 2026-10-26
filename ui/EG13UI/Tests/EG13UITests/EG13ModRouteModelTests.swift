@@ -93,7 +93,7 @@ struct EG13ModRouteModelTests {
         // The model's ring and chip data follow: P4 shows nothing even with a live value.
         core.modValues[0][Int(Self.filterP4)] = 0.7
         core.modValues[0][Int(Self.filterP1)] = 0.7
-        synth.tick()
+        synth.tickModulation()
         #expect(synth.param(filterP(4))?.modulatedNormalized == nil)
         #expect(synth.param(filterP(4))?.modulationRange == nil)
         #expect(synth.param(filterP(1))?.modulatedNormalized != nil)
@@ -181,18 +181,18 @@ struct EG13ModRouteModelTests {
         #expect(range != nil && abs(range!.lowerBound - 0.5) < 1e-9 && abs(range!.upperBound - 1.0) < 1e-9,
                 "0.5 + 0.25 + 0.5 clamps to 1")
         core.modValues[0][33] = 0.65
-        synth.tick()
+        synth.tickModulation()
         #expect(param.modulatedNormalized.map { abs($0 - 0.65) < 1e-6 } == true)
         core.modValues[0][33] = .nan
-        synth.tick()
+        synth.tickModulation()
         #expect(param.modulatedNormalized == nil)
         core.values[core.index(of: EG13ParamID.routeAmount(0, 1))] = -0.75
-        synth.tick()
+        synth.tickModulation()
         #expect(param.modulationRange.map { abs($0.lowerBound - 0.0) < 1e-9 && abs($0.upperBound - 0.5) < 1e-9 } == true,
                 "0.5 + 0.25 - 0.75 = 0")
         synth.removeRoute(part: 0, index: 0)
         synth.removeRoute(part: 0, index: 1)
-        synth.tick()
+        synth.tickModulation()
         #expect(param.modulatedNormalized == nil && param.modulationRange == nil)
     }
 
@@ -203,7 +203,7 @@ struct EG13ModRouteModelTests {
         reload()
         core.modValues[0][32] = 0.2
         core.modValues[0][33] = 0.2
-        synth.tick()
+        synth.tickModulation()
         let x = synth.param(filterP(1))!, y = synth.param(filterP(2))!
         let touchedY = Flag(), touchedX = Flag()
         func track() {
@@ -221,46 +221,47 @@ struct EG13ModRouteModelTests {
         }
         track()
         core.modValues[0][32] = 0.4  // X moves
-        synth.tick()
+        synth.tickModulation()
         #expect(touchedX.fired, "the tracking does fire for X's own change")
         #expect(!touchedY.fired, "Y was not invalidated")
         track()
         core.modValues[0][32] = 0.4003  // under the 0.001 threshold: nothing is written
-        synth.tick()
+        synth.tickModulation()
         #expect(!touchedX.fired && !touchedY.fired)
         core.modValues[0][32] = 0.4011
-        synth.tick()
+        synth.tickModulation()
         #expect(touchedX.fired && !touchedY.fired)
     }
 
     // MARK: Mod trace
 
-    @Test("mod trace keeps 60 frames")
-    func traceKeeps60() {
+    @Test("mod trace keeps 30 frames")
+    func traceKeeps30() {
         for i in 0..<100 {
             core.modOutMin[0][1][0] = Float(i)
             core.modOutMax[0][1][0] = Float(i) + 0.5
             synth.tick()
         }
         let frames = synth.modTrace(part: 0, slot: 1).frames(output: 0)
-        #expect(frames.count == 60)
-        #expect(frames.first == EG13ModTraceFrame(min: 40, max: 40.5))
-        #expect(frames.last == EG13ModTraceFrame(min: 99, max: 99.5))
+        // 15 Hz: one frame per two ticks, each the range over both (the core resets its range on every read).
+        #expect(frames.count == 30)
+        #expect(frames.first == EG13ModTraceFrame(min: 39, max: 40.5))
+        #expect(frames.last == EG13ModTraceFrame(min: 97, max: 98.5))
         #expect(synth.modTrace(part: 0, slot: 0).frames(output: 0).allSatisfy { $0 == nil }, "other slots hold gaps")
-        #expect(synth.modTrace(part: 1, slot: 1).frames(output: 0).count == 60)
+        #expect(synth.modTrace(part: 1, slot: 1).frames(output: 0).count == 30)
     }
 
     @Test("A frame with no data records a gap, not a value")
     func traceGaps() {
         core.modOutMin[0][0][0] = 0.1
         core.modOutMax[0][0][0] = 0.3
-        synth.tick()
+        synth.tickModulation()
         core.modOutMin[0][0][0] = .infinity  // the output produced nothing
         core.modOutMax[0][0][0] = -.infinity
-        synth.tick()
+        synth.tickModulation()
         core.modOutMin[0][0][0] = 0.2
         core.modOutMax[0][0][0] = 0.2
-        synth.tick()
+        synth.tickModulation()
         let frames = synth.modTrace(part: 0, slot: 0).frames(output: 0)
         #expect(Array(frames.suffix(3)) == [EG13ModTraceFrame(min: 0.1, max: 0.3), nil, EG13ModTraceFrame(min: 0.2, max: 0.2)])
     }

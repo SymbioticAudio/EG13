@@ -38,68 +38,96 @@ struct EG13ModulationViewTests {
 
     private func filterP(_ n: Int, part: Int = 0) -> UInt32 { EG13ParamID.slot(part, EG13_SLOT_KIND_FILTER, n) }
 
-    // MARK: Chips
+    // MARK: Motion list
 
-    @Test("chips list every visible route into the card in route order")
-    func chipsInRouteOrder() {
+    @Test("the Motion list has every visible route into the card in route order, in full names")
+    func motionListInRouteOrder() {
         core.routes[0][0] = .init(source: Self.velocity, destination: Self.filterP2, via: 0)
         core.routes[0][1] = .init(source: Self.modWheel, destination: Self.sourceP1, via: 0)  // another card
         core.routes[0][2] = .init(source: Self.mod1, destination: Self.filterP1, via: 0)
         core.routes[0][3] = .init(source: Self.mod1, destination: Self.filterP4, via: 0)  // a P the engine hides
         core.routes[0][5] = .init(source: 40, destination: Self.filterP1, via: 0)  // Mod 2 is Off: hidden source
+        core.values[core.index(of: EG13ParamID.routeAmount(0, 0))] = -0.05
+        core.values[core.index(of: EG13ParamID.routeAmount(0, 2))] = 0.3
         reload()
-        let chips = synth.chips(kind: EG13_SLOT_KIND_FILTER, part: 0)
-        #expect(chips.map(\.route) == [0, 2], "route order, not source or destination order; hidden routes left out")
-        #expect(chips.map(\.text) == ["VEL → RES", "M1 → FREQ"])
-        #expect(chips.map(\.source) == [Self.velocity, Self.mod1])
-        #expect(synth.chips(kind: EG13_SLOT_KIND_SOURCE, part: 0).map(\.text) == ["MW → MODEL"])
-        #expect(synth.chips(kind: EG13_SLOT_KIND_SOURCE, part: 0).map(\.route) == [1])
-        #expect(synth.chips(kind: EG13_SLOT_KIND_SHAPER, part: 0).isEmpty)
-        #expect(synth.chips(kind: EG13_SLOT_KIND_FILTER, part: 1).isEmpty, "the other part has its own matrix")
+        let items = synth.motionItems(kind: EG13_SLOT_KIND_FILTER, part: 0)
+        #expect(items.count == 2, "the Motion button's n")
+        #expect(items.map(\.route) == [0, 2], "route order, not source or destination order; hidden routes left out")
+        #expect(items.map(\.source) == [Self.velocity, Self.mod1])
+        let names = synth.routes(part: 0)
+        #expect(items[0].text == (names[0].sourceName ?? "") + " → "
+            + EG13Motion.destinationText(name: names[0].destinationName ?? ""))
+        #expect(items[1].text.hasPrefix("Mod 1 ") && items[1].text.contains(" → "), "source and destination in full")
+        #expect(!items[1].text.contains(":"), "the destination without its card prefix")
+        #expect(items.map(\.amountText) == ["-5 %", "+30 %"])
+        #expect(synth.motionItems(kind: EG13_SLOT_KIND_SOURCE, part: 0).map(\.route) == [1])
+        #expect(synth.motionItems(kind: EG13_SLOT_KIND_SHAPER, part: 0).isEmpty, "no routes: no button")
+        #expect(synth.motionItems(kind: EG13_SLOT_KIND_FILTER, part: 1).isEmpty, "the other part has its own matrix")
     }
 
-    @Test("Pitch and Amp routes show on the Source card; mod slot parameters on that mod's card")
+    @Test("Pitch and Amp routes list on the Source card; mod slot parameters on that mod's card")
     func pitchAmpAndMods() {
         core.routes[0][0] = .init(source: Self.mod1, destination: 1, via: 0)
         core.routes[0][1] = .init(source: Self.velocity, destination: 2, via: Self.modWheel)
         core.routes[0][2] = .init(source: Self.mod1, destination: 96, via: 0)  // Mod 2 P1
+        core.select(EG13_SLOT_KIND_MOD2, engine: 1, part: 0)
         reload()
-        #expect(synth.chips(kind: EG13_SLOT_KIND_SOURCE, part: 0).map(\.text) == ["M1 → PITCH", "VEL → AMP"])
-        #expect(EG13MotionChips.card(forDestination: 96) == EG13_SLOT_KIND_MOD2)
-        #expect(EG13MotionChips.card(forDestination: 143) == EG13_SLOT_KIND_MOD4)
-        #expect(EG13MotionChips.card(forDestination: 3) == nil, "Pan and Part Level are in the bottom bar")
+        #expect(synth.motionItems(kind: EG13_SLOT_KIND_SOURCE, part: 0).map(\.route) == [0, 1])
+        #expect(synth.motionItems(kind: EG13_SLOT_KIND_SOURCE, part: 0).map { $0.text.hasSuffix("Pitch") || $0.text.hasSuffix("Amp") }
+            == [true, true])
+        #expect(EG13Motion.card(forDestination: 96) == EG13_SLOT_KIND_MOD2)
+        #expect(EG13Motion.card(forDestination: 143) == EG13_SLOT_KIND_MOD4)
+        #expect(EG13Motion.card(forDestination: 3) == nil, "Pan and Part Level are in the bottom bar")
+        #expect(synth.motionItems(kind: EG13_SLOT_KIND_MOD2, part: 0).map(\.route) == [2])
     }
 
-    @Test("source text: M1 for a mod slot's output, M2.2 on a multi-output engine, short names for fixed sources")
-    func sourceText() {
-        #expect(EG13MotionChips.sourceText(code: 32, name: "Mod 1 Envelope") == "M1")
-        #expect(EG13MotionChips.sourceText(code: 40, name: "Mod 2 LFO Out 1") == "M2.1")
-        #expect(EG13MotionChips.sourceText(code: 41, name: "Mod 2 LFO Out 2") == "M2.2")
-        #expect(EG13MotionChips.sourceText(code: 9, name: "Mod Wheel") == "MW")
-        #expect(EG13MotionChips.sourceText(code: 12, name: "CC A") == "CC A")
-        #expect(EG13MotionChips.sourceText(code: 99, name: "Strange Thing") == "STRANGE THING")
+    @Test("destination and amount text")
+    func motionText() {
+        #expect(EG13Motion.destinationText(name: "Filter: Cutoff") == "Cutoff")
+        #expect(EG13Motion.destinationText(name: "Pitch") == "Pitch")
+        #expect(EG13Motion.amountText(0.3) == "+30 %")
+        #expect(EG13Motion.amountText(-0.456) == "-46 %")
+        #expect(EG13Motion.amountText(0) == "0 %")
+        #expect(EG13Motion.amountText(1) == "+100 %")
     }
 
-    @Test("chips never truncate: the first N and a +k chip")
-    func chipFit() {
-        let texts = ["M1 → CUTOFF", "M2 → RES", "VEL → MODE", "MW → FREQ"]
-        let widths = texts.map(EG13ChipFit.width)
-        let all = widths.reduce(0, +) + CGFloat(texts.count - 1) * EG13ChipFit.spacing
-        #expect(EG13ChipFit.shown(texts: texts, available: all) == 4)
-        #expect(EG13ChipFit.shown(texts: texts, available: all + 100) == 4)
-        for available in stride(from: CGFloat(0), through: all, by: 3) {
-            let shown = EG13ChipFit.shown(texts: texts, available: available)
-            guard shown < texts.count else { continue }
-            let used = widths.prefix(shown).reduce(0, +) + CGFloat(shown) * EG13ChipFit.spacing
-                + EG13ChipFit.width("+\(texts.count - shown)")
-            #expect(used <= available || shown == 0, "\(shown) chips and the +k chip fit in \(available)")
-        }
-        #expect(EG13ChipFit.shown(texts: texts, available: all - 1) < 4)
-        #expect(EG13ChipFit.shown(texts: [], available: 0) == 0)
-        // One more chip would not fit: the count is the most that does.
-        let tight = widths[0] + EG13ChipFit.spacing + EG13ChipFit.width("+3")
-        #expect(EG13ChipFit.shown(texts: texts, available: tight) == 1)
-        #expect(EG13ChipFit.shown(texts: texts, available: tight - 1) == 0)
+    // MARK: 15 Hz
+
+    @Test("the modulation fields refresh every second tick; everything else every tick")
+    func fifteenHertz() {
+        core.routes[0][0] = .init(source: Self.modWheel, destination: Self.filterP1, via: 0)
+        reload()  // tick 1 of a new generation: refreshes
+        let param = synth.param(filterP(1))!
+        func live() -> Double? { param.modulatedNormalized }
+        core.modValues[0][Int(Self.filterP1)] = 0.3
+        synth.tick()  // an off tick
+        #expect(live() == nil, "an off tick leaves the modulation fields alone")
+        core.modValues[0][Int(Self.filterP1)] = 0.6
+        synth.tick()  // a refresh tick
+        #expect(abs((live() ?? -1) - 0.6) < 1e-6, "the refresh tick shows the latest value")
+        core.modValues[0][Int(Self.filterP1)] = 0.9
+        synth.tick()
+        #expect(abs((live() ?? -1) - 0.6) < 1e-6, "the next tick leaves it")
+        // A meter moves on every tick.
+        core.peaks = [[0.8, 0.8], [0, 0]]
+        synth.tick()
+        #expect(synth.meters[0][0] > 0, "meters stay at 30 Hz")
+    }
+
+    @Test("a trace frame holds the range over both ticks it covers")
+    func traceFoldsSkippedTick() {
+        let trace = synth.modTrace(part: 0, slot: 0)
+        let before = trace.frameCount
+        core.modOutMin[0][0][0] = 0.4; core.modOutMax[0][0][0] = 0.5
+        synth.tick()  // refresh tick: a frame
+        #expect(trace.frameCount == before + 1)
+        core.modOutMin[0][0][0] = 0.1; core.modOutMax[0][0][0] = 0.3
+        synth.tick()  // off tick: nothing pushed
+        #expect(trace.frameCount == before + 1)
+        core.modOutMin[0][0][0] = 0.6; core.modOutMax[0][0][0] = 0.9
+        synth.tick()
+        #expect(trace.frameCount == before + 2)
+        #expect(trace.latest(output: 0) == EG13ModTraceFrame(min: 0.1, max: 0.9))
     }
 
     @Test("a chip's level is its source's latest trace max; fixed sources have none")
@@ -108,18 +136,18 @@ struct EG13ModulationViewTests {
         #expect(synth.sourceLevel(part: 0, code: Self.mod1) == 0, "no data yet: dark")
         core.modOutMin[0][0][0] = 0.2
         core.modOutMax[0][0][0] = 0.7
-        synth.tick()
+        synth.tickModulation()
         #expect(abs((synth.sourceLevel(part: 0, code: Self.mod1) ?? -1) - 0.7) < 1e-6)
         core.modOutMax[0][0][0] = 1.7  // over range: clamped
-        synth.tick()
+        synth.tickModulation()
         #expect(synth.sourceLevel(part: 0, code: Self.mod1) == 1)
         core.modOutMin[0][0][0] = .infinity
         core.modOutMax[0][0][0] = -.infinity  // a gap
-        synth.tick()
+        synth.tickModulation()
         #expect(synth.sourceLevel(part: 0, code: Self.mod1) == 0)
         core.modOutMin[0][1][1] = -0.5
         core.modOutMax[0][1][1] = 0.4
-        synth.tick()
+        synth.tickModulation()
         #expect(abs((synth.sourceLevel(part: 0, code: 41) ?? -1) - 0.4) < 1e-6, "slot 2, output 2")
         #expect(synth.sourceLevel(part: 1, code: Self.mod1) == 0, "the other part's trace")
     }
@@ -137,22 +165,42 @@ struct EG13ModulationViewTests {
         core.values[core.index(of: id)] = 0.5
         reload()
         #expect(param.modulationRange == 0.5...1.0, "0.5 + 1.3 stops at 100 %")
-        #expect(param.modRing == EG13ModRing(from: 0.5, to: 1.0, dot: nil), "no live value: the range")
+        #expect(param.modRing == EG13ModRing(from: 0.5, to: 1.0, live: nil), "no live value: the range")
         core.values[core.index(of: EG13ParamID.routeAmount(0, 0))] = -0.8
         core.values[core.index(of: EG13ParamID.routeAmount(0, 1))] = -0.5
-        synth.tick()
+        synth.tickModulation()
         #expect(param.modulationRange == 0.0...0.5, "0.5 - 1.3 stops at 0 %")
         #expect(synth.param(filterP(1))?.modRing == nil, "an unrouted knob has no ring")
     }
 
     @Test("with a live value the ring runs from the set value to it, with a dot there")
     func ringLive() {
-        #expect(EG13ModRing.make(base: 0.4, live: 0.7, range: 0.4...0.9) == EG13ModRing(from: 0.4, to: 0.7, dot: 0.7))
-        #expect(EG13ModRing.make(base: 0.4, live: 0.1, range: 0.0...0.4) == EG13ModRing(from: 0.1, to: 0.4, dot: 0.1))
-        #expect(EG13ModRing.make(base: 0.4, live: 0.4, range: 0.4...0.9) == EG13ModRing(from: 0.4, to: 0.4, dot: 0.4))
-        #expect(EG13ModRing.make(base: 0.4, live: nil, range: 0.4...0.9) == EG13ModRing(from: 0.4, to: 0.9, dot: nil))
+        #expect(EG13ModRing.make(base: 0.4, live: 0.7, range: 0.4...0.9) == EG13ModRing(from: 0.4, to: 0.7, live: 0.7))
+        #expect(EG13ModRing.make(base: 0.4, live: 0.1, range: 0.0...0.4) == EG13ModRing(from: 0.1, to: 0.4, live: 0.1))
+        #expect(EG13ModRing.make(base: 0.4, live: 0.4, range: 0.4...0.9) == EG13ModRing(from: 0.4, to: 0.4, live: 0.4))
+        #expect(EG13ModRing.make(base: 0.4, live: nil, range: 0.4...0.9) == EG13ModRing(from: 0.4, to: 0.9, live: nil))
         #expect(EG13ModRing.make(base: 0.4, live: nil, range: nil) == nil)
-        #expect(EG13ModRing.make(base: 0.4, live: 1.4, range: nil) == EG13ModRing(from: 0.4, to: 1, dot: 1), "clamped")
+        #expect(EG13ModRing.make(base: 0.4, live: 1.4, range: nil) == EG13ModRing(from: 0.4, to: 1, live: 1), "clamped")
+    }
+
+    @Test("the arc sits on the cap: about 18 % of its radius wide, at least 2.5 pt, inside its edge")
+    func capArcGeometry() {
+        let style = EG13KnobStyle.default
+        for size in [EG13KnobSize.large, .medium, .small] {
+            let d = EG13Knob.diameter(size)
+            let capRadius = EG13ModRingGeometry.capRadius(d: d, style: style, size: size)
+            let width = EG13ModRingGeometry.width(capRadius: capRadius)
+            #expect(width >= 2.5)
+            #expect(width >= capRadius * 0.18 - 0.0001)
+            // The arc's centre line is a radius from the knob's centre; its outer edge stays inside the cap.
+            let centre = d / 2 - EG13ModRingGeometry.inset(d: d, capRadius: capRadius)
+            #expect(centre + width / 2 <= capRadius, "\(size) arc stays inside the cap")
+            #expect(centre - width / 2 > 0, "\(size) arc does not reach the cap's centre")
+        }
+        let large = EG13Knob.diameter(.large)
+        let capRadius = EG13ModRingGeometry.capRadius(d: large, style: style, size: .large)
+        #expect(abs(EG13ModRingGeometry.width(capRadius: capRadius) - capRadius * 0.18) < 0.0001, "18 % on a large knob")
+        #expect(EG13ModRingLayer.rangeOpacity == 0.35)
     }
 
     // MARK: Trace scale
@@ -178,10 +226,10 @@ struct EG13ModulationViewTests {
         let trace = EG13ModTrace()
         #expect(trace.frameCount == 0 && trace.latest(output: 0) == nil)
         for i in 0..<70 { trace.push(min: [Float(i)], max: [Float(i) + 1]) }
-        #expect(trace.frameCount == 60)
-        #expect(trace.frame(output: 0, at: 0) == EG13ModTraceFrame(min: 10, max: 11), "the oldest")
+        #expect(trace.frameCount == 30)
+        #expect(trace.frame(output: 0, at: 0) == EG13ModTraceFrame(min: 40, max: 41), "the oldest")
         #expect(trace.latest(output: 0) == EG13ModTraceFrame(min: 69, max: 70))
-        #expect(trace.frame(output: 0, at: 60) == nil && trace.frame(output: 9, at: 0) == nil)
+        #expect(trace.frame(output: 0, at: 30) == nil && trace.frame(output: 9, at: 0) == nil)
     }
 
     // MARK: Observation isolation
@@ -191,7 +239,7 @@ struct EG13ModulationViewTests {
         core.routes[0][0] = .init(source: Self.modWheel, destination: Self.filterP1, via: 0)
         reload()
         core.modValues[0][Int(Self.filterP1)] = 0.2
-        synth.tick()
+        synth.tickModulation()
         let x = synth.param(filterP(1))!  // modulated
         let y = synth.param(filterP(2))!  // not
         let other = synth.param(EG13ParamID.source(0, 1))!
@@ -208,7 +256,7 @@ struct EG13ModulationViewTests {
         }
         track()
         core.modValues[0][Int(Self.filterP1)] = 0.5
-        synth.tick()
+        synth.tickModulation()
         #expect(touchedX.fired, "the modulated knob re-renders (the test can fail)")
         #expect(!touchedY.fired && !touchedOther.fired, "the others do not")
         track()
@@ -216,8 +264,16 @@ struct EG13ModulationViewTests {
             core.modValues[0][Int(Self.filterP1)] = Float(0.5 + 0.02 * Double(step))
             core.modOutMin[0][0][0] = 0
             core.modOutMax[0][0][0] = Float(step) / 20
-            synth.tick()
+            synth.tickModulation()
         }
         #expect(touchedX.fired && !touchedY.fired && !touchedOther.fired)
+    }
+}
+
+extension EG13Synth {
+    /// A tick that refreshes the modulation fields: one more tick first when the next would not.
+    func tickModulation() {
+        if !nextTickRefreshesModulation { tick() }
+        tick()
     }
 }

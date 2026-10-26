@@ -133,64 +133,59 @@ struct EG13SweepArc: Shape {
     }
 }
 
-/// A dot on the sweep at a normalized value, `inset` from the outer edge to its centre.
-struct EG13SweepDot: Shape {
-    var at: Double
-    var inset: CGFloat
-    var radius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let ring = min(rect.width, rect.height) / 2 - inset
-        guard ring > 0 else { return path }
-        let a = EG13Sweep.angle(at).radians
-        let center = CGPoint(x: rect.midX + CGFloat(cos(a)) * ring, y: rect.midY + CGFloat(sin(a)) * ring)
-        path.addEllipse(in: CGRect(x: center.x - radius, y: center.y - radius, width: 2 * radius, height: 2 * radius))
-        return path
-    }
-}
-
-/// Where the modulation ring and its dot sit: on the skirt band's inner edge, against the cap, in
-/// the band's free strip that the value arc leaves (the arc fills 15 to 85 % of the band). Drawn
-/// under the arc, so the approved arc is never covered (spec §8, M6b decision 2).
+/// Where the modulation arc sits: on the cap face, near its outer edge, over the cap and under the
+/// indicator, so the approved value arc in the skirt band is never touched (owner, round 2).
 enum EG13ModRingGeometry {
-    static func width(band: CGFloat) -> CGFloat { max(1, band * 0.13) }
-    /// Radius inset of the ring's centre line from the knob's outer edge.
-    static func inset(outer: CGFloat, band: CGFloat) -> CGFloat { outer + band - width(band: band) / 2 }
-    static func dotRadius(band: CGFloat) -> CGFloat { max(1.5, band * 0.2) }
+    /// The least width, in points, at 100 %.
+    static let minWidth: CGFloat = 2.5
+    /// The gap between the arc and the cap's edge, as a part of the cap radius.
+    static let margin = 0.04
 
-    /// The skirt band's width in a knob drawn `d` across, and the distance of the skirt's edge from
-    /// the knob's edge (EG13KnobShape's own arithmetic).
-    static func band(d: CGFloat, style: EG13KnobStyle, size: EG13KnobSize) -> (band: CGFloat, outer: CGFloat) {
+    static func width(capRadius: CGFloat) -> CGFloat { max(minWidth, capRadius * 0.18) }
+
+    /// Radius inset of the arc's centre line from the knob's outer edge, for a knob `d` across.
+    static func inset(d: CGFloat, capRadius: CGFloat) -> CGFloat {
+        d / 2 - (capRadius - width(capRadius: capRadius) / 2 - capRadius * margin)
+    }
+
+    /// The cap's radius in a knob drawn `d` across (EG13KnobShape's own arithmetic).
+    static func capRadius(d: CGFloat, style: EG13KnobStyle, size: EG13KnobSize) -> CGFloat {
         let tickCount = style.tickCount(for: size)
         let ticks: CGFloat = tickCount > 1 ? d * 0.08 : 0
         let ring: CGFloat = style.arc && style.arcPlacement == .outside ? d * 0.07 : 0
         let skirt = d - 2 * (ticks + ring)
-        let cap = skirt * EG13KnobStyle.capRatio(for: size)
-        return ((skirt - cap) / 2, ticks + ring)
+        return skirt * EG13KnobStyle.capRatio(for: size) / 2
     }
 }
 
-/// The modulation ring and its dot, in one Canvas, in the knob's arc colour. A modulated knob
-/// redraws only this layer on a modulation tick (EG13Knob's live ring), not the knob.
+/// The modulation arc, in one Canvas, in the LCD green: from the set value to the live value, or the
+/// route range at 35 % when nothing moves. A modulated knob redraws only this layer on a modulation
+/// tick (EG13Knob's live ring), not the knob.
 struct EG13ModRingLayer: View {
     let ring: EG13ModRing
     let style: EG13KnobStyle
     let size: EG13KnobSize
+    @Environment(\.eg13ControlColors) private var colors
+
+    /// The opacity of the range-only arc.
+    static let rangeOpacity = 0.35
+    /// The dark outline around the arc, in points, in all.
+    static let outline: CGFloat = 1.2
 
     var body: some View {
         Canvas { context, canvas in
             let d = min(canvas.width, canvas.height)
-            let (band, outer) = EG13ModRingGeometry.band(d: d, style: style, size: size)
-            let inset = EG13ModRingGeometry.inset(outer: outer, band: band)
+            let capRadius = EG13ModRingGeometry.capRadius(d: d, style: style, size: size)
+            let inset = EG13ModRingGeometry.inset(d: d, capRadius: capRadius)
             let rect = CGRect(x: (canvas.width - d) / 2, y: (canvas.height - d) / 2, width: d, height: d)
-            let arc = EG13SweepArc(from: ring.from, to: max(ring.to, ring.from + 0.002), inset: inset).path(in: rect)
-            context.stroke(arc, with: .color(style.accent),
-                           style: StrokeStyle(lineWidth: EG13ModRingGeometry.width(band: band), lineCap: .butt))
-            if let dot = ring.dot {
-                let path = EG13SweepDot(at: dot, inset: inset, radius: EG13ModRingGeometry.dotRadius(band: band)).path(in: rect)
-                context.fill(path, with: .color(style.accent))
-            }
+            let arc = EG13SweepArc(from: ring.from, to: max(ring.to, ring.from + 0.004), inset: inset).path(in: rect)
+            let opacity = ring.live == nil ? Self.rangeOpacity : 1
+            let width = EG13ModRingGeometry.width(capRadius: capRadius)
+            // A thin dark outline keeps the green readable on the white cap (the same on every cap).
+            context.stroke(arc, with: .color(colors.lcdBackground.opacity(opacity)),
+                           style: StrokeStyle(lineWidth: width + Self.outline, lineCap: .butt))
+            context.stroke(arc, with: .color(colors.lcdText.opacity(opacity)),
+                           style: StrokeStyle(lineWidth: width, lineCap: .butt))
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -276,10 +271,10 @@ public struct EG13KnobShape: View {
                     EG13SweepArc(from: low, to: max(high, low + 0.002), inset: arcInset)
                         .stroke(style.accent, style: StrokeStyle(lineWidth: arcWidth, lineCap: .butt))
                 }
-                if style.arc, let modulation {
+                Circle().fill(capColor).frame(width: cap, height: cap)
+                if let modulation {
                     EG13ModRingLayer(ring: modulation, style: style, size: size)
                 }
-                Circle().fill(capColor).frame(width: cap, height: cap)
                 Capsule()
                     .fill(style.cap == .black ? colors.indicatorOnDark : colors.indicator)
                     .frame(width: max(2, d * 0.07), height: cap * 0.42)

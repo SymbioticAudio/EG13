@@ -210,3 +210,29 @@ Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-modula
 6. **CPU.** The display costs about 11 % of one core in the preview with the init patch, a chord, three modulated knobs and three traces (budget 10 %): see the Task 6 report.
 
 Status: awaiting owner feedback.
+
+## Modulation design log, round 2 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-modulation docs/superpowers/m6-design/modulation-r2` writes `editor-a.png`, `editor-b.png`, `editor-a-75.png`, `ring.png` (four caps, live and range-only, 200 %) and `motion-menu.png` (the Filter card's list, 200 %). Same patch and tick count as round 1.
+
+### Owner feedback on round 1, as decisions
+
+1. **Ring.** Almost invisible. Decision: remove the thin inner ring and the dot. The arc is on the cap itself, in the LCD green (#AFD22C), from the set value to the live value, at the value arc's angles; width 18 % of the cap radius, at least 2.5 pt; range-only at 35 % opacity. The value arc in the skirt band is untouched.
+2. **Motion chips.** Not understood; "a separate drop down menu for Motion might make more sense, when Motion is in use". Decision: chips deleted. A card with routes into it has one `MOTION n` LCD button after the engine picker (none without routes); it opens a popover (a menu cannot show live levels) listing each route in full ("Mod 2 Envelope → Cutoff  +30 %") with a level bar per row; a row calls the click closure Task 7 wires to the matrix. Mod cards get the same button; the trace keeps its place.
+3. **Crowding.** Card headers were very crowded. Resolved by the chips going: a header is now badge or icon and title, engine menu, Scope (mods), the button, and the trace (mods).
+4. **CPU.** "Let's try 15 fps motion." Decision: every second tick (15 Hz) refreshes the modulation fields (arcs, lists, traces). Knobs, meters and the rest stay at 30 Hz. The 0.001 threshold and the per-param observation isolation are kept. The trace holds 30 frames (still 2 s) and each frame is the min-max over both ticks it covers (the core clears its range on every read, so the skipped tick's range is folded in). An engine change refreshes at once.
+
+### Result
+
+CPU, `--mod-load`, release, 20 s window from 6 s after launch, three runs: 5.1, 5.1, 4.6 % of one core (round 1: 11.4, 12.0, 13.3 %).
+
+### Choices made here, open for the owner
+
+1. **Dark outline.** The green on the white cap was marginal, so every cap's arc has a 1.2 pt dark outline (the LCD well colour). Alternative: no outline, or only on the white cap.
+2. **Arc over the indicator.** The arc is drawn over the cap's indicator line; where they meet, the green covers the indicator's tip by a few points.
+3. **Popover, not a menu.** Needed for the live level bars. It is 340 pt wide, LCD colours.
+4. **Row text.** Source name in full ("Mod 1 Envelope"), destination without its card prefix ("Cutoff"), the amount as set (not live).
+5. **Pitch and Amp** still list on the Source card; Pan and Part Level have no list.
+
+Status: awaiting owner feedback.
+

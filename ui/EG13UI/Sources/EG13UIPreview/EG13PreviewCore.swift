@@ -355,7 +355,7 @@ final class EG13PreviewCore: EG13Core {
     }
 
     /// The init patch with a chord held, for the modulation visuals: more routes, so several cards
-    /// show chips and several knobs a ring.
+    /// show a Motion button and several knobs a ring.
     static func modulationDemo() -> EG13PreviewCore {
         let core = standard()
         core.heldChord = true

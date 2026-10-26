@@ -7,13 +7,13 @@ public struct EG13ModTraceFrame: Equatable, Sendable {
     public let max: Float
 }
 
-/// The last 60 display frames (2 s at 30 Hz) of one mod slot's outputs, for the trace a card
+/// The last 30 modulation frames (2 s at 15 Hz) of one mod slot's outputs, for the trace a card
 /// draws. A frame in which an output produced nothing (the core reports +inf / -inf) is a gap
 /// (nil), not a value, so a stopped envelope or an unused output draws as a break.
 @MainActor
 @Observable
 public final class EG13ModTrace {
-    public static let capacity = 60
+    public static let capacity = 30
     public static let outputCount = Int(EG13_MAX_MOD_OUTPUTS)
 
     /// Ring storage: per output, `capacity` slots; `head` is the slot of the oldest frame.

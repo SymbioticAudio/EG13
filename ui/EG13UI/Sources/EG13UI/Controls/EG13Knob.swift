@@ -92,7 +92,7 @@ private struct EG13LiveRing: View {
     let size: EG13KnobSize
 
     var body: some View {
-        if style.arc, let ring = param.modRing {
+        if let ring = param.modRing {
             EG13ModRingLayer(ring: ring, style: style, size: size)
         }
     }

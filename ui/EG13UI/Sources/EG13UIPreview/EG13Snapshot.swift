@@ -80,7 +80,7 @@ enum EG13Snapshot {
     }
 
     /// The modulation design set (gate 6a): both parts with modulation shown, Part A at 75 %, a ring
-    /// close-up at 200 %, card headers with chips, and the Mods column with traces. The preview
+    /// close-up at 200 %, card headers with the Motion button, and the Mods column with traces. The preview
     /// core's animation is a function of its tick count, so the same run draws the same PNGs.
     static func runModulation(into directory: String) -> Int32 {
         guard makeDirectory(directory) else { return 1 }
@@ -97,7 +97,7 @@ enum EG13Snapshot {
         ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-b.png") && ok
         synth.selectedPart = 0
         ok = writeFitted(EG13RingSheet(synth: synth), to: "\(directory)/ring.png", scale: 2) && ok
-        ok = writeFitted(EG13ChipsSheet(synth: synth), to: "\(directory)/chips.png", scale: 2) && ok
+        ok = writeFitted(EG13MotionSheet(synth: synth), to: "\(directory)/motion-menu.png", scale: 2) && ok
         ok = writeFitted(EG13ModCards(synth: synth, part: 0, width: EG13Layout.modCardWidth),
                          to: "\(directory)/traces.png", scale: 2) && ok
         return ok ? 0 : 1
@@ -250,79 +250,77 @@ struct EG13ContactSheet: View {
     }
 }
 
-/// The ring close-up: the Filter card (Cutoff and Resonance ride on routes), and every kind of
-/// knob in the states a ring has, labelled.
+/// The ring close-up: the Filter card (Cutoff and Resonance ride on routes), then one knob of each
+/// cap colour with a live arc and with only a route range, labelled.
 struct EG13RingSheet: View {
     let synth: EG13Synth
     @Environment(\.symbioticTheme) private var theme
 
-    /// One knob drawn with a ring: its cap, where it is set, and the ring's state.
+    /// One knob drawn with an arc: its cap, where it is set, and the arc.
     private struct Sample: Identifiable {
         let id: String
         let emphasis: EG13ParamEmphasis
-        let size: EG13KnobSize
         let base: Double
-        let ring: EG13ModRing
+        let live: Double
+        let range: ClosedRange<Double>
     }
 
     private let samples: [Sample] = [
-        Sample(id: "white, live up", emphasis: .plain, size: .large, base: 0.35,
-               ring: EG13ModRing.make(base: 0.35, live: 0.7, range: 0.35...0.9)!),
-        Sample(id: "white, live down", emphasis: .plain, size: .large, base: 0.7,
-               ring: EG13ModRing.make(base: 0.7, live: 0.4, range: 0.0...0.7)!),
-        Sample(id: "teal, live", emphasis: .teal, size: .large, base: 0.3,
-               ring: EG13ModRing.make(base: 0.3, live: 0.62, range: 0.3...0.8)!),
-        Sample(id: "pink, live", emphasis: .pink, size: .large, base: 0.5,
-               ring: EG13ModRing.make(base: 0.5, live: 0.3, range: 0.2...0.5)!),
-        Sample(id: "pink, range only", emphasis: .pink, size: .large, base: 0.4,
-               ring: EG13ModRing.make(base: 0.4, live: nil, range: 0.4...0.85)!),
-        Sample(id: "white, range only", emphasis: .plain, size: .large, base: 0.4,
-               ring: EG13ModRing.make(base: 0.4, live: nil, range: 0.4...0.85)!),
-        Sample(id: "black, live", emphasis: .black, size: .medium, base: 0.45,
-               ring: EG13ModRing.make(base: 0.45, live: 0.75, range: 0.45...1.0)!),
-        Sample(id: "small, live", emphasis: .plain, size: .small, base: 0.45,
-               ring: EG13ModRing.make(base: 0.45, live: 0.75, range: 0.45...1.0)!),
+        Sample(id: "white", emphasis: .plain, base: 0.35, live: 0.75, range: 0.35...0.9),
+        Sample(id: "pink", emphasis: .pink, base: 0.6, live: 0.3, range: 0.2...0.6),
+        Sample(id: "teal", emphasis: .teal, base: 0.3, live: 0.65, range: 0.3...0.8),
+        Sample(id: "black", emphasis: .black, base: 0.45, live: 0.85, range: 0.45...1.0),
     ]
+
+    private func row(_ title: String, live: Bool) -> some View {
+        HStack(alignment: .top, spacing: theme.spacing.l) {
+            Text(title)
+                .font(theme.type.caption.font)
+                .foregroundStyle(theme.text.secondary.color)
+                .frame(width: 90, alignment: .leading)
+            ForEach(samples) { sample in
+                VStack(spacing: theme.spacing.xs) {
+                    EG13KnobShape(normalized: sample.base, style: EG13Palette.knobStyle(for: sample.emphasis),
+                                  size: .large,
+                                  modulation: EG13ModRing.make(base: sample.base, live: live ? sample.live : nil,
+                                                               range: sample.range))
+                        .frame(width: EG13Layout.knobDiameter(.large), height: EG13Layout.knobDiameter(.large))
+                    Text(sample.id)
+                        .font(theme.type.caption.font)
+                        .foregroundStyle(theme.text.secondary.color)
+                }
+            }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.spacing.m) {
-            Text("Modulation ring, Part A (shown at 200 %)")
+            Text("Modulation arc on the cap, Part A (shown at 200 %)")
                 .font(.system(size: 16, weight: .light))
                 .foregroundStyle(theme.text.primary.color)
             EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0, width: 420)
-            HStack(alignment: .top, spacing: theme.spacing.m) {
-                ForEach(samples) { sample in
-                    VStack(spacing: theme.spacing.xs) {
-                        EG13KnobShape(normalized: sample.base, style: EG13Palette.knobStyle(for: sample.emphasis),
-                                      size: sample.size, modulation: sample.ring)
-                            .frame(width: EG13Layout.knobDiameter(sample.size), height: EG13Layout.knobDiameter(sample.size))
-                            .frame(height: EG13Layout.largeKnobDiameter)
-                        Text(sample.id)
-                            .font(theme.type.caption.font)
-                            .foregroundStyle(theme.text.secondary.color)
-                            .frame(width: 60)
-                    }
-                }
-            }
+            row("live", live: true)
+            row("range only", live: false)
         }
         .frame(width: 560, alignment: .leading)
     }
 }
 
-/// Card headers with chips: Source (five chips, one steady), Filter, and Mod 1, whose strip has
-/// room for one chip and "+2".
-struct EG13ChipsSheet: View {
+/// The Motion list of the Filter card on its own (a popover cannot be rendered to an image), under
+/// the card whose header holds the button.
+struct EG13MotionSheet: View {
     let synth: EG13Synth
     @Environment(\.symbioticTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.spacing.m) {
-            Text("Motion chips in the card headers, Part A (shown at 200 %)")
+            Text("Motion list of the Filter card, Part A (shown at 200 %)")
                 .font(.system(size: 16, weight: .light))
                 .foregroundStyle(theme.text.primary.color)
-            EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_SOURCE, part: 0, width: EG13Layout.slotCardWidth)
             EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0, width: EG13Layout.slotCardWidth)
-            EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_MOD1, part: 0, number: 1, width: EG13Layout.modCardWidth)
+            EG13MotionList(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.text.secondary.color.opacity(0.4), lineWidth: 1))
         }
     }
 }
