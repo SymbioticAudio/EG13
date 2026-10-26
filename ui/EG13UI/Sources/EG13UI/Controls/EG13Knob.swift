@@ -15,9 +15,9 @@ public struct EG13Knob: View {
     let showsMotionChip: Bool
     let layout: EG13KnobLayout
 
-    /// - Parameter layout: only for dense cards (mod slots): a smaller diameter, no value text
-    ///   under the knob, or a label other than the parameter's name. The knob's drawing is the
-    ///   approved design in every case.
+    /// - Parameter layout: the label other than the parameter's name, the width the label and the
+    ///   value text may take (longer text wraps), and the box the knob is centred in. The knob's
+    ///   drawing is the approved design in every case.
     public init(param: EG13Param, style: EG13KnobStyle, size: EG13KnobSize, showsMotionChip: Bool = false,
                 layout: EG13KnobLayout = EG13KnobLayout()) {
         self.param = param
@@ -82,12 +82,7 @@ private struct EG13KnobBody: View {
                     .frame(height: max(diameter, layout.boxHeight ?? diameter))
                 EG13ControlLabel(text: layout.label ?? EG13ParamLabels.short(param.name), style: style.label,
                                  chip: style.accentInk, font: theme.type.caption.font, width: layout.labelWidth)
-                Text(param.text)
-                    .font(theme.type.caption.font)
-                    .foregroundStyle(colors.label)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .monospacedDigit()
+                EG13ValueText(text: param.text, font: theme.type.caption.font, width: layout.labelWidth)
             }
             .modifier(EG13ControlAccess(interaction: $interaction, label: param.accessibilityLabel,
                                         valueText: param.text, focus: $isFocused))
@@ -97,6 +92,31 @@ private struct EG13KnobBody: View {
             }
         }
         .onChange(of: param.descriptor) { _, _ in interaction.cancel(); interaction = param.makeInteraction() }
+    }
+}
+
+/// The value text under a knob: the short form of the core's text (EG13ValueLabels), on one line
+/// or wrapped onto two in `width`. Never cut with "…" and never shrunk; the full text is in the
+/// tooltip and for VoiceOver.
+struct EG13ValueText: View {
+    let text: String
+    let font: Font
+    /// The most width the text may take; nil for one natural line.
+    var width: CGFloat?
+    @Environment(\.eg13ControlColors) private var colors
+
+    var body: some View {
+        let lines = width.map { EG13ValueFit.lines(text, width: $0).lines } ?? [EG13ValueLabels.short(text)]
+        VStack(spacing: 0) {
+            ForEach(lines.indices, id: \.self) { index in
+                Text(lines[index])
+                    .font(font)
+                    .foregroundStyle(colors.label)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .monospacedDigit()
+            }
+        }
     }
 }
 

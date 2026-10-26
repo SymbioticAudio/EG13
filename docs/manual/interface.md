@@ -26,7 +26,8 @@ The shown part is laid out as horizontal cards, one under another: **Source**, *
 
 - The four slot cards fill the left side. The four Mods are a column of mini-cards on the right.
 - Each card has a slim header strip with the slot's name and the **engine menu** (a green-on-grey LCD well, wide enough for the longest engine name). A mod card has its number, the engine menu and a **Scope** stepper (per voice or per part). Under the header are the knobs of the selected engine, as many rows as they need: a card with eight knobs is one row, a card with sixteen is two rows. A card whose engine is Off is its header strip alone. A knob the engine does not use is hidden, so a card never shows a knob that does nothing.
-- If four tall engines together are taller than the window allows (for example a 16-knob Source, a 16-knob Part FX and three 16-knob Mods), the column scrolls. Every knob stays reachable.
+- If four tall engines together are taller than the window allows (for example a 16-knob Source, a 16-knob Part FX and three 16-knob Mods), the column scrolls. Every knob stays reachable. A scroll that starts over a knob turns the knob (see Knobs and steppers below), not the column: to scroll the column, scroll over the gaps between knobs, a label or the scroller.
+- **Value text:** the text under a knob is the engine's value. A long one is shown in a short form (for example "Vocoder (long release)" reads "Vocoder long", and the Classic Filters models read "Cls LP 12 Std" for "Vember Classic Lowpass 12 dB Standard"); if it still needs room it wraps onto a second line. It is never cut with "..." and never shrunk. The full text is in the knob's tooltip and is what VoiceOver reads.
 - **Names:** a knob shows a short name, taken from the abbreviation printed on the real module panel where there is one (BRIGHT, STRUCT, RES, LPG COL, S.RATE). A name is never cut and never shrunk: a name of two words that does not fit wraps to two lines. Hover over a knob for its full name and value; VoiceOver reads the full name.
 - **Three knob sizes: large, medium and small**, following the real module's panel for the engine. For example, Granular follows the Clouds panel: Position, Size and Pitch are large, Density and Texture medium, Freeze small. An engine with no matching panel has medium knobs and one or two large main controls. A mod card's knobs are one step smaller (no large knob). Every knob shows its value under it.
 - **Knob colours** come from the real panel, so they are the same in Part A and Part B (a part is told apart by the A and B tabs, the part badge in the bottom bar and the meters, not by knob colour). A knob has a white, pink or teal cap. A pink or teal knob has a name tag in its colour and an arc in its colour; a white knob has a plain name and a light grey arc. For example, the Modal Synth follows the Elements panel: Blow, Flow and Blow Timbre are pink, Strike, Mallet and Strike Timbre teal, the rest white. Engines with no matching panel (and every mod) have white caps, with the main one or two controls large; see the design log for the few exceptions. **Secondary** knobs have a black cap with a grey arc: master **Dry** and **Out** and the matrix routes.
@@ -35,7 +36,7 @@ The shown part is laid out as horizontal cards, one under another: **Source**, *
 ## Knobs and steppers
 
 - **Drag** a knob up or down: 200 points of travel sweep the whole range. Hold **Shift** to move ten times finer.
-- **Scroll** over a knob: one scroll line moves 1/100 of the range (one step on a stepped setting). Shift is ten times finer.
+- **Scroll** over a knob: one scroll line moves 1/100 of the range (one step on a stepped setting). Shift is ten times finer. This is deliberate: it also applies inside a scrolling column, so scrolling over a knob never moves the column.
 - **Double-click** a knob to reset it to its default.
 - With a knob focused, the **arrow keys** move it 1/100 of the range (Shift: a tenth of that), or one step.
 - Stepped settings (voices, channel, mode and so on) always land on whole steps, and show their value in the LCD well; the minus and plus buttons move one step.
@@ -46,7 +47,7 @@ The shown part is laid out as horizontal cards, one under another: **Source**, *
 
 ## Bottom bar and meters
 
-The bottom bar holds, from the left: the shown part's **Level**, **Pan**, **Glide**, **Voice Mode** and **Voices**, a **Part settings** button, the master **Dry** and **Out**, and a meter for each part.
+The bottom bar holds, from the left: the shown part's **Level**, **Pan**, **Glide**, **Voice Mode** and **Voices**, a **Part settings** button, the master **Dry** and **Out** (grouped under the caption **OUTPUT**, so it is not mistaken for the header's MASTER group), and a meter for each part.
 
 - **Part settings** opens a panel with the rest of the part's settings, as steppers: Transpose, Base Note, MIDI Channel, Key Low, Key High, Trigger, Bend Range, Mono, Output, Input Source, **Part FX Input** (what the Part FX card listens to: the part mix, the input, or both), MPE and MPE Bend Range, and the four controller numbers CC A to CC D. Click anywhere else to close it.
 - **Dry** is the level of the plugin's input mixed straight into the output, delayed to stay in time with the processed sound. **Out** is the master level.

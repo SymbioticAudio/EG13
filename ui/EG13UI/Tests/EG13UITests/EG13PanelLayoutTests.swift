@@ -37,8 +37,21 @@ struct EG13PanelLayoutTests {
         }
     }
 
-    @Test("Every parameter is reachable once, for every real engine of every slot, on both parts")
-    func reachableWithRealEngines() {
+    /// Every id of one part and the master whose P the selected engine uses (not named "(unused)").
+    func expectedIDs(part: Int) -> Set<UInt32> {
+        var ids = Set<UInt32>()
+        for index in 0..<core.paramCount() {
+            let id = core.descriptors[index].id
+            guard id >> 16 == UInt32(part) || id >> 16 == 0xFF else { continue }
+            let slot = (id >> 8) & 0xFF
+            let isP = (1...8).contains(slot) && (id & 0xFF) >= 1
+            if !(isP && core.paramName(at: index) == EG13Slot.unusedName) { ids.insert(id) }
+        }
+        return ids
+    }
+
+    @Test("With the real engine names, every used parameter is reachable exactly once, on both parts")
+    func reachableOnceWithRealEngines() {
         for part in 0..<EG13ParamID.parts {
             for kind in Self.slotKinds {
                 let count = core.slotEngines[Int(kind.rawValue)]!.count
@@ -46,8 +59,11 @@ struct EG13PanelLayoutTests {
                     core.select(kind, engine: engine, part: part)
                     synth.tick()
                     let ids = synth.editorControls(part: part).all.map(\.id)
-                    #expect(ids.count == Set(ids).count, "duplicate: slot \(kind.rawValue) engine \(engine)")
-                    for id in ids { #expect(synth.name(id) != EG13Slot.unusedName) }
+                    let note = "slot \(kind.rawValue) engine \(engine) part \(part)"
+                    #expect(ids.count == Set(ids).count, "duplicate: \(note)")
+                    let expected = expectedIDs(part: part)
+                    #expect(Set(ids) == expected,
+                            "missing \(expected.subtracting(ids).sorted()) extra \(Set(ids).subtracting(expected).sorted()) \(note)")
                 }
                 core.select(kind, engine: 0, part: part)
             }
@@ -152,13 +168,20 @@ struct EG13PanelLayoutTests {
                     let label = EG13ParamLabels.short(name)
                     let fit = EG13LabelFit.lines(label, width: width)
                     #expect(fit.fits, "\(engine.name) \(name) -> \(label) in \(width) pt")
-                    #expect(fit.lines.count <= 2)
+                    // Each line is no wider than the cell's text: nothing is cut or overflows.
+                    for line in fit.lines { #expect(EG13LabelFit.width(line) <= width, "\(label): \(line)") }
                 }
             }
         }
-        // Part Level, Pan, Glide, Dry, Out sit in cells of 70 pt or more.
-        for name in ["Level", "Pan", "Glide", "Dry"] {
-            #expect(EG13LabelFit.lines(EG13ParamLabels.short(name), width: EG13Layout.labelWidth(cell: 64)).fits)
+        // The bar and matrix labels sit in cells of 64 pt or more (Level, Pan, Glide, Dry, Out and
+        // the matrix's Route 1...12); measure them at 64.
+        let width = EG13Layout.labelWidth(cell: 64)
+        let labels = ["Level", "Pan", "Glide", "Dry", "Out"] .map { EG13ParamLabels.short($0) }
+            + (1...EG13ParamID.routeCount).map { "Route \($0)" }
+        for label in labels {
+            let fit = EG13LabelFit.lines(label, width: width)
+            #expect(fit.fits, "\(label) in \(width) pt")
+            for line in fit.lines { #expect(EG13LabelFit.width(line) <= width, "\(label): \(line)") }
         }
     }
 

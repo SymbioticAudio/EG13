@@ -41,7 +41,7 @@ struct EG13BottomBar: View {
                 HStack(spacing: theme.spacing.s) {
                     ForEach(controls.masterBar) { EG13ControlView(synth: synth, spec: $0, part: part) }
                 }
-                Text("MASTER").font(theme.type.caption.font.weight(.bold)).foregroundStyle(theme.text.secondary.color)
+                Text("OUTPUT").font(theme.type.caption.font.weight(.bold)).foregroundStyle(theme.text.secondary.color)
             }
             EG13MeterView(meters: synth.meters, holds: synth.meterHolds)
         }
