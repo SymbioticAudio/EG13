@@ -24,6 +24,7 @@ add_library(eg13_core STATIC
   engine/peaks_engine.cpp
   synth/param_table.cpp
   synth/synth.cpp
+  preset/preset.cpp
   state/state.cpp
   voice/voice_allocator.cpp
   voice/voice.cpp
