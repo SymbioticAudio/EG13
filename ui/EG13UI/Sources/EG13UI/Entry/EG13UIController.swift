@@ -68,8 +68,11 @@ final class EG13UIController: NSObject {
     init(api: UnsafePointer<EG13CoreAPI>, kind: EG13Synth.Kind, zoom: Double) {
         EG13UIController.registerIconsOnce()
         client = EG13CoreAPIClient(api: api)
-        synth = EG13Synth(core: client, kind: kind)
-        view = EG13PluginView(synth: synth, zoom: CGFloat(zoom))
+        // zoom 0 means "the default from settings", read fresh: another instance may have changed it.
+        let store = EG13SettingsStore.shared
+        store.reload()
+        synth = EG13Synth(core: client, kind: kind, settings: store)
+        view = EG13PluginView(synth: synth, zoom: CGFloat(store.initialZoom(requested: zoom)))
         super.init()
         EG13LiveObjects.born()
     }

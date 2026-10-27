@@ -144,6 +144,58 @@ enum EG13Snapshot {
                      to: "\(directory)/key-range.png") ? 0 : 1
     }
 
+    /// Gate 9a, round 1 (M6b layout): the editor with MATRIX and with MODS shown, Part A at 75 %, the Part
+    /// settings popover in Split and in Layer, the Settings and About sheets, and the knob context menu.
+    static func runLayoutRound1(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let core = EG13PreviewCore.modulationDemo()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<70 { synth.tick() }
+        let base = EG13Layout.baseSize
+        var ok = true
+        func matrix() -> EG13RightColumnState { let c = EG13RightColumnState(); c.pane = .matrix; return c }
+        ok = write(EG13RootView(synth: synth, column: matrix()), size: base, zoom: 1,
+                   to: "\(directory)/editor-matrix.png") && ok
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-mods.png") && ok
+        ok = write(EG13RootView(synth: synth, column: matrix()), size: base, zoom: 0.75,
+                   to: "\(directory)/editor-matrix-75.png") && ok
+        ok = write(EG13RootView(synth: synth, settingsTab: .settings), size: base, zoom: 1,
+                   to: "\(directory)/settings.png") && ok
+        ok = write(EG13RootView(synth: synth, settingsTab: .about), size: base, zoom: 1,
+                   to: "\(directory)/about.png") && ok
+        // The Part settings popover: Split (A low, B high, a marker) and Layer (both over most of the range).
+        let split: [(UInt32, Double)] = [
+            (EG13ParamID.master(.mode), Double(EG13Mode.split.rawValue)), (EG13ParamID.master(.splitNote), 60),
+            (EG13ParamID.part(0, .keyLow), 24), (EG13ParamID.part(0, .keyHigh), 71),
+            (EG13ParamID.part(1, .keyLow), 60), (EG13ParamID.part(1, .keyHigh), 108),
+        ]
+        let layer: [(UInt32, Double)] = [
+            (EG13ParamID.master(.mode), Double(EG13Mode.layer.rawValue)),
+            (EG13ParamID.part(0, .keyLow), 21), (EG13ParamID.part(0, .keyHigh), 108),
+            (EG13ParamID.part(1, .keyLow), 48), (EG13ParamID.part(1, .keyHigh), 96),
+        ]
+        for (name, values) in [("split", split), ("layer", layer)] {
+            let partCore = EG13PreviewCore.standard()
+            let partSynth = EG13Synth(core: partCore, kind: .instrument)
+            for _ in 0..<4 { partSynth.tick() }
+            for (id, value) in values {
+                partSynth.begin(id)
+                partSynth.edit(id, value)
+                partSynth.end(id)
+            }
+            ok = write(EG13PartSettingsSheet(synth: partSynth), size: EG13PartSettingsSheet.size, zoom: 1.5,
+                       to: "\(directory)/part-settings-\(name).png") && ok
+        }
+        if let routed = synth.params.first(where: { $0.isRouted }), let menu = synth.contextMenu(for: routed.id) {
+            ok = writeFitted(EG13ContextMenuSheet(model: menu, knob: routed.name), to: "\(directory)/context-menu.png",
+                             scale: 2) && ok
+        } else {
+            FileHandle.standardError.write(Data("no routed knob for the context menu\n".utf8))
+            ok = false
+        }
+        return ok ? 0 : 1
+    }
+
     /// The layout design set: both parts at 100%, Part A at 75%, the header close-up, a contact sheet
     /// of every engine for each slot kind, and the worst case (the tallest engines in every slot) as
     /// the full height of both columns, with the visible strip marked.
@@ -216,7 +268,7 @@ struct EG13HeaderPreview: View {
 /// The Part settings popover's content for both parts, side by side on the window grey.
 struct EG13PartSettingsSheet: View {
     let synth: EG13Synth
-    static let size = CGSize(width: 1000, height: 440)
+    static let size = CGSize(width: 860, height: 520)
     @Environment(\.symbioticTheme) private var theme
 
     var body: some View {
@@ -348,6 +400,54 @@ struct EG13MotionSheet: View {
             EG13MotionList(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.text.secondary.color.opacity(0.4), lineWidth: 1))
+        }
+    }
+}
+
+/// The knob context menu's content as a list (a real NSMenu cannot be rendered to an image): the menu
+/// with "Modulate from" and the removals, and the submenu of sources beside it.
+struct EG13ContextMenuSheet: View {
+    let model: EG13ContextMenuModel
+    let knob: String
+    @Environment(\.symbioticTheme) private var theme
+
+    private func item(_ title: String, enabled: Bool = true, arrow: Bool = false) -> some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: theme.spacing.l)
+            if arrow { Text("\u{25B8}") }
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(enabled ? Color.black : Color.black.opacity(0.35))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
+    }
+
+    private func menu<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0, content: content)
+            .padding(.vertical, 5)
+            .frame(width: 280)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color(white: 0.96)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.black.opacity(0.2), lineWidth: 1))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Context menu of the \(knob) knob (right-click or ctrl-click); the submenu opens from Modulate from")
+                .font(.system(size: 14, weight: .light))
+                .foregroundStyle(theme.text.primary.color)
+            HStack(alignment: .top, spacing: 6) {
+                menu {
+                    item(model.modulateTitle, enabled: model.modulateEnabled, arrow: model.modulateEnabled)
+                    if !model.removals.isEmpty {
+                        Divider().padding(.vertical, 4)
+                        ForEach(model.removals.indices, id: \.self) { item(model.removals[$0].title) }
+                    }
+                }
+                if model.modulateEnabled {
+                    menu { ForEach(model.sources.indices, id: \.self) { item(model.sources[$0].name) } }
+                }
+            }
         }
     }
 }

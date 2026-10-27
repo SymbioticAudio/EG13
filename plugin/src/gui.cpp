@@ -26,9 +26,17 @@ Gui::~Gui() { destroy(false); }
 
 bool Gui::create() {
   if (handle_ != nullptr) return true;
-  handle_ = eg13_ui_create(&api_, kind_, 1.0);
-  width_ = kGuiBaseWidth;
-  height_ = kGuiBaseHeight;
+  // The window opens at the settings' default size. get_size reports it from here on; the editor
+  // reads the same setting for its zoom (0 = "use the default"), and set_size below keeps the two
+  // equal even if the file changed in between.
+  const double zoom = eg13_ui_default_zoom();
+  uint32_t width = uint32_t(std::lround(double(kGuiBaseWidth) * zoom));
+  uint32_t height = uint32_t(std::lround(double(kGuiBaseHeight) * zoom));
+  adjustGuiSize(width, height);
+  handle_ = eg13_ui_create(&api_, kind_, 0.0);
+  width_ = width;
+  height_ = height;
+  if (handle_ != nullptr) eg13_ui_set_size(handle_, width_, height_);
   return handle_ != nullptr;
 }
 

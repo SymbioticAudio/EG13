@@ -5,6 +5,9 @@
 #include <objc/runtime.h>
 
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <vector>
 
 #include "core_api.h"
@@ -18,6 +21,13 @@ extern "C" void* objc_autoreleasePoolPush(void);
 extern "C" void objc_autoreleasePoolPop(void*);
 
 namespace {
+
+// The editor reads the app-wide settings file; the tests point it at a path that does not exist,
+// so a developer's own settings cannot change the sizes they check.
+const bool kSettingsRedirected = [] {
+  setenv("EG13_SETTINGS_PATH", "/nonexistent/eg13-test/settings.json", 1);
+  return true;
+}();
 
 // A plain NSView standing in for the host's parent view (+1, the caller releases it).
 void* newView() {
@@ -159,4 +169,27 @@ TEST_CASE("Without a host resize hook the request is refused", "[gui]") {
   REQUIRE(gui.create());
   CHECK_FALSE(gui.requestResize(1800, 1140));
   CHECK(gui.width() == 1200);
+}
+
+TEST_CASE("A new editor opens at the settings' default size", "[gui]") {
+  const std::string path = std::string(::getenv("TMPDIR") ? ::getenv("TMPDIR") : "/tmp") + "/eg13-gui-settings.json";
+  {
+    std::FILE* file = std::fopen(path.c_str(), "w");
+    REQUIRE(file != nullptr);
+    std::fputs("{\"schemaVersion\":1,\"defaultWindowPercent\":150,\"modulationDisplay\":true}", file);
+    std::fclose(file);
+  }
+  setenv("EG13_SETTINGS_PATH", path.c_str(), 1);
+  CHECK(eg13_ui_default_zoom() == 1.5);
+  Fixture f;
+  eg13::Gui gui(f.api, 0, f.bridge, {});
+  REQUIRE(gui.create());
+  CHECK(gui.width() == 1800);
+  CHECK(gui.height() == 1140);
+  gui.destroy();
+  setenv("EG13_SETTINGS_PATH", "/nonexistent/eg13-test/settings.json", 1);
+  std::remove(path.c_str());
+  REQUIRE(gui.create());
+  CHECK(gui.width() == 1200);  // missing file: 100 %
+  gui.destroy();
 }

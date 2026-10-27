@@ -88,7 +88,7 @@ public struct EG13ModuleCard: View {
                 // The Motion button shows with at least one route into the card; a mod card's trace sits at the end.
                 EG13MotionButton(synth: synth, kind: kind, part: part, onSelect: onMotionSelect)
                 Spacer(minLength: 0)
-                if let number, !controls.params.isEmpty {
+                if let number, !controls.params.isEmpty, synth.showsModulation {
                     EG13ModTraceView(trace: synth.modTrace(part: part, slot: number - 1))
                         .frame(width: Self.traceSize.width, height: Self.traceSize.height)
                 }

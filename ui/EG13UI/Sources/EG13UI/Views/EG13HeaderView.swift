@@ -8,13 +8,12 @@ import SymbioticBrand
 
 /// Header on the rack grey: the EG13 wordmark, the A/B part tabs in the part accents (the shown
 /// tab also names the part's Source engine) and the MASTER group (Mode, Latency Mode, Split Note,
-/// Voice Gain, Soft Clip), each with a small label. The cog holds the window size and About.
+/// Voice Gain, Soft Clip), each with a small label. The cog opens the Settings and About panel.
 struct EG13HeaderView: View {
     @Bindable var synth: EG13Synth
-    @State private var showsSettings = false
+    /// The cog was pressed (the root view shows the Settings and About panel over the editor).
+    var onSettings: () -> Void = {}
     @Environment(\.symbioticTheme) private var theme
-
-    static let zoomChoices: [Double] = [0.75, 1.0, 1.25, 1.5, 2.0]
 
     var body: some View {
         let part = synth.selectedPart
@@ -24,10 +23,9 @@ struct EG13HeaderView: View {
             partTabs
             Spacer(minLength: 0)
             masterGroup(header, part: part)
-            Button { showsSettings = true } label: { Icon(.appSettings, size: 16) }
+            Button(action: onSettings) { Icon(.appSettings, size: 16) }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Settings and About")
-                .popover(isPresented: $showsSettings) { settings }
         }
         .foregroundStyle(theme.text.inverse.color)
         .padding(.horizontal, EG13Layout.outerPadding + 4)
@@ -106,33 +104,5 @@ struct EG13HeaderView: View {
         .environment(\.eg13ControlColors, EG13Palette.headerControls)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Master settings")
-    }
-
-    private var settings: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.m) {
-            VStack(alignment: .leading, spacing: theme.spacing.xs) {
-                Text("WINDOW SIZE").font(theme.type.caption.font.weight(.bold))
-                    .accessibilityAddTraits(.isHeader)
-                HStack(spacing: theme.spacing.xs) {
-                    ForEach(Self.zoomChoices, id: \.self) { zoom in
-                        Button("\(Int(zoom * 100))%") { synth.requestZoom(zoom) }
-                    }
-                }
-            }
-            Divider()
-            VStack(alignment: .leading, spacing: theme.spacing.s) {
-                Text("ABOUT").font(theme.type.caption.font.weight(.bold))
-                    .accessibilityAddTraits(.isHeader)
-                Text(title).font(theme.type.title.font)
-                Text("DSP based on the open-source Eurorack firmware by Émilie Gillet.")
-                Text("GPL-3.0. github.com/SymbioticAudio/EG13")
-            }
-            .font(theme.type.body.font)
-        }
-        .foregroundStyle(theme.text.primary.color)
-        .padding(theme.spacing.l)
-        .frame(width: 320, alignment: .leading)
-        .background(theme.surface.panel.color)
-        .symbioticTheme(EG13Theme.theme)
     }
 }

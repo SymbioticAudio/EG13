@@ -6,7 +6,7 @@ EG13 opens its own window in the host. It shows one part at a time and lets you 
 
 The window is 1200 × 760 points at 100 %. You can resize it from 75 % (900 × 570) to 200 % (2400 × 1520). The proportions stay locked: dragging any edge or corner scales the whole window, and the layout scales with it, so nothing is cropped or rearranged at any size. In hosts that cannot resize plugin windows, the window stays at 100 %.
 
-The window works in points, so on a Retina display it is drawn sharp at every size and EG13 ignores the host's own scale setting. Closing the window and opening it again starts at 100 %.
+The window works in points, so on a Retina display it is drawn sharp at every size and EG13 ignores the host's own scale setting. A new window opens at the default size from Settings (100 % until you change it).
 
 ## Layout
 
@@ -18,7 +18,7 @@ The header strip holds, from the left, the EG13 name, the A and B part tabs, and
 
 - The **A and B tabs** choose which part the window shows. Part A is teal, Part B is pink. The shown tab is filled with the part's colour. The shown tab also names the part's Source engine. Switching tabs changes every card, the matrix, the part settings and the bottom bar to that part; the master controls stay as they are.
 - The **MASTER** group holds the plugin-wide settings, each with a small label under it: **Mode** (Single, Layer, Split or Multi), **Latency** (Live or Studio), **Split** (the split note), **Gain** (voice gain) and **Clip** (soft clip). Master **Dry** and **Out** stay in the bottom bar. The group is the same on both tabs.
-- The **cog** opens a small panel with the **window size** (75 %, 100 %, 125 %, 150 %, 200 %; the host may keep the window as it is) and **About**.
+- The **cog** opens the **Settings and About** panel (see below).
 
 ## Cards
 
@@ -53,6 +53,18 @@ Right-click a knob (or ctrl-click it) to open its context menu. Nothing about th
 - **Modulate from** opens a list of sources (the same as the matrix's source menu, in the same order). Choosing one puts the source into the **first empty route** of the shown part, aimed at this knob, at an amount of +25 % (the amount is set as one edit). An empty route is one with no source, via or destination.
 - When all 12 routes are in use, the item reads **Matrix full** and is dimmed.
 - For each route that modulates the knob, the menu also has **Remove modulation: <source>** (for example "Remove modulation: Mod 1 Envelope"). It clears that route like the matrix's clear button.
+
+## Settings and About
+
+The cog in the header opens a panel over the editor, with two tabs, **Settings** and **About**. The rest of the editor is dimmed behind it; **Close**, or a click outside the panel, closes it. (It is drawn inside the editor, not as a separate window, so it scales with the window and works the same in every host.)
+
+**Settings** are for the whole Mac: every EG13 window, in every project, uses them, and they are never saved in a project. They are stored in `~/Library/Application Support/SymbioticAudio/EG13/settings.json`. EG13 writes the file only when you change a setting. If the file is missing, damaged or from a newer EG13, EG13 uses the defaults and leaves the file alone until you change something.
+
+- **Default window size for new editors:** 75 %, 100 %, 125 %, 150 % or 200 % (default 100 %). It applies to windows opened from then on; a window that is already open keeps its size. Hosts that cannot resize plugin windows keep 100 %.
+- **Modulation display:** On (default) or Off. Off hides the wave marks, the MOTION buttons and the mod traces, and stops their 15 Hz refresh, which saves a little CPU. It changes nothing in the sound or the matrix, and the matrix and the mod cards stay fully editable.
+- **Window size** buttons (75 % to 200 %) resize the current window now. They are not saved; use the default above to change what new windows open at. The host may refuse the new size.
+
+**About** shows the product name (EG13 or EG13 FX), the version and build, the credit "DSP based on the open-source Eurorack firmware by Émilie Gillet.", the licence (GPL-3.0) and the repository, github.com/SymbioticAudio/EG13 (click it to open it in your browser).
 
 ## Modulation display
 

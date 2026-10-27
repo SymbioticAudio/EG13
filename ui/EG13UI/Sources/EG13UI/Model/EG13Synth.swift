@@ -23,6 +23,12 @@ public final class EG13Synth {
                                                          defaultValue: 0)
 
     public let kind: Kind
+    /// The app-wide settings (default window size, modulation display).
+    public let settings: EG13SettingsStore
+    /// Whether the modulation visuals (marks, MOTION buttons, traces) show and refresh.
+    public var showsModulation: Bool { settings.settings.modulationDisplay }
+    /// Modulation refreshes run so far (tests check that none run with the display off).
+    @ObservationIgnored private(set) var modulationRefreshCount = 0
     public private(set) var params: [EG13Param] = []
     /// Meter levels after ballistics, linear: [part][left, right]. Instant attack, 300 ms decay.
     public private(set) var meters: [[Float]] = [[0, 0], [0, 0]]
@@ -80,8 +86,11 @@ public final class EG13Synth {
     @ObservationIgnored private var lastTick: Double
 
     /// clock: seconds, monotonic. Tests pass their own so meter timing needs no sleeps.
-    public init(core: any EG13Core, kind: Kind, clock: @escaping () -> Double = { CACurrentMediaTime() }) {
+    /// settings: the app-wide settings; the default keeps them in memory, the editor passes the shared store.
+    public init(core: any EG13Core, kind: Kind, settings: EG13SettingsStore = EG13SettingsStore(url: nil),
+                clock: @escaping () -> Double = { CACurrentMediaTime() }) {
         self.core = core
+        self.settings = settings
         self.kind = kind
         self.clock = clock
         lastTick = clock()
@@ -219,9 +228,16 @@ public final class EG13Synth {
         if regenerated { for param in params { param.refreshText() } }
         expirePending()
         tickCount += 1
-        let modulationTick = regenerated || tickCount % 2 == 1
-        if modulationTick { updateModulation() }
-        updateTraces(frame, push: modulationTick)
+        if showsModulation {
+            let modulationTick = regenerated || tickCount % 2 == 1
+            if modulationTick {
+                modulationRefreshCount += 1
+                updateModulation()
+            }
+            updateTraces(frame, push: modulationTick)
+        } else {
+            clearModulation()
+        }
         if frame.activeVoices != activeVoices { activeVoices = frame.activeVoices }
         updateMeters(frame.partPeaks, dt: dt)
     }
@@ -286,6 +302,9 @@ public final class EG13Synth {
         }
         slots = built
     }
+
+    /// The core's version text for the About tab, "0.6.0 (abc1234)".
+    public func versionText() -> String { core.version() }
 
     /// Asks the host for an editor window of zoom times the base size.
     public func requestZoom(_ zoom: Double) {
@@ -395,6 +414,16 @@ public final class EG13Synth {
         if table != routeTable { routeTable = table }
         if sourceList != sourceCodes { sourceCodes = sourceList }
         if destinationList != destinationCodes { destinationCodes = destinationList }
+    }
+
+    /// The display is off: drops the marks once, and the pending trace ranges, so switching it on
+    /// starts clean.
+    private func clearModulation() {
+        if !modulatedIDs.isEmpty {
+            for id in modulatedIDs { paramByID[id]?.setRouted(false) }
+            modulatedIDs = []
+        }
+        if !pendingMin.isEmpty { pendingMin = []; pendingMax = [] }
     }
 
     /// Each modulation tick: marks the parameters a visible route targets, and clears the ones that

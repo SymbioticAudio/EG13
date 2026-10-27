@@ -10,18 +10,23 @@ public struct EG13RootView: View {
     let synth: EG13Synth
     /// The right-hand column's pane and the matrix row a Motion row asked for; kept across part switches.
     @State private var column = EG13RightColumnState()
+    /// The Settings and About panel, or nil when closed. It is drawn inside the editor (see EG13SettingsPanel).
+    @State private var settingsTab: EG13SettingsTab?
 
     /// - Parameter column: the right-hand column's state; the previews start it on MATRIX.
-    public init(synth: EG13Synth, column: EG13RightColumnState = EG13RightColumnState()) {
+    /// - Parameter settingsTab: the panel's tab if it starts open (the previews).
+    public init(synth: EG13Synth, column: EG13RightColumnState = EG13RightColumnState(),
+                settingsTab: EG13SettingsTab? = nil) {
         self.synth = synth
         _column = State(initialValue: column)
+        _settingsTab = State(initialValue: settingsTab)
     }
 
     public var body: some View {
         let theme = EG13Theme.theme
         let part = synth.selectedPart
         VStack(spacing: 0) {
-            EG13HeaderView(synth: synth)
+            EG13HeaderView(synth: synth) { settingsTab = settingsTab ?? .settings }
             VStack(spacing: EG13Layout.gap) {
                 strip(part: part)
                     .frame(width: EG13Layout.stripWidth, height: EG13Layout.stripHeight, alignment: .topLeading)
@@ -34,6 +39,13 @@ public struct EG13RootView: View {
         }
         .frame(width: EG13Layout.baseSize.width, height: EG13Layout.baseSize.height, alignment: .top)
         .background(theme.surface.window.color)
+        .overlay {
+            if let tab = settingsTab {
+                EG13SettingsPanel(synth: synth, tab: Binding(get: { tab }, set: { settingsTab = $0 })) {
+                    settingsTab = nil
+                }
+            }
+        }
         .symbioticTheme(theme)
         // The shown part's cards are rebuilt from the model; a part switch replaces every control.
         .id(part)

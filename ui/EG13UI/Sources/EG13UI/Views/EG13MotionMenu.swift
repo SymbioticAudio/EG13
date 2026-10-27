@@ -17,7 +17,7 @@ struct EG13MotionButton: View {
 
     var body: some View {
         let items = synth.motionItems(kind: kind, part: part)
-        if !items.isEmpty {
+        if synth.showsModulation, !items.isEmpty {
             Button { isOpen.toggle() } label: {
                 Text("MOTION \(items.count)")
                     .font(.system(size: max(theme.type.caption.size, 11), weight: .bold, design: .monospaced))
