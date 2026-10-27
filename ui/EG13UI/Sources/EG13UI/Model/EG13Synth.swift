@@ -6,7 +6,7 @@ import QuartzCore
 /// and the engine slots. The single source of truth the views read, over the core API.
 ///
 /// `tick()` runs at display rate (30 Hz, driven by a Timer the editor owns); the modulation fields
-/// (rings, Motion lists, traces) refresh on every second tick, 15 Hz (owner, gate 6a round 2). It copies the
+/// (marks, Motion lists, traces) refresh on every second tick, 15 Hz (owner, gate 6a round 2). It copies the
 /// snapshot into the model and never calls begin, edit or end: only the user's gestures
 /// do. While a gesture is open on a parameter, `value(_:)` returns the user's last edit for
 /// it, not the snapshot's; the override ends with the gesture, whichever way it ends.
@@ -230,7 +230,7 @@ public final class EG13Synth {
         expirePending()
         tickCount += 1
         let modulationTick = regenerated || tickCount % 2 == 1
-        if modulationTick { updateModulation(frame) }
+        if modulationTick { updateModulation() }
         updateTraces(frame, push: modulationTick)
         if frame.activeVoices != activeVoices { activeVoices = frame.activeVoices }
         updateMeters(frame.partPeaks, dt: dt)
@@ -318,7 +318,7 @@ public final class EG13Synth {
 
     /// The routes that modulate a parameter: a source and the parameter's destination, both named
     /// by the part's current engines. Routes into a P the engine hides (and routes from a source it
-    /// hides) are left out, so no chip or ring shows for them.
+    /// hides) are left out, so no mark or Motion row shows for them.
     public func routes(into id: UInt32, part: Int) -> [EG13ModRoute] {
         guard let destination = destinationByID[id] else { return [] }
         return routes(part: part).filter {
@@ -407,38 +407,18 @@ public final class EG13Synth {
         if destinationList != destinationCodes { destinationCodes = destinationList }
     }
 
-    /// Each tick: the modulated value and range of every parameter a route targets, and clears the
-    /// ones that stopped being targets. Each is written only when it moved by more than 0.001.
-    private func updateModulation(_ frame: EG13DisplayFrame) {
-        var sums: [UInt32: Double] = [:]
-        var targets: [UInt32: (param: EG13Param, part: Int, destination: UInt16)] = [:]
+    /// Each modulation tick: marks the parameters a visible route targets, and clears the ones that
+    /// stopped being targets. Each is written only when it changes.
+    private func updateModulation() {
+        var targets = Set<UInt32>()
         for part in 0..<EG13ParamID.parts {
-            for (index, route) in routeTable[part].enumerated()
-            where route.isActive && !route.destinationHidden && !route.sourceHidden {
-                guard let param = paramByDestination[part][route.destination] else { continue }
-                let amount = paramByID[EG13ParamID.routeAmount(part, index)]?.value ?? route.amount
-                sums[param.id, default: 0] += amount
-                targets[param.id] = (param, part, route.destination)
+            for route in routeTable[part] where route.isActive && !route.destinationHidden && !route.sourceHidden {
+                if let param = paramByDestination[part][route.destination] { targets.insert(param.id) }
             }
         }
-        for (id, target) in targets {
-            let base = target.param.normalized
-            let low = min(max(min(base, base + (sums[id] ?? 0)), 0), 1)
-            let high = min(max(max(base, base + (sums[id] ?? 0)), 0), 1)
-            var live: Double?
-            if frame.modValues.indices.contains(target.part),
-               frame.modValues[target.part].indices.contains(Int(target.destination)) {
-                let value = frame.modValues[target.part][Int(target.destination)]
-                if !value.isNaN { live = min(max(Double(value), 0), 1) }
-            }
-            target.param.setModulation(normalized: live, range: low...high)
-            target.param.setRouted(true)
-        }
-        for id in modulatedIDs.subtracting(targets.keys) {
-            paramByID[id]?.setModulation(normalized: nil, range: nil)
-            paramByID[id]?.setRouted(false)
-        }
-        modulatedIDs = Set(targets.keys)
+        for id in targets { paramByID[id]?.setRouted(true) }
+        for id in modulatedIDs.subtracting(targets) { paramByID[id]?.setRouted(false) }
+        modulatedIDs = targets
     }
 
     /// Folds this tick's trace ranges into the pending ones and, on a modulation tick, pushes them as

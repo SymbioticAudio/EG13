@@ -79,14 +79,14 @@ enum EG13Snapshot {
         return 0
     }
 
-    /// The modulation design set (gate 6a): both parts with modulation shown, Part A at 75 %, a ring
+    /// The modulation design set (gate 6a): both parts with modulation shown, Part A at 75 %, a mark
     /// close-up at 200 %, card headers with the Motion button, and the Mods column with traces. The preview
     /// core's animation is a function of its tick count, so the same run draws the same PNGs.
     static func runModulation(into directory: String) -> Int32 {
         guard makeDirectory(directory) else { return 1 }
         let core = EG13PreviewCore.modulationDemo()
         let synth = EG13Synth(core: core, kind: .instrument)
-        // 70 ticks: past the 60 frames a trace holds, and 0.33 s into an envelope cycle.
+        // 70 ticks: past the 30 frames a trace holds, and 0.33 s into an envelope cycle.
         for _ in 0..<70 { synth.tick() }
         let base = EG13Layout.baseSize
         var ok = true

@@ -3,7 +3,7 @@ import Observation
 import Testing
 @testable import EG13UI
 
-/// The matrix and modulation model: routes, chips and rings, the hidden-field rule, the mod trace.
+/// The matrix and modulation model: routes, marks and Motion rows, the hidden-field rule, the mod trace.
 @MainActor
 struct EG13ModRouteModelTests {
     private final class Flag: @unchecked Sendable { var fired = false }
@@ -81,7 +81,7 @@ struct EG13ModRouteModelTests {
         #expect(core.setRouteCalls.isEmpty && core.calls.isEmpty, "nothing is sent")
     }
 
-    @Test("Routes into hidden P's show no chip or ring")
+    @Test("Routes into hidden P's show no mark")
     func hiddenParams() {
         // The Analog Filter uses P1-P3; P4 is hidden. A route into each.
         core.routes[0][0] = .init(source: Self.modWheel, destination: Self.filterP1, via: 0)
@@ -90,13 +90,9 @@ struct EG13ModRouteModelTests {
         #expect(synth.routes(into: filterP(1), part: 0).count == 1)
         #expect(synth.routes(into: filterP(4), part: 0).isEmpty)
         #expect(synth.routeTable[0][1].destinationHidden, "the route keeps its code and is flagged hidden")
-        // The model's ring and chip data follow: P4 shows nothing even with a live value.
-        core.modValues[0][Int(Self.filterP4)] = 0.7
-        core.modValues[0][Int(Self.filterP1)] = 0.7
         synth.tickModulation()
-        #expect(synth.param(filterP(4))?.modulatedNormalized == nil)
-        #expect(synth.param(filterP(4))?.modulationRange == nil)
-        #expect(synth.param(filterP(1))?.modulatedNormalized != nil)
+        #expect(synth.param(filterP(4))?.isRouted == false, "P4 shows no mark")
+        #expect(synth.param(filterP(1))?.isRouted == true)
     }
 
     @Test("A hidden field is sent as 0 when another field of the route changes")
@@ -163,40 +159,9 @@ struct EG13ModRouteModelTests {
         #expect(!destinations.contains { $0.code == Self.filterP4 })
     }
 
-    // MARK: Modulated value and range
+    // MARK: Mark
 
-    @Test("Modulated value: nil without a route or a value, else the core's value; range is base plus amounts")
-    func modulatedValueAndRange() {
-        let id = filterP(2)
-        let param = synth.param(id)!
-        #expect(param.modulatedNormalized == nil && param.modulationRange == nil)
-        core.routes[0][0] = .init(source: Self.modWheel, destination: 33, via: 0)
-        core.routes[0][1] = .init(source: Self.velocity, destination: 33, via: 0)
-        core.values[core.index(of: EG13ParamID.routeAmount(0, 0))] = 0.25
-        core.values[core.index(of: EG13ParamID.routeAmount(0, 1))] = 0.5
-        core.values[core.index(of: id)] = 0.5
-        reload()
-        #expect(param.modulatedNormalized == nil, "NaN: the core has no value")
-        let range = param.modulationRange
-        #expect(range != nil && abs(range!.lowerBound - 0.5) < 1e-9 && abs(range!.upperBound - 1.0) < 1e-9,
-                "0.5 + 0.25 + 0.5 clamps to 1")
-        core.modValues[0][33] = 0.65
-        synth.tickModulation()
-        #expect(param.modulatedNormalized.map { abs($0 - 0.65) < 1e-6 } == true)
-        core.modValues[0][33] = .nan
-        synth.tickModulation()
-        #expect(param.modulatedNormalized == nil)
-        core.values[core.index(of: EG13ParamID.routeAmount(0, 1))] = -0.75
-        synth.tickModulation()
-        #expect(param.modulationRange.map { abs($0.lowerBound - 0.0) < 1e-9 && abs($0.upperBound - 0.5) < 1e-9 } == true,
-                "0.5 + 0.25 - 0.75 = 0")
-        synth.removeRoute(part: 0, index: 0)
-        synth.removeRoute(part: 0, index: 1)
-        synth.tickModulation()
-        #expect(param.modulatedNormalized == nil && param.modulationRange == nil)
-    }
-
-    @Test("A modulation change to X does not invalidate Y")
+    @Test("A modulation value change does not invalidate any parameter; a route change invalidates its target only")
     func modulationIsolation() {
         core.routes[0][0] = .init(source: Self.modWheel, destination: 32, via: 0)
         core.routes[0][1] = .init(source: Self.modWheel, destination: 33, via: 0)
@@ -210,27 +175,23 @@ struct EG13ModRouteModelTests {
             touchedY.fired = false
             touchedX.fired = false
             withObservationTracking {
-                _ = y.modulatedNormalized
-                _ = y.modulationRange
-                _ = y.value
-                _ = y.text
+                _ = (y.isRouted, y.value, y.text)
             } onChange: { touchedY.fired = true }
             withObservationTracking {
-                _ = x.modulatedNormalized
+                _ = x.isRouted
             } onChange: { touchedX.fired = true }
         }
         track()
-        core.modValues[0][32] = 0.4  // X moves
+        core.modValues[0][32] = 0.4
         synth.tickModulation()
-        #expect(touchedX.fired, "the tracking does fire for X's own change")
+        #expect(!touchedX.fired && !touchedY.fired, "values never invalidate")
+        core.routes[0][0] = .init()
+        reload()
+        synth.tickModulation()
+        #expect(touchedX.fired, "the tracking does fire for X's own route change")
         #expect(!touchedY.fired, "Y was not invalidated")
-        track()
-        core.modValues[0][32] = 0.4003  // under the 0.001 threshold: nothing is written
-        synth.tickModulation()
-        #expect(!touchedX.fired && !touchedY.fired)
-        core.modValues[0][32] = 0.4011
-        synth.tickModulation()
-        #expect(touchedX.fired && !touchedY.fired)
+        #expect(EG13Motion.amountText(0) == "0 %")
+        #expect(EG13Motion.amountText(1) == "+100 %")
     }
 
     // MARK: Mod trace

@@ -107,7 +107,8 @@ extension EG13KnobBody {
             Color.clear
                 .frame(width: rect.width, height: rect.height)
                 .allowsHitTesting(false)
-                .offset(x: rect.minX, y: rect.minY)
+                .padding(.leading, rect.minX)
+                .padding(.top, rect.minY)
                 .popover(isPresented: $showsRoutes, arrowEdge: .bottom) {
                     EG13MotionList(synth: param.owner, kind: EG13_SLOT_KIND_SOURCE, part: part, parameter: param.id)
                 }

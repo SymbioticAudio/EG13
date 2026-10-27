@@ -355,7 +355,7 @@ final class EG13PreviewCore: EG13Core {
     }
 
     /// The init patch with a chord held, for the modulation visuals: more routes, so several cards
-    /// show a Motion button and several knobs a ring.
+    /// show a Motion button and several knobs a mark.
     static func modulationDemo() -> EG13PreviewCore {
         let core = standard()
         core.heldChord = true
@@ -366,7 +366,7 @@ final class EG13PreviewCore: EG13Core {
             core.addRoute(part: part, index: 5, source: 40, destination: 19, amount: 0.35)   // Mod 2 -> Morph
             core.addRoute(part: part, index: 6, source: 1, destination: 18, amount: 0.2)     // Velocity -> Timbre
             core.addRoute(part: part, index: 7, source: 49, destination: 64, amount: 0.3)    // Mod 3 Out 2 -> Blend
-            // Three routes into Mod 1's own knobs: its header strip has room for one chip and "+2".
+            // Three routes into Mod 1's own knobs: its header strip has three routes in one Motion list.
             core.addRoute(part: part, index: 8, source: 49, destination: 81, amount: 0.2)
             core.addRoute(part: part, index: 9, source: 40, destination: 82, amount: -0.2)
             core.addRoute(part: part, index: 10, source: 1, destination: 83, amount: 0.15)

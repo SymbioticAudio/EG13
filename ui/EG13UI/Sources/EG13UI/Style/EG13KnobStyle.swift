@@ -148,7 +148,7 @@ enum EG13ModMarkGeometry {
     static let centreOffset: CGFloat = 0.55
     /// The least stroke width, in points, at 100 % (1.5 pt at 75 %).
     static let minStroke: CGFloat = 2
-    /// The least size of the click area, in points, at 100 %.
+    /// The size of the click area, in points, at 100 %.
     static let minHit = CGSize(width: 14, height: 10)
 
     /// Whether the pointer is in the upper half of the cap (above horizontal), from its actual angle,
@@ -172,8 +172,6 @@ enum EG13ModMarkGeometry {
 
     /// The click area in a knob `d` across, from its top left.
     static func hitRect(d: CGFloat, capRadius: CGFloat, normalized: Double) -> CGRect {
-        let mark = size(capRadius: capRadius), stroke = strokeWidth(capRadius: capRadius)
-        _ = (mark, stroke)
         let width = minHit.width, height = minHit.height
         let c = centre(capRadius: capRadius, normalized: normalized)
         return CGRect(x: d / 2 + c.x - width / 2, y: d / 2 + c.y - height / 2, width: width, height: height)

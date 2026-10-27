@@ -4,7 +4,7 @@ import Observation
 import Testing
 @testable import EG13UI
 
-/// The model behind the modulation visuals: chips per card, the ring's geometry, the trace's
+/// The model behind the modulation visuals: Motion lists, the mark's geometry, the trace's
 /// scale, and the rule that only modulated knobs re-render on a modulation change.
 @MainActor
 struct EG13ModulationViewTests {
@@ -93,21 +93,15 @@ struct EG13ModulationViewTests {
 
     // MARK: 15 Hz
 
-    @Test("the modulation fields refresh every second tick; everything else every tick")
+    @Test("traces refresh every second tick; meters every tick")
     func fifteenHertz() {
-        core.routes[0][0] = .init(source: Self.modWheel, destination: Self.filterP1, via: 0)
-        reload()  // tick 1 of a new generation: refreshes
-        let param = synth.param(filterP(1))!
-        func live() -> Double? { param.modulatedNormalized }
-        core.modValues[0][Int(Self.filterP1)] = 0.3
+        let trace = synth.modTrace(part: 0, slot: 0)
+        reload()  // a new generation refreshes on its first tick
+        let before = trace.frameCount
         synth.tick()  // an off tick
-        #expect(live() == nil, "an off tick leaves the modulation fields alone")
-        core.modValues[0][Int(Self.filterP1)] = 0.6
+        #expect(trace.frameCount == before, "an off tick pushes no frame")
         synth.tick()  // a refresh tick
-        #expect(abs((live() ?? -1) - 0.6) < 1e-6, "the refresh tick shows the latest value")
-        core.modValues[0][Int(Self.filterP1)] = 0.9
-        synth.tick()
-        #expect(abs((live() ?? -1) - 0.6) < 1e-6, "the next tick leaves it")
+        #expect(trace.frameCount == before + 1)
         // A meter moves on every tick.
         core.peaks = [[0.8, 0.8], [0, 0]]
         synth.tick()
@@ -130,7 +124,7 @@ struct EG13ModulationViewTests {
         #expect(trace.latest(output: 0) == EG13ModTraceFrame(min: 0.1, max: 0.9))
     }
 
-    @Test("a chip's level is its source's latest trace max; fixed sources have none")
+    @Test("a Motion row's level is its source's latest trace max; fixed sources have none")
     func chipLevel() {
         #expect(synth.sourceLevel(part: 0, code: Self.velocity) == nil, "steady")
         #expect(synth.sourceLevel(part: 0, code: Self.mod1) == 0, "no data yet: dark")
@@ -152,24 +146,7 @@ struct EG13ModulationViewTests {
         #expect(synth.sourceLevel(part: 1, code: Self.mod1) == 0, "the other part's trace")
     }
 
-    // MARK: Ring
-
-    @Test("the route range is the clamped sum of amounts")
-    func ringRange() {
-        let id = filterP(2)
-        let param = synth.param(id)!
-        core.routes[0][0] = .init(source: Self.modWheel, destination: Self.filterP2, via: 0)
-        core.routes[0][1] = .init(source: Self.velocity, destination: Self.filterP2, via: 0)
-        core.values[core.index(of: EG13ParamID.routeAmount(0, 0))] = 0.8
-        core.values[core.index(of: EG13ParamID.routeAmount(0, 1))] = 0.5
-        core.values[core.index(of: id)] = 0.5
-        reload()
-        #expect(param.modulationRange == 0.5...1.0, "0.5 + 1.3 stops at 100 %")
-        core.values[core.index(of: EG13ParamID.routeAmount(0, 0))] = -0.8
-        core.values[core.index(of: EG13ParamID.routeAmount(0, 1))] = -0.5
-        synth.tickModulation()
-        #expect(param.modulationRange == 0.0...0.5, "0.5 - 1.3 stops at 0 %")
-    }
+    // MARK: Mark
 
     @Test("the mark shows only for routed knobs")
     func markOnlyForRoutedKnobs() {
@@ -207,8 +184,12 @@ struct EG13ModulationViewTests {
             core.modValues[0][Int(Self.filterP1)] = Float(0.3 + 0.02 * Double(step))
             synth.tickModulation()
         }
-        #expect(x.modulatedNormalized != nil, "the values did update (the test can fail)")
         #expect(!touched.fired && !knobTouched.fired)
+        // Positive control: the tracking does fire when the route goes.
+        core.routes[0][0] = .init()
+        reload()
+        synth.tickModulation()
+        #expect(touched.fired && knobTouched.fired, "removing the route is seen")
     }
 
     @Test("the mark is 45 % of the cap wide, at least 2 pt, 1.5 cycles, with a 14 x 10 pt click area")

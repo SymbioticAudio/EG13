@@ -80,7 +80,6 @@ final class EG13ControlSurfaceView: NSView {
             let point = topLeft(event)
             guard hypot(point.x - pending.start.x, point.y - pending.start.y) > 3 else { return }
             pendingClick = nil  // a drag: the control's own gesture, from where it started
-            lastY = localY(event)
             interaction?.wrappedValue.mouseDown(clickCount: pending.clickCount)
         }
         let y = localY(event)
