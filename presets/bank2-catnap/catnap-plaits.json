@@ -1,0 +1,31 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "catnap — plaits",
+  "note": "The Plaits side of the patch, played from the keys: chords a step or two up the C minor scale from a looping Marbles sequence, through a Ripples low-pass that a slow Tides swell opens and snaps shut, into the octave-up Clouds grains, which freeze and thaw at random. In the patch Plaits drones untriggered; here each note opens it.",
+  "credit": "~zero-g:catnap by plantay (patchstorage.com/zero-gcatnap-vcv-rack-jam)",
+  "licence": "CC BY 4.0",
+  "order": 2,
+  "parts": {
+    "A": {
+      "Source": {"engine": "Macro Oscillator", "params": {"Model": "Chords", "Harmonics": 0.719, "Timbre": 0.208, "Morph": 0.670, "Frequency": 0.0, "Decay": 0.5, "LPG Colour": 0.5}},
+      "Filter": {"engine": "Analog Filter", "params": {"Frequency": 0.582, "Resonance": 0.084, "Mode": "LP4"}},
+      "Part FX": {"engine": "Granular", "params": {"Mode": "Granular", "Quality": "16-bit stereo", "Blend": 0.51, "Position": 0.493, "Size": 0.714, "Pitch": 0.75, "Density": 0.758, "Texture": 0.829, "Feedback": 0.311, "Reverb": 0.516, "Spread": 0.289, "In Gain": 0.5, "Freeze": 0.0}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.25, "Sustain": 1.0, "Release": 0.65}},
+      "Mod 2": {"engine": "Random / S&H", "scope": "per part", "params": {"T Model": "Coin Toss", "T Deja Vu": "On", "T Rate": 0.454, "T Bias": 0.5, "Deja Vu": 0.5, "X Range": "Positive", "X Spread": 0.152, "X Bias": 0.181, "X Steps": 1.0, "T Range": "1x", "T Jitter": 0.806, "Length": 1.0, "X Mode": "Identical", "X Scale": "Minor", "X Deja Vu": "On"}},
+      "Mod 3": {"engine": "LFO", "scope": "per part", "params": {"Mode": "Cycle", "Range": "Medium", "Frequency": 0.094, "Shape": 0.823, "Slope": 0.953, "Shift": 0.5, "Smoothness": 0.5, "Output": "Gates"}},
+      "Mod 4": {"engine": "Random / S&H", "scope": "per part", "params": {"T Model": "Coin Toss", "T Rate": 0.454, "T Bias": 0.5, "T Jitter": 0.806, "T Range": "1x", "X Range": "Narrow", "X Spread": 0.5, "X Bias": 0.5, "X Steps": 0.5}},
+      "settings": {"Level": 0.825},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0},
+        {"source": "Mod 2 Random / S&H X1", "destination": "Pitch", "amount": 1.0},
+        {"source": "Mod 2 Random / S&H X1", "destination": "Pitch", "amount": 1.0},
+        {"source": "Mod 2 Random / S&H X1", "destination": "Pitch", "amount": 0.5},
+        {"source": "Mod 3 LFO Out 2", "destination": "Filter: Frequency", "amount": 0.5},
+        {"source": "Mod 3 LFO Out 3", "destination": "Source: Timbre", "amount": 0.104},
+        {"source": "Mod 3 LFO Out 4", "destination": "Filter: Resonance", "amount": 0.92},
+        {"source": "Mod 4 Random / S&H Y", "destination": "Part FX: Freeze", "amount": 1.0}
+      ]
+    }
+  }
+}

@@ -125,6 +125,25 @@ TEST_CASE("Factory preset names are unique within a bank") {
   }
 }
 
+TEST_CASE("Every Bank 2 preset carries the catnap credit and CC BY 4.0") {
+  size_t count = 0;
+  const preset::FactoryPreset* table = preset::factoryPresets(count);
+  int bank2 = 0;
+  for (size_t i = 0; i < count; ++i) {
+    if (std::string(table[i].bank) != "Bank 2") continue;
+    ++bank2;
+    INFO(label(table[i]));
+    REQUIRE(std::string(table[i].credit) == "~zero-g:catnap by plantay (patchstorage.com/zero-gcatnap-vcv-rack-jam)");
+    REQUIRE(std::string(table[i].licence) == "CC BY 4.0");
+    // The compiled preset itself carries them too, so a copy saved from it keeps the attribution.
+    const auto meta = preset::readMeta(table[i].json);
+    REQUIRE(meta);
+    REQUIRE(meta->credit == table[i].credit);
+    REQUIRE(meta->licence == table[i].licence);
+  }
+  REQUIRE(bank2 >= 4);  // the full rebuild and at least three variations
+}
+
 TEST_CASE("Exactly one instrument preset is marked firstLoad") {
   size_t count = 0;
   const preset::FactoryPreset* table = preset::factoryPresets(count);

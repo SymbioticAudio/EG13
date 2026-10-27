@@ -33,6 +33,10 @@ The source code of EG13 and of every component is in the EG13 repository at the 
 - **The Swift runtime, SwiftUI, AppKit and the other Apple frameworks** are linked dynamically from macOS itself (`/usr/lib/swift`, `/System/Library`); they are system libraries in the sense of the GPL-3.0 and are not part of the plugins.
 - **Factory presets** are EG13's own work under the GPL-3.0-or-later unless a bank says otherwise; a preset bank by another author is credited, with its licence, in the manual's presets page and in this file when it ships.
 
+## Bank 2 factory presets (CC BY 4.0)
+
+The instrument's Bank 2 presets (*catnap* and its variations, sources in `presets/bank2-catnap/`) are a rebuild, in EG13's engines, of the VCV Rack patch "~zero-g:catnap : vcv rack jam" by **plantay**, published at <https://patchstorage.com/zero-gcatnap-vcv-rack-jam/> under the Creative Commons Attribution 4.0 International licence (CC BY 4.0, <https://creativecommons.org/licenses/by/4.0/>). The presets are adapted from the patch: its module settings were translated onto EG13's slots, parts of its routing are approximated and some of its modules are left out (each preset's note says what changed). The patch file itself is not included. Each Bank 2 preset carries the credit "~zero-g:catnap by plantay (patchstorage.com/zero-gcatnap-vcv-rack-jam)" and the licence "CC BY 4.0", both stored in the preset as it ships inside the plugin. The patch's author does not endorse EG13. No warranties are given; the licence may not give all the permissions needed for an intended use.
+
 ## GPL-3.0-or-later components
 
 The Ripples and Shelves models (AudibleInstruments `src/Ripples`, `src/Shelves`): Copyright (C) 2020 Tyler Coy. AudibleInstruments: copyright © 2016-2020 Andrew Belt and Audible Instruments contributors. VCV Rack: copyright © Andrew Belt (VCV) and the VCV Rack contributors. sst-filters and sst-basic-blocks: copyright various authors (Surge Synth Team), as described in their git history.
