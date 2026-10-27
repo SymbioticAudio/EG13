@@ -14,7 +14,7 @@
       "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.62, "Sustain": 1.0, "Release": 0.72 } },
       "Mod 2": { "engine": "Envelope", "scope": "per part", "params": { "Mode": "Looping", "Attack": 0.78, "Attack Shape": 0.3, "Decay": 0.82, "Decay Shape": 0.7 } },
       "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.6, "Output": "Phase" } },
-      "settings": { "Level": 0.8703 },
+      "settings": { "Level": 0.9040 },
       "routes": [
         { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
         { "source": "Mod 2 Envelope", "destination": "Filter: Frequency", "amount": 0.22 },

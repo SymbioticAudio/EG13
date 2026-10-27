@@ -14,7 +14,7 @@
       "Part FX": { "engine": "Reverb", "params": { "Amount": 0.4, "Time": 0.8, "Brightness": 0.5 } },
       "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.6, "Sustain": 1.0, "Release": 0.75 } },
       "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.4, "Slope": 0.9, "Smoothness": 0.5 } },
-      "settings": { "Level": 0.5507 },
+      "settings": { "Level": 0.5618 },
       "routes": [
         { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
         { "source": "Mod 3 LFO Out 1", "destination": "Shaper: Algorithm", "amount": 0.03 }

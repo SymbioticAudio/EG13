@@ -11,6 +11,7 @@
 #include "alloc_counter.h"
 #include "engine/engine_registry.h"
 #include "engine/warps_engine.h"
+#include "util/dc_blocker.h"
 #include "test_engines.h"
 #include "test_helpers.h"
 #include "voice/processor_factory.h"
@@ -541,14 +542,18 @@ double gainDb(const std::vector<float>& out, const std::vector<float>& in, size_
 
 }  // namespace
 
-TEST_CASE("Every Shaper engine but Off asks for the DC filter") {
+TEST_CASE("Every Shaper and Part FX engine but Off asks for the DC filter") {
   const std::vector<SourceSpec> all = makeAllShapers();
   for (int e = 0; e < kNumShaperEngines; ++e) {
     INFO(shaperEngineInfo(e).displayName);
     REQUIRE(all[size_t(e)].dcBlock == (e != int(ShaperEngine::Off)));
   }
   for (const SourceSpec& s : makeAllFilters()) REQUIRE_FALSE(s.dcBlock);
-  for (const SourceSpec& s : makeAllPartFx()) REQUIRE_FALSE(s.dcBlock);
+  const std::vector<SourceSpec> fx = makeAllPartFx();
+  for (int e = 0; e < kNumPartFxEngines; ++e) {
+    INFO(partFxEngineInfo(e).displayName);
+    REQUIRE(fx[size_t(e)].dcBlock == (e != int(PartFxEngine::Off)));
+  }
 }
 
 TEST_CASE("The Shaper's DC filter removes the Ring Mod's DC") {
@@ -603,7 +608,7 @@ TEST_CASE("The DC filter leaves the EQ within 0.01 dB above 40 Hz") {
   eq.p[6] = 0.7f;  // Mid 2 Gain
   eq.p[8] = 0.2f;  // Low Freq
   eq.p[9] = 0.85f;  // Low Gain
-  for (const double rate : {44100.0, 48000.0, 96000.0}) {
+  for (const double rate : {44100.0, 48000.0, 96000.0, 192000.0}) {
     for (const double hz : {40.0, 60.0, 100.0, 1000.0, 10000.0}) {
       const size_t n = size_t(rate);
       const auto x = sine(n, hz, 0.25f, rate);
@@ -621,4 +626,99 @@ TEST_CASE("The DC filter leaves the EQ within 0.01 dB above 40 Hz") {
       REQUIRE(std::fabs(with - without) < 0.01);
     }
   }
+}
+
+TEST_CASE("A DcBlocker passes audio through unchanged until it is prepared") {
+  DcBlocker f;
+  std::vector<float> x = sine(64, 440.0);
+  x[0] = 0.75f;
+  const std::vector<float> in = x;
+  f.process(x.data(), int(x.size()));
+  REQUIRE(x == in);
+}
+
+TEST_CASE("The DC filter starts from rest on restart and on a new prepare") {
+  // Fold puts out DC, so the filter holds a large state after a second of it. After restart() (a
+  // new note on an idle voice, or a NaN reset), and after prepare() at another rate, the slot must
+  // sound exactly like a fresh one.
+  const auto x = sine(48000, 110.0, 0.5f);
+  ParamValues fold = test::defaultParams(shaperEngineInfo(int(ShaperEngine::RingMod)));
+  fold.p[0] = 1.0f / 8.0f;
+  fold.p[1] = 0.9f;
+  fold.p[2] = 0.8f;
+  fold.p[3] = 0.8f;
+  auto start = [&](ProcessorSlot& slot) {
+    slot.setEngine(int(ShaperEngine::RingMod));
+    slot.reset();
+  };
+  ProcessorSlot used(makeAllShapers());
+  used.prepare(kRate, 16);
+  start(used);
+  used.noteOn(45.0f, 1.0f);
+  run(used, x, x, fold);
+  used.restart();
+  used.noteOn(45.0f, 1.0f);
+  ProcessorSlot fresh(makeAllShapers());
+  fresh.prepare(kRate, 16);
+  start(fresh);
+  fresh.noteOn(45.0f, 1.0f);
+  const auto shortX = std::vector<float>(x.begin(), x.begin() + 4800);
+  const Stereo a = run(used, shortX, shortX, fold);
+  const Stereo b = run(fresh, shortX, shortX, fold);
+  REQUIRE(a.l == b.l);
+  REQUIRE(a.r == b.r);
+
+  run(used, x, x, fold);
+  used.prepare(96000.0, 16);
+  start(used);
+  used.noteOn(45.0f, 1.0f);
+  ProcessorSlot fresh96(makeAllShapers());
+  fresh96.prepare(96000.0, 16);
+  start(fresh96);
+  fresh96.noteOn(45.0f, 1.0f);
+  const Stereo c = run(used, shortX, shortX, fold);
+  const Stereo d = run(fresh96, shortX, shortX, fold);
+  REQUIRE(c.l == d.l);
+  REQUIRE(c.r == d.r);
+}
+
+namespace {
+
+std::vector<SourceSpec> partFxWithoutDcFilter() {
+  std::vector<SourceSpec> all = makeAllPartFx();
+  for (SourceSpec& s : all) s.dcBlock = false;
+  return all;
+}
+
+}  // namespace
+
+TEST_CASE("The Part FX's DC filter removes an offset and leaves Off bit-identical") {
+  std::vector<float> x = sine(2 * size_t(kRate), 220.0, 0.25f);
+  for (float& v : x) v += 0.1f;  // -20 dBFS of DC in the part mix
+  auto meanDb = [&](std::vector<SourceSpec> engines, int engine) {
+    ProcessorSlot slot(std::move(engines));
+    slot.prepare(kRate, 16);
+    slot.setEngine(engine);
+    slot.reset();
+    const Stereo out = run(slot, x, x, test::defaultParams(partFxEngineInfo(engine)));
+    const double mean = std::max(std::fabs(meanOf(out.l, size_t(kRate), out.l.size())),
+                                 std::fabs(meanOf(out.r, size_t(kRate), out.r.size())));
+    return 20.0 * std::log10(mean + 1e-30);
+  };
+  for (int e = 0; e < kNumPartFxEngines; ++e) {
+    if (e == int(PartFxEngine::Off)) continue;
+    const double before = meanDb(partFxWithoutDcFilter(), e);
+    const double after = meanDb(makeAllPartFx(), e);
+    INFO(partFxEngineInfo(e).displayName << ": DC " << before << " dBFS without the filter, " << after << " with it");
+    REQUIRE(after < -60.0);
+  }
+  ParamValues off;
+  ProcessorSlot with(makeAllPartFx());
+  ProcessorSlot without(partFxWithoutDcFilter());
+  with.prepare(kRate, 16);
+  without.prepare(kRate, 16);
+  const Stereo a = run(with, x, x, off);
+  const Stereo b = run(without, x, x, off);
+  REQUIRE(a.l == b.l);
+  REQUIRE(a.r == b.r);
 }

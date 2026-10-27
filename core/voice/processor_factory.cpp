@@ -78,6 +78,9 @@ SourceSpec partFxEngine(int engine) {
 SourceSpec makePartFx(int engine) {
   SourceSpec spec = partFxEngine(engine);
   spec.outputGain = partFxTrim(engine);  // the engine's trim (G11), applied inside the slot's crossfade
+  // The DC filter after every Part FX but Off (task 8g fix round 1): Granular Delay's Dirty tape
+  // (and anything the voices left) puts out DC that nothing after the part removes.
+  spec.dcBlock = PartFxEngine(engine) != PartFxEngine::Off && engine >= 0 && engine < kNumPartFxEngines;
   return spec;
 }
 

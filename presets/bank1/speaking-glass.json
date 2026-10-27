@@ -27,7 +27,7 @@
       "Part FX": { "engine": "Granular Delay", "params": { "Dry/Wet": 0.4, "Time": 0.3, "Size": 0.6, "Density": 0.7, "Shape": 0.7, "Feedback": 0.35, "Reverb": 0.5, "Pitch Random": 0.6 } },
       "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.5, "Sustain": 1.0, "Release": 0.72 } },
       "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.5 } },
-      "settings": { "Level": 0.4962, "Pan": 0.15 },
+      "settings": { "Level": 0.5119, "Pan": 0.15 },
       "routes": [
         { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
         { "source": "Mod 3 LFO Out 1", "destination": "Shaper: Timbre", "amount": 0.2 },

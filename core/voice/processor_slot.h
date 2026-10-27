@@ -56,7 +56,7 @@ class ProcessorSlot {
   // belong to the requested engine, as the host already shows them.
   void setEngine(int engine);
 
-  // An engine whose SourceSpec asks for it (dcBlock: the Shaper's engines but Off) has its output
+  // An engine whose SourceSpec asks for it (dcBlock: the Shaper's and Part FX's engines but Off) has its output
   // run through its own DC filter, after its gain and before the crossfade, so a type change
   // fades between the filtered and the unfiltered sound; the filter starts from rest whenever the
   // engine does (reset, restart, a switch to it).

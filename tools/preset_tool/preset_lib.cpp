@@ -14,6 +14,7 @@
 #include <nlohmann/json.hpp>
 
 #include "common/engine_names.h"
+#include "engine/shared_random.h"
 #include "core_api.h"
 #include "mod/mod_routes.h"
 #include "params/param_ids.h"
@@ -517,6 +518,10 @@ bool renderScript(const std::string& presetJson, int part, const NoteScript& scr
     error = "part must be A or B";
     return false;
   }
+  // Every render starts the shared generators afresh: the same preset and script give the same
+  // samples alone or after other renders, in the CLI and in every ctest (table order no longer
+  // matters).
+  reseedSharedRandom();
   Synth synth(meta->plugin);
   state::StateStore store;
   preset::ApplyResult applied;

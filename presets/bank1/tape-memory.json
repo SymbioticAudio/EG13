@@ -14,7 +14,7 @@
       "Part FX": { "engine": "Granular Delay", "params": { "Dry/Wet": 0.55, "Time": 0.35, "Size": 0.6, "Density": 0.64, "Shape": 0.65, "Feedback": 0.35, "Reverb": 0.5, "Quality": "Dirty tape", "Time Random": 0.7, "Pitch Random": 0.62 } },
       "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.25, "Decay": 0.78, "Sustain": 0.35, "Release": 0.7 } },
       "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.55 } },
-      "settings": { "Level": 0.4603 },
+      "settings": { "Level": 0.5039 },
       "routes": [
         { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
         { "source": "Mod 3 LFO Out 1", "destination": "Part FX: Size", "amount": 0.15 },

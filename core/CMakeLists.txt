@@ -14,6 +14,7 @@ add_library(eg13_core STATIC
   engine/ripples_engine.cpp
   engine/shelves_engine.cpp
   engine/rack_shim/rack_random.cpp
+  engine/shared_random.cpp
   engine/sst_filter_engine.cpp
   engine/svf_engine.cpp
   engine/warps_engine.cpp

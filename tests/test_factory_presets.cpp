@@ -8,6 +8,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -250,6 +251,33 @@ TEST_CASE("Every instrument factory preset keeps 1 dB of headroom and no DC at t
     INFO("peak " << 20.0 * std::log10(peak + 1e-12) << " dBFS, DC " << 20.0 * std::log10(dc + 1e-12) << " dBFS");
     CHECK(peak < std::pow(10.0f, -1.0f / 20.0f));
     CHECK(dc < std::pow(10.0, -50.0 / 20.0));
+  }
+}
+
+TEST_CASE("A factory render does not depend on what rendered before it") {
+  // Braids, Plaits and the other modules draw from one process-wide generator: renderScript
+  // starts it from its start value, so a preset sounds the same alone, after others, in the CLI
+  // and in every ctest, whatever the table order.
+  size_t count = 0;
+  const preset::FactoryPreset* table = preset::factoryPresets(count);
+  std::vector<size_t> instruments;
+  for (size_t i = 0; i < count; ++i) {
+    if (table[i].plugin == PluginKind::Instrument) instruments.push_back(i);
+  }
+  REQUIRE(instruments.size() >= 3);
+  std::string error;
+  for (const size_t pick : {instruments[1], instruments.back()}) {
+    INFO(label(table[pick]));
+    Audio alone, after;
+    REQUIRE(renderScript(table[pick].json, 0, stressScript(), alone, error));
+    for (const size_t other : instruments) {
+      if (other == pick) continue;
+      Audio scratch;
+      REQUIRE(renderScript(table[other].json, 0, stressScript(), scratch, error));
+    }
+    REQUIRE(renderScript(table[pick].json, 0, stressScript(), after, error));
+    REQUIRE(alone.left == after.left);
+    REQUIRE(alone.right == after.right);
   }
 }
 

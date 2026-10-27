@@ -28,7 +28,7 @@
       "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.3, "Sustain": 1.0, "Release": 0.75 } },
       "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.45, "Smoothness": 0.4 } },
       "Mod 4": { "engine": "Random / S&H", "scope": "per part", "params": { "T Rate": 0.4, "X Steps": 0.15, "X Spread": 0.6, "X Range": "Full" } },
-      "settings": { "Level": 0.5263, "Pan": 0.3, "Input Source": "Other part" },
+      "settings": { "Level": 0.5452, "Pan": 0.3, "Input Source": "Other part" },
       "routes": [
         { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
         { "source": "Mod 3 LFO Out 1", "destination": "Source: Structure", "amount": 0.15 },
