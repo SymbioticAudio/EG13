@@ -102,4 +102,18 @@ eg13_preset table <dir>... -o <factory_presets.cpp>
 
 ## By-ear workflow
 
-See Task 6 and `scripts/preset-listen.sh` (coming).
+```
+scripts/preset-listen.sh presets/<bank> [--install]
+```
+
+- Renders every source in the folder (in `order`) to `build/listen/<bank>/<slug>.wav` (16-bit 48 kHz
+  stereo) and writes `build/listen/<bank>/index.html`: one self-contained page (audio embedded)
+  with name, note, credit, a player and the source file name per preset. A source that fails to
+  render is reported and skipped; the script then exits non-zero.
+- `--install` also compiles each preset into the User folder as `Draft – <name>` (the preset's
+  `name` is `Draft – <name>` too), so it shows in the User bank. Effect presets go in `FX/`.
+  Only `Draft – ` files are ever written, so a non-draft preset is never overwritten.
+  `$EG13_PRESETS_PATH` overrides the User folder (`~/Library/Application Support/SymbioticAudio/EG13/Presets`).
+- Sending changes back: tweak the draft in a DAW, Save over it in EG13 (Save on a User preset), then
+  `eg13_preset decompile "<User folder>/Draft – <name>.eg13perf" -o presets/<bank>/<slug>.json`
+  (`.eg13patch` for a Patch) and remove the `Draft – ` prefix from `name`.
