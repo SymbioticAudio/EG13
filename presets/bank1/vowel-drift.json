@@ -1,0 +1,27 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Vowel Drift",
+  "note": "After the Braids manual's formant models, with Marbles' smooth random voltages drifting each voice through its own vowels.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 4,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Digital Oscillator", "params": { "Shape": "Vowel", "Timbre": 0.4, "Color": 0.5 } },
+      "Filter": { "engine": "State Variable Filter", "params": { "Cutoff": 0.032, "Resonance": 0.0, "Mode": "HP" } },
+      "Shaper": { "engine": "EQ", "params": { "High Freq": 0.566, "High Gain": 0.75, "Low Freq": 0.566, "Low Gain": 0.75 } },
+      "Part FX": { "engine": "Reverb", "params": { "Amount": 0.45, "Time": 0.8, "Brightness": 0.45 } },
+      "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.6, "Sustain": 1.0, "Release": 0.72 } },
+      "Mod 2": { "engine": "Random / S&H", "scope": "per voice", "params": { "T Rate": 0.4, "X Steps": 0.2, "X Spread": 0.65, "X Range": "Full" } },
+      "Mod 3": { "engine": "LFO", "scope": "per voice", "params": { "Frequency": 0.55, "Shape": 0.5 } },
+      "settings": { "Level": 0.85 },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 2 Random / S&H X1", "destination": "Source: Timbre", "amount": 0.4 },
+        { "source": "Mod 2 Random / S&H X2", "destination": "Source: Color", "amount": 0.4 },
+        { "source": "Mod 3 LFO Out 1", "destination": "Pitch", "amount": 0.006 }
+      ]
+    }
+  }
+}

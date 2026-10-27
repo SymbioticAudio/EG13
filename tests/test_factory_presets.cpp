@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
+#include <complex>
 #include <fstream>
 #include <map>
 #include <set>
@@ -12,6 +14,8 @@
 #include "preset/preset.h"
 #include "preset_lib.h"
 #include "state/state.h"
+#include "mod/mod_routes.h"
+#include "synth/param_table.h"
 #include "synth/synth.h"
 
 using namespace eg13;
@@ -37,6 +41,45 @@ Compiled compileFixture(const char* name) {
   INFO(error);
   REQUIRE(compileSource(fixture(name), name, "", compiled, error));
   return compiled;
+}
+
+std::string engineName(const Synth& synth, SlotKind kind, int part) {
+  return slotEngineInfo(kind, synth.engine(kind, part)).displayName;
+}
+
+// The spectral centroid (Hz) of the mono mix of [from, from + n): Hann window, zero-padded FFT.
+double spectralCentroid(const Audio& audio, size_t from, size_t n) {
+  size_t size = 1;
+  while (size < n) size <<= 1;
+  std::vector<std::complex<double>> x(size);
+  for (size_t i = 0; i < n; ++i) {
+    const double w = 0.5 - 0.5 * std::cos(2.0 * M_PI * double(i) / double(n - 1));
+    x[i] = w * 0.5 * (double(audio.left[from + i]) + double(audio.right[from + i]));
+  }
+  for (size_t i = 1, j = 0; i < size; ++i) {  // iterative radix-2 FFT
+    size_t bit = size >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) std::swap(x[i], x[j]);
+  }
+  for (size_t len = 2; len <= size; len <<= 1) {
+    const std::complex<double> step = std::polar(1.0, -2.0 * M_PI / double(len));
+    for (size_t i = 0; i < size; i += len) {
+      std::complex<double> w = 1.0;
+      for (size_t k = 0; k < len / 2; ++k, w *= step) {
+        const std::complex<double> a = x[i + k], b = x[i + k + len / 2] * w;
+        x[i + k] = a + b;
+        x[i + k + len / 2] = a - b;
+      }
+    }
+  }
+  double weighted = 0.0, total = 0.0;
+  for (size_t k = 1; k < size / 2; ++k) {
+    const double m = std::abs(x[k]);
+    weighted += m * double(k) * kSampleRate / double(size);
+    total += m;
+  }
+  return total > 0.0 ? weighted / total : 0.0;
 }
 
 }  // namespace
@@ -74,7 +117,6 @@ TEST_CASE("Factory preset names are unique within a bank") {
 TEST_CASE("Exactly one instrument preset is marked firstLoad") {
   size_t count = 0;
   const preset::FactoryPreset* table = preset::factoryPresets(count);
-  if (count == 0) SKIP("the factory table is empty until Task 7 (Bank 1) adds presets");
   int marked = 0;
   for (size_t i = 0; i < count; ++i) {
     if (!table[i].firstLoad) continue;
@@ -83,6 +125,77 @@ TEST_CASE("Exactly one instrument preset is marked firstLoad") {
     REQUIRE(table[i].plugin == PluginKind::Instrument);
   }
   REQUIRE(marked == 1);
+}
+
+TEST_CASE("The first-load patch is a two-part ring-mod and granular Performance that evolves") {
+  size_t count = 0;
+  const preset::FactoryPreset* table = preset::factoryPresets(count);
+  const preset::FactoryPreset* first = nullptr;
+  for (size_t i = 0; i < count; ++i) {
+    if (table[i].firstLoad) first = &table[i];
+  }
+  REQUIRE(first != nullptr);
+  INFO(label(*first));
+  CHECK(std::string(first->bank) == "Bank 1");
+  REQUIRE(first->kind == preset::Kind::Performance);
+  REQUIRE(first->plugin == PluginKind::Instrument);
+
+  // Structure: both parts play, one Shaper is the Ring Mod, one Part FX is granular, and each part
+  // has a slow per-part modulator routed somewhere.
+  Synth synth(PluginKind::Instrument);
+  state::StateStore store;
+  preset::ApplyResult applied;
+  const std::string merged = preset::mergeForApply(store.save(synth), first->json, PluginKind::Instrument, 0, applied);
+  REQUIRE(store.load(synth, merged) == state::LoadResult::Ok);
+  CHECK(synth.param(paramSpec(masterParamIndex(MasterParam::Mode)).id) == double(PartMode::Layer));
+  const PatchData patch = synth.patch();
+  bool ringMod = false, granular = false;
+  for (int part = 0; part < kNumParts; ++part) {
+    INFO("part " << part);
+    CHECK(synth.param(paramSpec(partParamIndex(part, PartParam::Level)).id) > 0.0);
+    ringMod = ringMod || engineName(synth, SlotKind::Shaper, part) == "Ring Mod / Vocoder";
+    const std::string fx = engineName(synth, SlotKind::PartFx, part);
+    granular = granular || fx == "Granular" || fx == "Granular Delay";
+    bool slowModulator = false;
+    for (int slot = 0; slot < kNumModSlots; ++slot) {
+      const std::string mod = engineName(synth, modSlotKind(slot), part);
+      const bool perPart = synth.param(paramSpec(modScopeParamIndex(part, slot)).id) >= 0.5;
+      if (!perPart || (mod != "LFO" && mod != "Random / S&H" && mod != "Function Generator")) continue;
+      for (const Route& route : patch.routes[size_t(part)]) {
+        const int from = int(route.source) - kSrcMod;
+        if (routeActive(route) && from >= 0 && from / kMaxModOutputs == slot) slowModulator = true;
+      }
+    }
+    CHECK(slowModulator);
+  }
+  CHECK(ringMod);
+  CHECK(granular);
+
+  // Sound: both parts are heard, nothing clips, and the colour moves under the held chord.
+  Audio audio;
+  std::string error;
+  float partPeaks[kNumParts] = {};
+  REQUIRE(render(first->json, 0, kDefaultSeconds, audio, error, &partPeaks));
+  for (int part = 0; part < kNumParts; ++part) {
+    INFO("part " << part << " peak " << 20.0 * std::log10(partPeaks[part] + 1e-12) << " dBFS");
+    CHECK(partPeaks[part] > std::pow(10.0f, -40.0f / 20.0f));
+  }
+  float peak = 0.0f;
+  for (size_t i = 0; i < audio.left.size(); ++i) peak = std::max({peak, std::abs(audio.left[i]), std::abs(audio.right[i])});
+  INFO("output peak " << 20.0 * std::log10(peak + 1e-12) << " dBFS");
+  CHECK(peak < 1.0f);
+  const size_t frame = size_t(kSampleRate / 2);
+  std::vector<double> centroids;
+  for (size_t from = 2 * size_t(kSampleRate); from + frame <= 8 * size_t(kSampleRate); from += frame) {
+    centroids.push_back(spectralCentroid(audio, from, frame));
+  }
+  REQUIRE(centroids.size() == 12);
+  double mean = 0.0, variance = 0.0;
+  for (const double c : centroids) mean += c / double(centroids.size());
+  for (const double c : centroids) variance += (c - mean) * (c - mean) / double(centroids.size());
+  const double cv = std::sqrt(variance) / mean;
+  INFO("centroid mean " << mean << " Hz, coefficient of variation " << cv);
+  CHECK(cv >= 0.05);
 }
 
 TEST_CASE("Each factory preset matches its golden level envelope") {

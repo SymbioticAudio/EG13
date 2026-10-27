@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "preset/preset.h"
+#include "synth/param_table.h"
 
 namespace eg13::presettool {
 
@@ -44,8 +45,10 @@ struct Audio {
 
 // The note script on a fresh Synth of the preset's plugin kind with the preset applied (a Patch
 // into `part`, 0 or 1): C3 G3 D4 A4 at velocity 100 held 8 s, released, then a tail, `seconds` in
-// all.
-bool render(const std::string& presetJson, int part, double seconds, Audio& out, std::string& error);
+// all. `partPeaks`, if given, gets each part's absolute output peak over the render (both channels,
+// as the editor's part meters read it).
+bool render(const std::string& presetJson, int part, double seconds, Audio& out, std::string& error,
+            float (*partPeaks)[kNumParts] = nullptr);
 
 // RMS in dB (both channels) per 250 ms.
 std::vector<double> levelEnvelope(const Audio& audio);

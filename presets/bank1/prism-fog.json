@@ -1,0 +1,27 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Prism Fog",
+  "note": "After the Clouds manual's spectral mode: a soft wavetable pad captured, smeared and quantised into slowly shifting partials.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 8,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Macro Oscillator", "params": { "Model": "Wavetable", "Harmonics": 0.3, "Timbre": 0.4, "Morph": 0.5 } },
+      "Filter": { "engine": "State Variable Filter", "params": { "Cutoff": 0.7, "Resonance": 0.0 } },
+      "Shaper": { "engine": "EQ", "params": { "High Freq": 0.566, "High Gain": 0.8, "Low Freq": 0.566, "Low Gain": 0.8 } },
+      "Part FX": { "engine": "Granular", "params": { "Mode": "Spectral", "Blend": 0.7, "Position": 0.3, "Size": 0.5, "Density": 0.65, "Texture": 0.35, "Feedback": 0.2, "Reverb": 0.55 } },
+      "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.6, "Sustain": 1.0, "Release": 0.75 } },
+      "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.5, "Smoothness": 0.4 } },
+      "Mod 4": { "engine": "Function Generator", "scope": "per part", "params": { "Mode": "Random", "Rate": 0.15, "Smoothness": 0.9 } },
+      "settings": { "Level": 0.7 },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 3 LFO Out 1", "destination": "Part FX: Size", "amount": 0.2 },
+        { "source": "Mod 3 LFO Out 3", "destination": "Source: Timbre", "amount": 0.2 },
+        { "source": "Mod 4 Function Generator", "destination": "Part FX: Texture", "amount": 0.15 }
+      ]
+    }
+  }
+}

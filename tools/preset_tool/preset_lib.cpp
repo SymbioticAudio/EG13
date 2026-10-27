@@ -20,6 +20,7 @@
 #include "state/state.h"
 #include "synth/param_table.h"
 #include "synth/synth.h"
+#include "synth/ui_snapshot.h"
 #include "ui_bridge.h"
 
 namespace eg13::presettool {
@@ -497,7 +498,8 @@ bool decompile(const std::string& presetJson, std::string& sourceText, std::stri
   return false;
 }
 
-bool render(const std::string& presetJson, int part, double seconds, Audio& out, std::string& error) {
+bool render(const std::string& presetJson, int part, double seconds, Audio& out, std::string& error,
+            float (*partPeaks)[kNumParts]) {
   const auto meta = preset::readMeta(presetJson);
   if (!meta) {
     error = "not a preset this version can read";
@@ -557,6 +559,11 @@ bool render(const std::string& presetJson, int part, double seconds, Audio& out,
     const float* in[2] = {effect ? inL.data() + at : nullptr, effect ? inR.data() + at : nullptr};
     synth.process(effect ? in : nullptr, o, nullptr, int(n));
     at += n;
+  }
+  if (partPeaks != nullptr) {
+    UiSnapshot snap;
+    synth.uiSnapshot(&snap);  // peaks held since the synth was made: the whole render
+    for (int p = 0; p < kNumParts; ++p) (*partPeaks)[p] = std::max(snap.partPeak[p][0], snap.partPeak[p][1]);
   }
   return true;
 }

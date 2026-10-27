@@ -1,0 +1,24 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Barber Pole",
+  "note": "After the Warps manual's hidden frequency shifter: a string pad shifted by a slow sweep, with feedback, for an endless upward drift.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 6,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Macro Oscillator", "params": { "Model": "String machine", "Harmonics": 0.4, "Timbre": 0.5, "Morph": 0.4 } },
+      "Filter": { "engine": "Classic Filters", "params": { "Cutoff": 0.78, "Model": "Fast SVF Low Shelf", "Character": 1.0 } },
+      "Shaper": { "engine": "Ring Mod / Vocoder", "params": { "Mode": "Freq shifter", "Carrier": "Internal Osc", "Algorithm": 0.53, "Timbre": 0.85, "Carrier Level": 0.35, "Mod Level": 0.8 } },
+      "Part FX": { "engine": "Reverb", "params": { "Amount": 0.4, "Time": 0.8, "Brightness": 0.5 } },
+      "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.6, "Sustain": 1.0, "Release": 0.75 } },
+      "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.4, "Slope": 0.9, "Smoothness": 0.5 } },
+      "settings": { "Level": 1.0 },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 3 LFO Out 1", "destination": "Shaper: Algorithm", "amount": 0.03 }
+      ]
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "Speaking Glass",
+  "note": "After the Warps manual's vocoder: part A murmurs drifting vowels, and part B's chord speaks them through the vocoder, smeared by a granular delay.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 7,
+  "master": { "Mode": "Layer" },
+  "parts": {
+    "A": {
+      "Source": { "engine": "Macro Oscillator", "params": { "Model": "Speech", "Harmonics": 0.2, "Timbre": 0.5, "Morph": 0.3 } },
+      "Filter": { "engine": "State Variable Filter", "params": { "Cutoff": 0.032, "Resonance": 0.0, "Mode": "HP" } },
+      "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.3, "Sustain": 1.0, "Release": 0.6 } },
+      "Mod 3": { "engine": "Random / S&H", "scope": "per part", "params": { "T Rate": 0.45, "X Steps": 0.6, "X Spread": 0.8, "X Range": "Positive" } },
+      "settings": { "Level": 0.85, "Pan": -0.35 },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 3 Random / S&H X1", "destination": "Source: Morph", "amount": 0.6 },
+        { "source": "Mod 3 Random / S&H Y", "destination": "Source: Timbre", "amount": 0.3 }
+      ]
+    },
+    "B": {
+      "Source": { "engine": "Macro Oscillator", "params": { "Model": "Virtual analog", "Harmonics": 0.5, "Timbre": 0.5 } },
+      "Filter": { "engine": "Off" },
+      "Shaper": { "engine": "Ring Mod / Vocoder", "params": { "Algorithm": "Vocoder (long release)", "Timbre": 0.5, "Carrier": "Internal Osc", "Modulator": "Other part", "Osc Shape": "Sine / Saw", "Mod Level": 0.95 } },
+      "Part FX": { "engine": "Granular Delay", "params": { "Dry/Wet": 0.4, "Time": 0.3, "Size": 0.6, "Density": 0.7, "Shape": 0.7, "Feedback": 0.35, "Reverb": 0.5, "Pitch Random": 0.6 } },
+      "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.5, "Sustain": 1.0, "Release": 0.72 } },
+      "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.5 } },
+      "settings": { "Level": 0.85, "Pan": 0.15 },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 3 LFO Out 1", "destination": "Shaper: Timbre", "amount": 0.2 },
+        { "source": "Mod 3 LFO Out 2", "destination": "Part FX: Time", "amount": 0.15 }
+      ]
+    }
+  }
+}

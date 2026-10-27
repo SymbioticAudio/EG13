@@ -22,7 +22,12 @@ for v in CLAP_VALIDATOR PLUGINVAL CLAP COMPONENT VST3; do
 done
 
 echo "== clap-validator: $CLAP"
-"$CLAP_VALIDATOR" validate "$CLAP" --only-failed
+# A new EG13 instrument opens on the factory first-load preset (M7 spec goal 1), so its parameters
+# are not at their declared defaults after init: the defaults stay the init patch's, which is what
+# reset-to-default uses. param-default-values is skipped for the instrument alone; EG13 FX keeps
+# every test.
+"$CLAP_VALIDATOR" validate "$CLAP" --only-failed -p com.symbioticaudio.eg13.fx
+"$CLAP_VALIDATOR" validate "$CLAP" --only-failed -p com.symbioticaudio.eg13 -x '^param-default-values$'
 
 echo "== AU Info.plist: $COMPONENT/Contents/Info.plist"
 # A stale or generic bundle plist makes auval report "didn't find the component", so check first.

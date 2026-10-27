@@ -1,0 +1,27 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Swarm Horizon",
+  "note": "After the Stages manual: a looping attack-decay pair as a slow, curved LFO, swelling a Braids saw swarm through a warm low-pass.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 5,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Digital Oscillator", "params": { "Shape": "Saw Swarm", "Timbre": 0.35, "Color": 0.4 } },
+      "Filter": { "engine": "Analog Filter", "params": { "Frequency": 0.56, "Resonance": 0.25, "Mode": "LP4" } },
+      "Shaper": { "engine": "EQ", "params": { "High Freq": 0.566, "High Gain": 0.95, "Low Freq": 0.566, "Low Gain": 0.95 } },
+      "Part FX": { "engine": "Reverb", "params": { "Amount": 0.35, "Time": 0.7, "Brightness": 0.4 } },
+      "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.62, "Sustain": 1.0, "Release": 0.72 } },
+      "Mod 2": { "engine": "Envelope", "scope": "per part", "params": { "Mode": "Looping", "Attack": 0.78, "Attack Shape": 0.3, "Decay": 0.82, "Decay Shape": 0.7 } },
+      "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.6, "Output": "Phase" } },
+      "settings": { "Level": 1.0 },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 2 Envelope", "destination": "Filter: Frequency", "amount": 0.22 },
+        { "source": "Mod 3 LFO Out 1", "destination": "Source: Timbre", "amount": 0.2 },
+        { "source": "Mod 3 LFO Out 2", "destination": "Pan", "amount": 0.2 }
+      ]
+    }
+  }
+}
