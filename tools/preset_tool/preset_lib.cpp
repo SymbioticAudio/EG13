@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 
 #include <nlohmann/json.hpp>
 
@@ -94,9 +95,11 @@ void onlyKeys(const json& object, std::initializer_list<const char*> allowed, co
   }
 }
 
-const json& object(const json& parent, const char* key, const std::string& file, const std::string& where) {
+// string_view parameters: a const std::string& here would let callers pass temporaries to a function
+// that returns a reference (GCC 13 -Wdangling-reference).
+const json& object(const json& parent, const char* key, std::string_view file, std::string_view where) {
   const json& value = parent.at(key);
-  if (!value.is_object()) fail(file, where, std::string("\"") + key + "\" must be an object");
+  if (!value.is_object()) fail(std::string(file), std::string(where), std::string("\"") + key + "\" must be an object");
   return value;
 }
 
