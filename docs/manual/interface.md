@@ -58,11 +58,13 @@ Right-click a knob (or ctrl-click it) to open its context menu. Nothing about th
 
 The cog in the header opens a panel over the editor, with two tabs, **Settings** and **About**. The rest of the editor is dimmed behind it; **Close**, or a click outside the panel, closes it. (It is drawn inside the editor, not as a separate window, so it scales with the window and works the same in every host.)
 
-**Settings** are for the whole Mac: every EG13 window, in every project, uses them, and they are never saved in a project. They are stored in `~/Library/Application Support/SymbioticAudio/EG13/settings.json`. EG13 writes the file only when you change a setting. If the file is missing, damaged or from a newer EG13, EG13 uses the defaults and leaves the file alone until you change something.
+**Settings** are for the whole Mac: every EG13 window, in every project, uses them (a change to the modulation display reaches open windows straight away; in a host that runs plug-ins in separate processes, a window picks it up the next time it opens), and they are never saved in a project. They are stored in `~/Library/Application Support/SymbioticAudio/EG13/settings.json`. EG13 writes the file only when you change a setting. If the file is missing, damaged or from a newer EG13, EG13 uses the defaults and leaves the file alone until you change something.
 
-- **Default window size for new editors:** 75 %, 100 %, 125 %, 150 % or 200 % (default 100 %). It applies to windows opened from then on; a window that is already open keeps its size. Hosts that cannot resize plugin windows keep 100 %.
+- **Default window size for new editors:** 75 %, 100 %, 125 %, 150 % or 200 % (default 100 %). It applies to windows opened from then on; a window that is already open keeps its size. A host that cannot resize plugin windows still gets the default size when the window opens, but cannot change it afterwards.
 - **Modulation display:** On (default) or Off. Off hides the wave marks, the MOTION buttons and the mod traces, and stops their 15 Hz refresh, which saves a little CPU. It changes nothing in the sound or the matrix, and the matrix and the mod cards stay fully editable.
 - **Window size** buttons (75 % to 200 %) resize the current window now. They are not saved; use the default above to change what new windows open at. The host may refuse the new size.
+
+While the panel is open, the editor behind it cannot be clicked, scrolled or reached by VoiceOver. Press Esc, click the dimmed area or press CLOSE to close it.
 
 **About** shows the product name (EG13 or EG13 FX), the version and build, the credit "DSP based on the open-source Eurorack firmware by Émilie Gillet.", the licence (GPL-3.0) and the repository, github.com/SymbioticAudio/EG13 (click it to open it in your browser).
 

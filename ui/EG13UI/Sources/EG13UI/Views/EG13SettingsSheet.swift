@@ -8,6 +8,29 @@ public enum EG13SettingsTab: Int, CaseIterable, Sendable {
     var title: String { self == .settings ? "Settings" : "About" }
 }
 
+/// The open or closed state of the Settings overlay, and what it means for the editor behind it:
+/// while open, that editor takes no input (mouse, right-click, scroll, keys) and is hidden from
+/// VoiceOver, and Escape closes the overlay.
+struct EG13SettingsOverlayState: Equatable {
+    var tab: EG13SettingsTab?
+
+    var isOpen: Bool { tab != nil }
+    /// False while open. Applied as `.allowsHitTesting` and as `eg13InteractiveControls`, because the
+    /// knobs are AppKit surfaces that SwiftUI's hit testing does not reliably cover.
+    var contentIsInteractive: Bool { !isOpen }
+    var contentIsHiddenFromAccessibility: Bool { isOpen }
+
+    mutating func open() { tab = tab ?? .settings }
+    mutating func close() { tab = nil }
+    /// Escape: closes the overlay if open; returns whether it was handled.
+    @discardableResult
+    mutating func handleEscape() -> Bool {
+        guard isOpen else { return false }
+        close()
+        return true
+    }
+}
+
 /// The Settings and About sheet (spec §8, M6b decision 9). It is an in-editor overlay, not a
 /// SwiftUI `.sheet`: a sheet needs the host's window, is not scaled with the editor's zoom, and
 /// cannot be rendered to an image. The overlay dims the editor, takes the editor's zoom, and a click
@@ -22,6 +45,12 @@ struct EG13SettingsPanel: View {
 
     var body: some View {
         ZStack {
+            // Escape closes the panel, whatever has focus (a hidden cancel button).
+            Button("Close settings", action: close)
+                .keyboardShortcut(.cancelAction)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
             Color.black.opacity(0.45)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: close)
@@ -47,6 +76,7 @@ struct EG13SettingsPanel: View {
             .accessibilityAddTraits(.isModal)
             .accessibilityLabel("Settings and About")
         }
+        .onExitCommand(perform: close)
     }
 }
 

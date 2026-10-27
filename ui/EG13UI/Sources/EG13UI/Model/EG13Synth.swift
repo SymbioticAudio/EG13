@@ -424,6 +424,7 @@ public final class EG13Synth {
             modulatedIDs = []
         }
         if !pendingMin.isEmpty { pendingMin = []; pendingMax = [] }
+        for part in traces { for trace in part { trace.reset() } }
     }
 
     /// Each modulation tick: marks the parameters a visible route targets, and clears the ones that

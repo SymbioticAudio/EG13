@@ -16,8 +16,8 @@ struct EG13MotionButton: View {
     @Environment(\.symbioticTheme) private var theme  // typography and radii only
 
     var body: some View {
-        let items = synth.motionItems(kind: kind, part: part)
-        if synth.showsModulation, !items.isEmpty {
+        if synth.showsMotionButton(kind: kind, part: part) {
+            let items = synth.motionItems(kind: kind, part: part)
             Button { isOpen.toggle() } label: {
                 Text("MOTION \(items.count)")
                     .font(.system(size: max(theme.type.caption.size, 11), weight: .bold, design: .monospaced))

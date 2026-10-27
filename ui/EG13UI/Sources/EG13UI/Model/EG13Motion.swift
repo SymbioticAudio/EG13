@@ -59,6 +59,11 @@ extension EG13Synth {
         }
     }
 
+    /// Whether a card shows its MOTION button: the display is on and a route reaches the card.
+    public func showsMotionButton(kind: EG13SlotKind, part: Int) -> Bool {
+        showsModulation && !motionItems(kind: kind, part: part).isEmpty
+    }
+
     /// The rows for one knob: every visible route into it, in route order (the knob's popover).
     public func motionItems(into id: UInt32, part: Int) -> [EG13MotionItem] {
         guard let destination = destinationByID[id] else { return [] }

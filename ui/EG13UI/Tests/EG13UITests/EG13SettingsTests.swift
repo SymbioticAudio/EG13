@@ -1,3 +1,4 @@
+import EG13CBridge
 import Foundation
 import Testing
 @testable import EG13UI
@@ -144,5 +145,75 @@ struct EG13SettingsTests {
         store.update { $0.modulationDisplay = true }
         for _ in 0..<10 { synth.tick() }
         #expect(synth.modulationRefreshCount > before)
+    }
+}
+
+@MainActor
+struct EG13SettingsOverlayTests {
+    @Test("an open overlay disables the editor behind it and hides it from VoiceOver")
+    func openOverlayTrapsInput() {
+        var state = EG13SettingsOverlayState()
+        #expect(state.contentIsInteractive && !state.contentIsHiddenFromAccessibility)
+        state.open()
+        #expect(state.isOpen && state.tab == .settings)
+        #expect(!state.contentIsInteractive && state.contentIsHiddenFromAccessibility)
+        state.tab = .about
+        state.open()
+        #expect(state.tab == .about, "opening again keeps the tab")
+        state.close()
+        #expect(state.contentIsInteractive && !state.contentIsHiddenFromAccessibility)
+    }
+
+    @Test("Escape closes an open overlay and is ignored when closed")
+    func escapeCloses() {
+        var state = EG13SettingsOverlayState()
+        let whenClosed = state.handleEscape()
+        #expect(!whenClosed)
+        state.open()
+        let whenOpen = state.handleEscape()
+        #expect(whenOpen)
+        #expect(!state.isOpen)
+    }
+
+    @Test("with the modulation display off the marks, MOTION buttons and traces are hidden, and return")
+    func modulationOffHidesAndRestores() {
+        let store = EG13SettingsStore(url: nil)
+        let core = EG13FakeCore.fullCatalog()
+        for part in 0..<2 {
+            core.select(EG13_SLOT_KIND_FILTER, engine: 1, part: part)
+            core.select(EG13_SLOT_KIND_MOD1, engine: 1, part: part)
+        }
+        let synth = EG13Synth(core: core, kind: .instrument, settings: store)
+        let filterP1 = EG13ParamID.slot(0, EG13_SLOT_KIND_FILTER, 1)
+        core.routes[0][0] = .init(source: EG13ModulationViewTests.modWheel, destination: EG13ModulationViewTests.filterP1, via: 0)
+        core.generation += 1
+        synth.tickModulation()
+        let trace = synth.modTrace(part: 0, slot: 0)
+        #expect(synth.param(filterP1)?.isRouted == true)
+        #expect(synth.showsMotionButton(kind: EG13_SLOT_KIND_FILTER, part: 0))
+        #expect(trace.frameCount > 0)
+
+        store.update { $0.modulationDisplay = false }
+        synth.tick()
+        #expect(synth.param(filterP1)?.isRouted == false, "marks hidden")
+        #expect(!synth.showsMotionButton(kind: EG13_SLOT_KIND_FILTER, part: 0), "MOTION button hidden")
+        #expect(trace.frameCount == 0, "trace cleared")
+        for _ in 0..<10 { synth.tick() }
+        #expect(trace.frameCount == 0, "trace does not advance")
+        #expect(synth.param(filterP1)?.isRouted == false)
+
+        // Every parameter stays reachable, and the matrix keeps its menus, with the display off.
+        for part in 0..<EG13ParamID.parts {
+            let controls = synth.editorControls(part: part).all.map(\.id)
+            #expect(controls.count == Set(controls).count)
+            #expect(controls.contains(filterP1) == (part == 0))
+            #expect(synth.routeMenus(part: part).count == 3 * EG13ParamID.routeCount)
+        }
+
+        store.update { $0.modulationDisplay = true }
+        synth.tickModulation()
+        #expect(synth.param(filterP1)?.isRouted == true, "marks return")
+        #expect(synth.showsMotionButton(kind: EG13_SLOT_KIND_FILTER, part: 0), "MOTION button returns")
+        #expect(trace.frameCount > 0, "trace runs again")
     }
 }
