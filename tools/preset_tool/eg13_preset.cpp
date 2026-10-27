@@ -1,6 +1,7 @@
 // The preset tool. Readable preset sources (presets/README.md) to preset files, the embedded
 // factory table, WAV renders for listening and the golden level envelopes.
-//   eg13_preset compile <source.json> -o <file> [--bank <name>]
+//   eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]
+//   eg13_preset info <source.json|file>
 //   eg13_preset decompile <file> -o <source.json>
 //   eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B]
 //   eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]
@@ -23,7 +24,8 @@ namespace {
 
 int usage() {
   std::cerr << "usage:\n"
-               "  eg13_preset compile <source.json> -o <file> [--bank <name>]\n"
+               "  eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]\n"
+               "  eg13_preset info <source.json|file>\n"
                "  eg13_preset decompile <file> -o <source.json>\n"
                "  eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B]\n"
                "  eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]\n"
@@ -56,7 +58,7 @@ bool write(const std::string& path, const std::string& text) {
 
 struct Args {
   std::vector<std::string> positional;
-  std::string output, bank, presets = EG13_PRESETS_DIR, file = EG13_GOLDEN_FILE, part = "A";
+  std::string output, bank, name, presets = EG13_PRESETS_DIR, file = EG13_GOLDEN_FILE, part = "A";
   double seconds = kDefaultSeconds;
   bool writeGolden = false;
   bool ok = true;
@@ -75,6 +77,7 @@ Args parse(int argc, char** argv) {
     };
     if (arg == "-o") value(a.output);
     else if (arg == "--bank") value(a.bank);
+    else if (arg == "--name") value(a.name);
     else if (arg == "--presets") value(a.presets);
     else if (arg == "--file") value(a.file);
     else if (arg == "--part") value(a.part);
@@ -99,9 +102,24 @@ int compile(const Args& a) {
   std::string source, error;
   if (a.positional.size() != 1 || a.output.empty()) return usage();
   if (!read(a.positional[0], source)) return 1;
+  if (!a.name.empty()) {  // --name: the file carries this name instead of the source's
+    nlohmann::json root = nlohmann::json::parse(source, nullptr, false);
+    if (!root.is_object()) return fail(a.positional[0] + ": not JSON");
+    root["name"] = a.name;
+    source = root.dump();
+  }
   Compiled compiled;
   if (!compileSource(source, a.positional[0], a.bank, compiled, error)) return fail(error);
   return write(a.output, compiled.json) ? 0 : 1;
+}
+
+int infoCommand(const Args& a) {
+  std::string text, lines, error;
+  if (a.positional.size() != 1) return usage();
+  if (!read(a.positional[0], text)) return 1;
+  if (!presetInfo(text, lines, error)) return fail(a.positional[0] + ": " + error);
+  std::cout << lines;
+  return 0;
 }
 
 int decompileCommand(const Args& a) {
@@ -198,6 +216,7 @@ int main(int argc, char** argv) {
   const Args a = parse(argc, argv);
   if (!a.ok) return usage();
   if (command == "compile") return compile(a);
+  if (command == "info") return infoCommand(a);
   if (command == "decompile") return decompileCommand(a);
   if (command == "render") return renderCommand(a);
   if (command == "golden") return golden(a);

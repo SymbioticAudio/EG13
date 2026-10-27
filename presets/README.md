@@ -77,7 +77,8 @@ A missing or empty directory gives an empty bank. One file per preset, `<slug>.j
 `eg13_preset` is built with the project (`build/mac/tools/preset_tool/eg13_preset`).
 
 ```
-eg13_preset compile <source.json> -o <file> [--bank <name>]
+eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]
+eg13_preset info <source.json|file>
 eg13_preset decompile <file> -o <source.json>
 eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B]
 eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]
@@ -92,6 +93,8 @@ eg13_preset table <dir>... -o <factory_presets.cpp>
   effect preset gets a fixed 110 Hz saw and noise as its input.
 - The **note script**, fixed: C3, G3, D4 and A4 held together at velocity 100 for 8 s, then released,
   then a tail, 12 s in all.
+- `info` prints `name`, `note`, `credit`, `plugin`, `kind`, `order` as `key=value` lines (the listening
+  script uses it); `compile --name` overrides the preset's name.
 - `golden` renders every factory preset with the note script and compares its level envelope (RMS in
   dB per 250 ms) with `tests/data/preset_golden.json`. A frame louder than -60 dB must be within
   1.5 dB. `--write` rewrites the file; do that when a preset is added, removed or changed on
@@ -103,7 +106,7 @@ eg13_preset table <dir>... -o <factory_presets.cpp>
 ## By-ear workflow
 
 ```
-scripts/preset-listen.sh presets/<bank> [--install]
+scripts/preset-listen.sh presets/<bank> [--install [--force]]
 ```
 
 - Renders every source in the folder (in `order`) to `build/listen/<bank>/<slug>.wav` (16-bit 48 kHz
@@ -112,7 +115,9 @@ scripts/preset-listen.sh presets/<bank> [--install]
   render is reported and skipped; the script then exits non-zero.
 - `--install` also compiles each preset into the User folder as `Draft – <name>` (the preset's
   `name` is `Draft – <name>` too), so it shows in the User bank. Effect presets go in `FX/`.
-  Only `Draft – ` files are ever written, so a non-draft preset is never overwritten.
+  Only `Draft – ` files are ever written, so a non-draft preset is never overwritten. A draft that
+  already exists is kept (it may hold edits you saved in EG13 and have not sent back); `--force`
+  replaces drafts.
   `$EG13_PRESETS_PATH` overrides the User folder (`~/Library/Application Support/SymbioticAudio/EG13/Presets`).
 - Sending changes back: tweak the draft in a DAW, Save over it in EG13 (Save on a User preset), then
   `eg13_preset decompile "<User folder>/Draft – <name>.eg13perf" -o presets/<bank>/<slug>.json`

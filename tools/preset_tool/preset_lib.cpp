@@ -714,4 +714,23 @@ bool goldenFor(const std::vector<Entry>& entries, std::string& jsonText, std::st
   return true;
 }
 
+bool presetInfo(const std::string& text, std::string& lines, std::string& error) {
+  const json root = json::parse(text, nullptr, false);
+  if (!root.is_object()) {
+    error = "not a JSON object";
+    return false;
+  }
+  auto field = [&](const char* key) {
+    std::string v = root.contains(key) && root[key].is_string() ? root[key].get<std::string>() : "";
+    for (char& c : v)
+      if (static_cast<unsigned char>(c) < 0x20) c = ' ';
+    return v;
+  };
+  const long order = root.contains("order") && root["order"].is_number() ? root["order"].get<long>() : 0;
+  lines.clear();
+  for (const char* key : {"name", "note", "credit", "plugin", "kind"}) lines += std::string(key) + "=" + field(key) + "\n";
+  lines += "order=" + std::to_string(order) + "\n";
+  return true;
+}
+
 }  // namespace eg13::presettool

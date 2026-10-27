@@ -224,3 +224,22 @@ TEST_CASE("setFactoryPresetsForTesting swaps the table and nullptr restores it")
   preset::factoryPresets(count);
   REQUIRE(count == generated);
 }
+
+TEST_CASE("presetInfo lists the fields the listening script needs, for a source and a preset file") {
+  std::string lines, error;
+  REQUIRE(presetInfo(fixture("test-performance.json"), lines, error));
+  CHECK(lines.find("name=Test Performance\n") != std::string::npos);
+  CHECK(lines.find("kind=performance\n") != std::string::npos);
+  CHECK(lines.find("plugin=instrument\n") != std::string::npos);
+  CHECK(lines.find("order=10\n") != std::string::npos);
+  CHECK(lines.find("note=") != std::string::npos);
+  CHECK(lines.find("credit=EG13 tests\n") != std::string::npos);
+
+  const Compiled compiled = compileFixture("test-patch.json");
+  REQUIRE(presetInfo(compiled.json, lines, error));
+  CHECK(lines.find("name=Test Patch\n") != std::string::npos);
+  CHECK(lines.find("kind=patch\n") != std::string::npos);
+  CHECK(lines.find("order=0\n") != std::string::npos);  // a preset file has no order
+
+  CHECK_FALSE(presetInfo("[1]", lines, error));
+}

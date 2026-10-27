@@ -30,6 +30,10 @@ struct Compiled {
 bool compileSource(const std::string& text, const std::string& file, const std::string& bank, Compiled& out,
                    std::string& error);
 
+// The listing fields of a source or a preset file as "key=value" lines: name, note, credit, plugin,
+// kind, order (0 when absent). Control characters in values become spaces, so a line is a field.
+bool presetInfo(const std::string& text, std::string& lines, std::string& error);
+
 // A preset file to source text (every P of the selected engines, all settings, routes in use).
 // Envelope shapes are not part of the source format and are dropped.
 bool decompile(const std::string& presetJson, std::string& sourceText, std::string& error);
