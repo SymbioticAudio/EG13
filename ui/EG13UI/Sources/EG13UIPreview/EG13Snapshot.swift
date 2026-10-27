@@ -196,6 +196,35 @@ enum EG13Snapshot {
         return ok ? 0 : 1
     }
 
+    /// Layout round 2: the left column spread over its height, the grouped "Modulate from" menu, and a busy patch.
+    static func runLayoutRound2(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let core = EG13PreviewCore.modulationDemo()  // the synth holds its core unowned: keep it alive
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<70 { synth.tick() }
+        let base = EG13Layout.baseSize
+        var ok = true
+        func matrix() -> EG13RightColumnState { let c = EG13RightColumnState(); c.pane = .matrix; return c }
+        ok = write(EG13RootView(synth: synth, column: matrix()), size: base, zoom: 1,
+                   to: "\(directory)/editor-matrix.png") && ok
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-mods.png") && ok
+        // Busy: Modal Synth (16 knobs) as the source, Granular Delay (15, the most a Part FX has) as the Part FX.
+        let busyCore = EG13PreviewCore.modulationDemo()
+        busyCore.select(EG13_SLOT_KIND_SOURCE, engine: 2, part: 0)
+        busyCore.select(EG13_SLOT_KIND_PART_FX, engine: 2, part: 0)
+        let busy = EG13Synth(core: busyCore, kind: .instrument)
+        for _ in 0..<70 { busy.tick() }
+        ok = write(EG13RootView(synth: busy), size: base, zoom: 1, to: "\(directory)/editor-busy.png") && ok
+        if let routed = synth.params.first(where: { $0.isRouted }), let menu = synth.contextMenu(for: routed.id) {
+            ok = writeFitted(EG13ContextMenuSheet(model: menu, knob: routed.name), to: "\(directory)/context-menu.png",
+                             scale: 2) && ok
+        } else {
+            ok = false
+        }
+        withExtendedLifetime((core, busyCore)) {}
+        return ok ? 0 : 1
+    }
+
     /// The layout design set: both parts at 100%, Part A at 75%, the header close-up, a contact sheet
     /// of every engine for each slot kind, and the worst case (the tallest engines in every slot) as
     /// the full height of both columns, with the visible strip marked.
@@ -445,7 +474,18 @@ struct EG13ContextMenuSheet: View {
                     }
                 }
                 if model.modulateEnabled {
-                    menu { ForEach(model.sources.indices, id: \.self) { item(model.sources[$0].name) } }
+                    // Modulate from > Keys / Controllers / Mods, with Controllers and Mods opened.
+                    let groups = model.groups
+                    menu { ForEach(groups.indices, id: \.self) { item(groups[$0].title, arrow: true) } }
+                    if let controllers = groups.first(where: { $0.title == EG13SourceGrouping.controllersTitle }) {
+                        menu { ForEach(controllers.items.indices, id: \.self) { item(controllers.items[$0].name) } }
+                    }
+                    if let mods = groups.first(where: { $0.title == EG13SourceGrouping.modsTitle }) {
+                        menu { ForEach(mods.children.indices, id: \.self) { item(mods.children[$0].title, arrow: true) } }
+                        if let first = mods.children.first {
+                            menu { ForEach(first.items.indices, id: \.self) { item(first.items[$0].name) } }
+                        }
+                    }
                 }
             }
         }

@@ -68,6 +68,20 @@ public enum EG13Layout {
         baseSize.height - headerHeight - bottomBarHeight - 3 * gap
     }
 
+    /// Height of the right-hand column's card area (below the MODS / MATRIX switch and its gap).
+    public static var rightColumnCardsHeight: CGFloat { stripHeight - paneSwitchHeight - (gap - 2) }
+
+    /// The gap between `heights.count` stacked cards in a column of `columnHeight`: the free space
+    /// shared equally between the cards, never less than `minGap`. A column the cards do not fit
+    /// keeps `minGap` (and scrolls). With fewer than two cards there is no gap.
+    public static func spreadGap(heights: [CGFloat], columnHeight: CGFloat, minGap: CGFloat = gap) -> CGFloat {
+        guard heights.count > 1 else { return 0 }
+        let used: CGFloat = heights.reduce(0, +)
+        let free: CGFloat = columnHeight - used
+        let share: CGFloat = free / CGFloat(heights.count - 1)
+        return max(minGap, share)
+    }
+
     /// Knob rows of `count` knobs in `width` points, rows balanced: 16 knobs in a width that
     /// holds 10 are two rows of 8, never 10 and 6. The cell is as wide as the row allows.
     public static func gridShape(count: Int, width: CGFloat, minCell: CGFloat) -> (columns: Int, cell: CGFloat) {

@@ -295,3 +295,15 @@ Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout
 
 The overlay inside a real host's NSHostingView (clicks outside, focus) and the settings file on another machine are untested by automation.
 
+
+## M6b layout design log, round 2 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r2 docs/superpowers/m6-design/m6b-layout-r2` writes `editor-matrix.png`, `editor-mods.png`, `editor-busy.png` (Modal Synth with 16 knobs as the Source, Granular Delay with 15, the most a Part FX has, as the Part FX) and `context-menu.png` (a drawn copy: Modulate from > Keys / Controllers / Mods, with Controllers and Mods opened).
+
+Round 1 feedback: the owner approved everything else; two changes.
+
+Decisions
+1. **Spread the left column.** The four cards keep their heights; the free height is shared equally between them: gap = max(8 pt, (column height - sum of card heights) / (n - 1)), no space above the first or below the last (EG13Layout.spreadGap, drawn by EG13SpreadStack). Cards taller than the column keep the 8 pt gap and the column scrolls as before. Also applied to the right column's Mods view (four mini-cards), so both columns line up; the matrix view is unchanged.
+2. **Group "Modulate from".** Keys (codes 1-8), Controllers (9-16), Mods (32 and up, one submenu per mod slot titled with the slot's name, e.g. "Mod 1 Envelope"). Derived from the codes (EG13SourceGrouping), not hand-listed; empty groups (a mod slot that is Off) are left out. The matrix row's source and via menus use the same grouping (they replace Performance / Mod 1...4). "Matrix full" is unchanged.
+
+Status: awaiting owner feedback.

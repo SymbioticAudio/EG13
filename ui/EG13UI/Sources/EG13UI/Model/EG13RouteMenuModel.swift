@@ -19,6 +19,8 @@ public struct EG13RouteChoice: Equatable, Identifiable, Sendable {
 public struct EG13RouteGroup: Equatable, Identifiable, Sendable {
     public var title: String
     public var choices: [EG13RouteChoice]
+    /// Nested submenus (the Mods group holds one per mod slot).
+    public var subgroups: [EG13RouteGroup] = []
     public var id: String { title }
 }
 
@@ -118,16 +120,16 @@ extension EG13Synth {
                                   groups: isDestination ? destinationGroups(part: part) : sourceGroups(part: part))
     }
 
-    /// Sources by family: Performance (codes below 32), then Mod 1...4.
+    /// Sources by family (EG13SourceGrouping): Keys, Controllers, Mods > one submenu per mod slot.
     func sourceGroups(part: Int) -> [EG13RouteGroup] {
-        var groups: [EG13RouteGroup] = []
-        for (title, range) in [("Performance", 1..<32), ("Mod 1", 32..<40), ("Mod 2", 40..<48),
-                               ("Mod 3", 48..<56), ("Mod 4", 56..<64)] {
-            let choices = sources(part: part).filter { range.contains(Int($0.code)) }
-                .map { EG13RouteChoice(code: $0.code, name: $0.name, short: EG13RouteLabels.source($0.name)) }
-            if !choices.isEmpty { groups.append(EG13RouteGroup(title: title, choices: choices)) }
+        let list = sources(part: part).map {
+            (code: $0.code, name: $0.name,
+             item: EG13RouteChoice(code: $0.code, name: $0.name, short: EG13RouteLabels.source($0.name)))
         }
-        return groups
+        func convert(_ node: EG13SourceNode<EG13RouteChoice>) -> EG13RouteGroup {
+            EG13RouteGroup(title: node.title, choices: node.items, subgroups: node.children.map(convert))
+        }
+        return EG13SourceGrouping.groups(list).map(convert)
     }
 
     /// Destinations by card, in the card order: Source, Filter, Shaper, Part FX, Mod 1...4, Voice.

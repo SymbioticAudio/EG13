@@ -86,11 +86,12 @@ struct EG13MatrixEditorTests {
         #expect(other?.choices.map(\.name) != filter?.choices.map(\.name))
     }
 
-    @Test("The source menu groups Performance and each Mod, and Mod 2 (Off) has none")
+    @Test("The source menu groups Keys, Controllers and Mods > each mod slot, and Mod 2 (Off) has none")
     func sourceGroups() {
         let menu = synth.routeMenu(part: 0, route: 0, field: .source)
-        #expect(menu.groups.map(\.title) == ["Performance", "Mod 1"])
-        #expect(menu.groups[1].choices.map(\.name) == ["Mod 1 Envelope"])
+        #expect(menu.groups.map(\.title) == ["Keys", "Controllers", "Mods"])
+        #expect(menu.groups[2].subgroups.map(\.title) == ["Mod 1 Envelope"])
+        #expect(menu.groups[2].subgroups[0].choices.map(\.name) == ["Mod 1 Envelope"])
         #expect(synth.routeMenu(part: 0, route: 0, field: .via).groups == menu.groups)
     }
 
@@ -174,8 +175,12 @@ struct EG13MatrixEditorTests {
                                   remove: { synth.clearRoute(part: 0, route: $0) })
         #expect(menu.items[0].title == "Modulate from" && menu.items[0].isEnabled)
         let submenu = try #require(menu.items[0].submenu)
-        #expect(submenu.items.map(\.title) == model.sources.map(\.name))
-        let wheel = try #require(submenu.items.first { $0.title == "Mod Wheel" })
+        #expect(submenu.items.map(\.title) == ["Keys", "Controllers", "Mods"])
+        let controllers = try #require(submenu.items[1].submenu)
+        let mods = try #require(submenu.items[2].submenu)
+        #expect(mods.items.map(\.title) == ["Mod 1 Envelope"])
+        #expect(try #require(mods.items[0].submenu).items.map(\.title) == ["Mod 1 Envelope"])
+        let wheel = try #require(controllers.items.first { $0.title == "Mod Wheel" })
         _ = wheel.target?.perform(wheel.action, with: wheel)
         #expect(core.routes[0][1] == .init(source: Self.modWheel, destination: Self.filterP1, via: 0), "route 0 was taken")
         let remove = try #require(menu.items.first { $0.title == "Remove modulation: Velocity" })

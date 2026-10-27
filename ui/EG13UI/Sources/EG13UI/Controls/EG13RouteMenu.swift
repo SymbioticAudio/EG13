@@ -51,11 +51,14 @@ struct EG13RouteMenu: View {
 
     @ViewBuilder private var items: some View {
         choice("None", code: 0)
-        ForEach(model.groups) { group in
-            Menu(group.title) {
-                ForEach(group.choices) { item in choice(item.name, code: item.code) }
-            }
-        }
+        ForEach(model.groups) { group in groupMenu(group) }
+    }
+
+    private func groupMenu(_ group: EG13RouteGroup) -> AnyView {
+        AnyView(Menu(group.title) {
+            ForEach(group.choices) { item in choice(item.name, code: item.code) }
+            ForEach(group.subgroups) { sub in groupMenu(sub) }
+        })
     }
 
     // A Toggle in a menu is drawn with the menu's own check mark (menu state, not an image).

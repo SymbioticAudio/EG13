@@ -17,6 +17,10 @@ public struct EG13ContextMenuModel: Equatable, Sendable {
     public var modulateTitle: String
     public var modulateEnabled: Bool
     public var sources: [Source]
+    /// The sources as the menu shows them: Keys, Controllers, Mods > one submenu per mod slot.
+    public var groups: [EG13SourceNode<Source>] {
+        EG13SourceGrouping.groups(sources.map { (code: $0.code, name: $0.name, item: $0) })
+    }
     public var removals: [Removal]
 
     public static let modulateFrom = "Modulate from"
@@ -69,7 +73,18 @@ extension EG13ContextMenuModel {
         if modulateEnabled {
             let submenu = NSMenu(title: modulateTitle)
             submenu.autoenablesItems = false
-            for source in sources { submenu.addItem(item(source.name) { modulate(source.code) }) }
+            func fill(_ menu: NSMenu, _ nodes: [EG13SourceNode<Source>]) {
+                for node in nodes {
+                    let parent = NSMenuItem(title: node.title, action: nil, keyEquivalent: "")
+                    let sub = NSMenu(title: node.title)
+                    sub.autoenablesItems = false
+                    for source in node.items { sub.addItem(item(source.name) { modulate(source.code) }) }
+                    fill(sub, node.children)
+                    parent.submenu = sub
+                    menu.addItem(parent)
+                }
+            }
+            fill(submenu, groups)
             parent.submenu = submenu
         }
         menu.addItem(parent)
