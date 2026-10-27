@@ -268,3 +268,30 @@ Built: `EG13ModMarkGeometry.pointerIsUp` and `centre(capRadius:normalized:)` (th
 Open choices: the wave jumps between the two places at horizontal; a small knob's wave is close to the cap's edge; the 14 x 10 pt click area moves with the wave.
 
 **Modulation display approved by the owner on 2026-10-26** (round 4: the 45 % wave in the top or bottom third, the MOTION n menu, 15 Hz traces).
+
+## M6b layout design log, round 1 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r1 docs/superpowers/m6-design/m6b-layout-r1`. The preview core has the modulation demo's routes; PNGs are 100 % unless named.
+
+### What is shown
+
+- `editor-matrix.png`, `editor-matrix-75.png`: Part A with the right column on MATRIX (12 route rows: source, via and destination menus, a small amount knob, a clear button), at 100 % and 75 %.
+- `editor-mods.png`: the same with MODS shown.
+- `part-settings-split.png`, `part-settings-layer.png`: the Part settings content for A and B side by side (at 150 %), with the key-range strip. Split: A low, B high, the split marker between. Layer: both parts over most of the range, no marker.
+- `settings.png`, `about.png`: the Settings and About panel over the editor.
+- `context-menu.png`: the knob context menu (Harmonics, which has one route) as a list: "Modulate from" with its sources, and "Remove modulation: <source>". A real NSMenu cannot be snapshotted, so this is a drawn copy; the real menu uses the system look.
+
+### Open choices for the owner
+
+1. **Settings and About: sheet or overlay.** Built as an in-editor overlay (dimmed editor, panel in the middle), not a SwiftUI `.sheet`: a sheet is a host-window sheet that would not scale with the editor's zoom and that image renders cannot show, and its behaviour inside a plugin host window is untested. A sheet is a small change if you prefer it.
+2. **Matrix row layout.** Source, via, destination, amount knob, clear, with the row number at the left. Is the amount knob (28 pt) large enough, and should the amount read to the right as now, or left of the knob?
+3. **MODS / MATRIX switch placement.** Top left of the right column, as an LCD pair. Alternatives: top right, or in the header.
+4. **Part settings strip.** The key-range strip is at the top of each part's card with the bands above the keys. Should the strip sit nearer Key Low and Key High?
+5. **Settings content.** Only the two decided settings and the current-window size buttons. The text under each setting is explanatory; shorter text is possible.
+6. **Context menu.** "Modulate from" opens a submenu of every source (21 in the demo). A grouped submenu (Keys, Controllers, Mods) is possible if the list is too long.
+7. **About.** Version and build come from the core (`0.6.0 (abc1234)` in a real build; the preview core says "preview").
+
+### Not yet tested
+
+The overlay inside a real host's NSHostingView (clicks outside, focus) and the settings file on another machine are untested by automation.
+
