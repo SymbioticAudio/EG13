@@ -730,7 +730,8 @@ TEST_CASE("A route into Part Level moves the part's level") {
   setRoute(params, 0, kSrcVelocity, kDestPartLevel, -0.5f);
   part.noteOn(60, 1.0f);
   const Stereo out = runModulated(part, 9600, params);
-  REQUIRE(std::fabs(out.l[9599] - 0.5f * 0.5f) < 1e-3f);
+  // Velocity 1 x -50 % moves the knob from 0 dB (kPartLevelUnity) down by half its travel.
+  REQUIRE(std::fabs(out.l[9599] - 0.5f * partLevelGain(kPartLevelUnity - 0.5f)) < 1e-4f);
 }
 
 TEST_CASE("A modulated part does not allocate") {

@@ -3,7 +3,7 @@
 //   eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]
 //   eg13_preset info <source.json|file>
 //   eg13_preset decompile <file> -o <source.json>
-//   eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress] [--no-soft-clip]
+//   eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress | --extremes] [--no-soft-clip]
 //   eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]
 //   eg13_preset table <dir>... -o <factory_presets.cpp>
 #include <algorithm>
@@ -29,7 +29,7 @@ int usage() {
                "  eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]\n"
                "  eg13_preset info <source.json|file>\n"
                "  eg13_preset decompile <file> -o <source.json>\n"
-               "  eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress] [--no-soft-clip]\n"
+               "  eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress | --extremes] [--no-soft-clip]\n"
                "  eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]\n"
                "  eg13_preset table <dir>... -o <factory_presets.cpp>\n";
   return 2;
@@ -64,6 +64,7 @@ struct Args {
   double seconds = kDefaultSeconds;
   bool writeGolden = false;
   bool stress = false;      // render: the headroom script (stressScript) instead of the note script
+  bool extremes = false;    // render: the expression extremes script (extremesScript)
   bool noSoftClip = false;  // render: master Soft Clip off, and print the raw peak
   bool ok = true;
 };
@@ -92,6 +93,7 @@ Args parse(int argc, char** argv) {
       if (!(a.seconds > 0.0 && a.seconds <= 600.0)) a.ok = false;
     } else if (arg == "--write") a.writeGolden = true;
     else if (arg == "--stress") a.stress = true;
+    else if (arg == "--extremes") a.extremes = true;
     else if (arg == "--no-soft-clip") a.noSoftClip = true;
     else if (!arg.empty() && arg[0] == '-') a.ok = false;
     else a.positional.push_back(arg);
@@ -152,7 +154,8 @@ int renderCommand(const Args& a) {
   Audio audio;
   RenderOptions options;
   options.softClip = !a.noSoftClip;
-  const NoteScript script = a.stress ? stressScript() : noteScript(a.seconds);
+  if (a.stress && a.extremes) return usage();
+  const NoteScript script = a.stress ? stressScript() : a.extremes ? extremesScript() : noteScript(a.seconds);
   if (!renderScript(presetJson, a.part == "B" ? 1 : 0, script, audio, error, &options)) return fail(error);
   if (a.noSoftClip) {  // the WAV is 16-bit and clips; the raw peak is printed
     float peak = 0.0f;

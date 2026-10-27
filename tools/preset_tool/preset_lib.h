@@ -49,11 +49,17 @@ struct NoteScript {
   float velocity = 0.0f;
   double holdSeconds = 0.0;
   double seconds = 0.0;
+  // Every expression at its maximum from before the first note: mod wheel (CC1), slide (CC74),
+  // channel pressure, and each note's poly pressure.
+  bool expressionMax = false;
 };
 // The note script: C3 G3 D4 A4 at velocity 100 held 8 s, released, then a tail, `seconds` in all.
 NoteScript noteScript(double seconds = kDefaultSeconds);
 // The headroom check: eight notes (C2 G2 C3 E3 G3 B3 D4 G4) at velocity 127 held 6 s, then 1 s.
 NoteScript stressScript();
+// Expression extremes (ruling R6): eight notes (C2 C3 G3 E4 C5 G5 C6 C7) at velocity 127 with every
+// expression at its maximum (expressionMax), held 6 s, then 1 s.
+NoteScript extremesScript();
 
 struct RenderOptions {
   bool softClip = true;            // false: the master Soft Clip off, so the output is the raw mix

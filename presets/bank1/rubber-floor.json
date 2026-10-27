@@ -30,7 +30,7 @@
           "Low Freq": 0.05,
           "Low Gain": 0.0,
           "High Freq": 0.1,
-          "High Gain": 0.83,
+          "High Gain": 0.5,
           "Mid 1 Freq": 0.24,
           "Mid 1 Gain": 0.62,
           "Mid 1 Q": 0.2
@@ -57,7 +57,7 @@
         }
       },
       "settings": {
-        "Level": 1.0,
+        "Level": 0.9138,
         "Transpose": -12,
         "Voice Mode": "Legato",
         "Glide": 0.1

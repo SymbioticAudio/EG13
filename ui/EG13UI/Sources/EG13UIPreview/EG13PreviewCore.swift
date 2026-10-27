@@ -88,7 +88,7 @@ final class EG13PreviewCore: EG13Core {
             for route in 0..<EG13ParamID.routeCount {
                 add(EG13ParamID.routeAmount(part, route), "Route \(route + 1)", -1, 1, route < 3 ? [1, 0.3, 0.1][route] : 0)
             }
-            add(EG13ParamID.part(part, .level), "Level", 0, 1, 1)
+            add(EG13ParamID.part(part, .level), "Level", 0, 1, Self.partLevelUnity)
             add(EG13ParamID.part(part, .pan), "Pan", -1, 1, 0)
             add(EG13ParamID.part(part, .glide), "Glide", 0, 1, 0)
             add(EG13ParamID.part(part, .transpose), "Transpose", -24, 24, 0, stepped: true)
@@ -169,6 +169,17 @@ final class EG13PreviewCore: EG13Core {
         return p <= engine.params.count ? engine.params[p - 1] : "(unused)"
     }
 
+    /// Part Level as the core shows it (core/part/part_level.h): the knob position, gain
+    /// (v / unity)^3, from silence to +12 dB, 0 dB at the default.
+    static let partLevelUnity = 0.63095734
+    static func partLevelText(_ value: Double) -> String {
+        let ratio = min(max(value, 0), 1) / partLevelUnity
+        let gain = ratio * ratio * ratio
+        guard gain > 0 else { return "-inf dB" }
+        let db = 20 * log10(gain)
+        return abs(db) < 0.05 ? "0.0 dB" : String(format: "%+.1f dB", db)
+    }
+
     func paramText(at index: Int, value: Double) -> String {
         let d = descriptors[index]
         let i = Int(value.rounded())
@@ -198,6 +209,7 @@ final class EG13PreviewCore: EG13Core {
             if isPart(.midiChannel) { return i == 0 ? "Omni" : "\(i)" }
             if isPart(.transpose) { return String(format: "%+d st", i) }
             if isPart(.bendRange) || isPart(.mpeBendRange) { return "+/-\(i) st" }
+            if isPart(.level) { return Self.partLevelText(value) }
             if [.ccA, .ccB, .ccC, .ccD].contains(where: isPart) { return "CC \(i)" }
             if isPart(.baseNote) || isPart(.keyLow) || isPart(.keyHigh) {
                 let note = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][i % 12]

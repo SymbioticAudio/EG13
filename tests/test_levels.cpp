@@ -316,3 +316,96 @@ TEST_CASE("Host defaults of the Part FX P's suit every engine", "[levels]") {
     REQUIRE(level.peak < 1.5f);
   }
 }
+
+namespace {
+
+std::string partLevelText(double position) {
+  char buf[32];
+  formatParam(partParamIndex(0, PartParam::Level), position, buf, sizeof buf);
+  return buf;
+}
+
+// The knob position that gives `db` (the inverse of partLevelGain()).
+double partLevelFor(double db) { return double(kPartLevelUnity) * std::pow(10.0, db / 60.0); }
+
+// RMS of the synth's output for one held C3 on the Audio Input (a 220 Hz sine, so every render
+// is the same), 0.5 to 1 s, Part A only, master 100 %, Soft Clip off. m3: no modulation (the
+// unmodulated path); otherwise the init patch's modulated path, with `route` (when not 0) from
+// Gate to Part Level.
+double partOutputRms(double level, bool m3, double route = 0.0) {
+  Synth synth(PluginKind::Instrument);
+  if (m3) test::m3Patch(synth);
+  synth.setParam(paramSpec(sourceEngineParamIndex(0)).id, double(SourceEngine::AudioInput));
+  synth.setParam(paramSpec(masterParamIndex(MasterParam::Level)).id, 1.0);
+  synth.setParam(paramSpec(masterParamIndex(MasterParam::SoftClip)).id, 0.0);
+  synth.setParam(paramSpec(partParamIndex(0, PartParam::Level)).id, level);
+  synth.setParam(paramSpec(partParamIndex(1, PartParam::Level)).id, 0.0);
+  if (route != 0.0) {
+    synth.setRoute(0, 5, Route{kSrcGate, kDestPartLevel, kSrcNone});
+    synth.setParam(paramSpec(routeAmountParamIndex(0, 5)).id, route);
+  }
+  synth.prepare(kRate, 128);
+  std::vector<float> in(128), l(128), r(128), all;
+  const float* input[2] = {in.data(), in.data()};
+  float* out[2] = {l.data(), r.data()};
+  synth.noteOn(0, 48, 1.0f);
+  for (int b = 0; b < int(kRate) / 128; ++b) {
+    for (int i = 0; i < 128; ++i) in[size_t(i)] = 0.25f * float(std::sin(6.283185307179586 * 220.0 * double(b * 128 + i) / kRate));
+    synth.process(input, out, nullptr, 128);
+    all.insert(all.end(), l.begin(), l.end());
+  }
+  return test::rms(all, all.size() / 2, all.size());
+}
+
+}  // namespace
+
+TEST_CASE("Part Level runs from silence to +12 dB, with 0 dB at its default", "[levels]") {
+  const ParamSpec& spec = paramSpec(partParamIndex(0, PartParam::Level));
+  REQUIRE(spec.minValue == 0.0f);
+  REQUIRE(spec.maxValue == 1.0f);
+  REQUIRE(spec.defaultValue == kPartLevelUnity);
+  REQUIRE(spec.effectDefault == kPartLevelUnity);
+  REQUIRE(partLevelGain(0.0f) == 0.0f);
+  REQUIRE(partLevelGain(kPartLevelUnity) == 1.0f);  // exactly: Init sounds as before
+  REQUIRE(std::fabs(20.0 * std::log10(double(partLevelGain(1.0f))) - 12.0) < 0.01);
+  REQUIRE(partLevelGain(-1.0f) == 0.0f);
+  REQUIRE(partLevelGain(2.0f) == partLevelGain(1.0f));
+  // Fine near 0 dB: one percent of the knob moves less than half a decibel there.
+  const double step = 20.0 * std::log10(double(partLevelGain(kPartLevelUnity + 0.01f)));
+  REQUIRE(step > 0.0);
+  REQUIRE(step < 0.5);
+  for (float v = 0.01f; v <= 1.0f; v += 0.01f) REQUIRE(partLevelGain(v) > partLevelGain(v - 0.01f));
+
+  REQUIRE(partLevelText(0.0) == "-inf dB");
+  REQUIRE(partLevelText(double(kPartLevelUnity)) == "0.0 dB");
+  REQUIRE(partLevelText(1.0) == "+12.0 dB");
+  REQUIRE(partLevelText(partLevelFor(-6.0)) == "-6.0 dB");
+  REQUIRE(partLevelText(partLevelFor(3.5)) == "+3.5 dB");
+  REQUIRE(partLevelText(partLevelFor(-0.04)) == "0.0 dB");  // no "-0.0 dB"
+}
+
+TEST_CASE("Part Level is the part's gain in dB on both paths", "[levels]") {
+  for (const bool m3 : {true, false}) {
+    INFO((m3 ? "unmodulated path" : "modulated path"));
+    const double unity = partOutputRms(double(kPartLevelUnity), m3);
+    REQUIRE(unity > 1e-3);
+    for (const double db : {-12.0, -6.0, 6.0, 12.0}) {
+      const double rms = partOutputRms(partLevelFor(db), m3);
+      INFO(db << " dB asked, " << 20.0 * std::log10(rms / unity) << " dB measured");
+      REQUIRE(std::fabs(20.0 * std::log10(rms / unity) - db) < 0.05);
+    }
+    REQUIRE(partOutputRms(0.0, m3) == 0.0);
+  }
+}
+
+TEST_CASE("A Part Level route moves the knob position and cannot pass +12 dB", "[levels]") {
+  const double unity = partOutputRms(double(kPartLevelUnity), false);
+  const double top = partOutputRms(1.0, false);
+  REQUIRE(std::fabs(20.0 * std::log10(top / unity) - 12.0) < 0.05);
+  // From the top, a full positive route adds nothing; from 0 dB it reaches +12 dB and no further.
+  REQUIRE(std::fabs(20.0 * std::log10(partOutputRms(1.0, false, 1.0) / top)) < 0.01);
+  REQUIRE(std::fabs(20.0 * std::log10(partOutputRms(double(kPartLevelUnity), false, 1.0) / top)) < 0.01);
+  // A negative route works in the knob's space: -50 % from the top is the knob at 50 %.
+  const double half = partOutputRms(0.5, false);
+  REQUIRE(std::fabs(20.0 * std::log10(partOutputRms(1.0, false, -0.5) / half)) < 0.01);
+}

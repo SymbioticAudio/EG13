@@ -61,6 +61,12 @@ A missing or empty directory gives an empty bank. One file per preset, `<slug>.j
   - `settings` (part) and `master`: a number in the setting's own units (Pan -1..1, Transpose -24..24
     semitones, Level 0..1, Voices 1..8, ...), or for a stepped setting its option text as the editor
     shows it (`"Poly"`, `"C4"`, `"Layer"`).
+  - Part `Level` is the knob position, 0..1: the gain is `(Level / 0.631)^3`, silence to +12 dB, so
+    0 dB (the Init value) is 0.6310, +6 dB 0.7943, +12 dB 1.0, -6 dB 0.5012, -12 dB 0.3981. For a
+    gain of `g` dB write `0.6310 * 10^(g/60)`. Put make-up gain here, not in an EQ Shaper: swapping
+    the Shaper should not change the level by the EQ's gain. (Note that the EQ also clips inside
+    at about twice full scale, so an EQ used as +10 dB of gain was quietly limiting the loudest
+    peaks; the same gain in Level does not.)
   - Master `Level`, `Voice Gain` and `Latency Mode`, and per part `MIDI Channel`, `Output`, `MPE`,
     `MPE Bend Range`, `CC A` to `CC D`, are setup fields: they compile but applying a preset never
     changes the user's values. Leave them out. A Patch also never changes `Key Low` / `Key High`.
@@ -80,7 +86,7 @@ A missing or empty directory gives an empty bank. One file per preset, `<slug>.j
 eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]
 eg13_preset info <source.json|file>
 eg13_preset decompile <file> -o <source.json>
-eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress] [--no-soft-clip]
+eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress | --extremes] [--no-soft-clip]
 eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]
 eg13_preset table <dir>... -o <factory_presets.cpp>
 ```
@@ -96,6 +102,16 @@ eg13_preset table <dir>... -o <factory_presets.cpp>
   the WAV then clips at full scale. Every instrument factory preset must stay below -1 dBFS on the
   headroom script with Soft Clip off (ctest "Every instrument factory preset keeps 1 dB of headroom
   ..."), and the first-load preset below the soft clipper (-3 dBFS) on the note script.
+- `--extremes` plays the **expression extremes script** (ruling R6): C2 C3 G3 E4 C5 G5 C6 C7 at
+  velocity 127 with the mod wheel, slide (CC74), channel pressure and each note's poly pressure at
+  their maximum from before the first note, held 6 s, 7 s in all. Every instrument factory preset
+  must stay below -1 dBFS there with Soft Clip off and keep each channel's mean (DC) below -50 dBFS
+  (ctest "... no DC at the expression extremes").
+- Margins: the headroom tests render every preset in table order in one process, and Braids and
+  Plaits share one process-wide random generator, so a preset's peak in the test depends on what
+  rendered before it (and moves by up to ~3 dB when an earlier preset changes). Leave 1.5 dB of
+  margin on the headroom script in the test, and 1 dB at the worst of a few dozen consecutive
+  renders of the preset on its own (the same applies to the extremes script).
 - The **note script**, fixed: C3, G3, D4 and A4 held together at velocity 100 for 8 s, then released,
   then a tail, 12 s in all.
 - `info` prints `name`, `note`, `credit`, `plugin`, `kind`, `order` as `key=value` lines (the listening

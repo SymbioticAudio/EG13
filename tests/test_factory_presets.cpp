@@ -226,6 +226,33 @@ TEST_CASE("Every instrument factory preset keeps 1 dB of headroom at eight notes
   }
 }
 
+TEST_CASE("Every instrument factory preset keeps 1 dB of headroom and no DC at the expression extremes") {
+  // Ruling R6: eight notes up to C7 at velocity 127 with the mod wheel, slide, channel and poly
+  // pressure at their maximum (extremesScript), Soft Clip off: the raw mix stays below -1 dBFS and
+  // each channel's mean below -50 dBFS.
+  size_t count = 0;
+  const preset::FactoryPreset* table = preset::factoryPresets(count);
+  for (size_t i = 0; i < count; ++i) {
+    if (table[i].plugin != PluginKind::Instrument) continue;
+    INFO(label(table[i]));
+    Audio audio;
+    std::string error;
+    RenderOptions options;
+    options.softClip = false;
+    REQUIRE(renderScript(table[i].json, 0, extremesScript(), audio, error, &options));
+    const float peak = peakOf(audio);
+    double left = 0.0, right = 0.0;
+    for (size_t k = 0; k < audio.left.size(); ++k) {
+      left += double(audio.left[k]);
+      right += double(audio.right[k]);
+    }
+    const double dc = std::max(std::fabs(left), std::fabs(right)) / double(audio.left.size());
+    INFO("peak " << 20.0 * std::log10(peak + 1e-12) << " dBFS, DC " << 20.0 * std::log10(dc + 1e-12) << " dBFS");
+    CHECK(peak < std::pow(10.0f, -1.0f / 20.0f));
+    CHECK(dc < std::pow(10.0, -50.0 / 20.0));
+  }
+}
+
 TEST_CASE("Each factory preset matches its golden level envelope") {
   const nlohmann::json golden = nlohmann::json::parse(slurp(std::string(EG13_TEST_DATA_DIR) + "/preset_golden.json"));
   REQUIRE(golden.contains("presets"));

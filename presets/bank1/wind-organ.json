@@ -15,7 +15,7 @@
       "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.62, "Sustain": 1.0, "Release": 0.75 } },
       "Mod 3": { "engine": "Function Generator", "scope": "per voice", "params": { "Mode": "Random", "Rate": 0.2, "Smoothness": 0.85 } },
       "Mod 4": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.55 } },
-      "settings": { "Level": 0.63, "Transpose": 12 },
+      "settings": { "Level": 0.5314, "Transpose": 12 },
       "routes": [
         { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
         { "source": "Note", "destination": "Filter: Frequency", "amount": 1.0 },

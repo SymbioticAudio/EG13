@@ -65,7 +65,7 @@
         }
       },
       "settings": {
-        "Level": 1.0
+        "Level": 0.7009
       },
       "routes": [
         {
@@ -97,7 +97,7 @@
           "Low Freq": 0.05,
           "Low Gain": 0.0,
           "High Freq": 0.1,
-          "High Gain": 0.55
+          "High Gain": 0.5
         }
       }
     }

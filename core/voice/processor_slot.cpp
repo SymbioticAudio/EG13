@@ -29,7 +29,9 @@ ProcessorSlot::ProcessorSlot(std::vector<SourceSpec> engines) {
     engines_.push_back(std::make_unique<NativeRateWrapper>(std::move(e.engine), e.nativeRate, e.nativeBlock));
     engines_.back()->setWholeBlocks(e.wholeBlocks);
     outputGain_.push_back(e.outputGain);
+    dcBlock_.push_back(e.dcBlock);
   }
+  dc_.resize(engines_.size());
 }
 
 void ProcessorSlot::setOutputGain(int engine, float gain) {
@@ -44,6 +46,9 @@ void ProcessorSlot::prepare(double hostRate, int maxBlock, ConverterQuality q) {
     latency_ = std::max(latency_, e->inputPathLatencySamples());
   }
   for (auto& e : engines_) e->setExtraDelay(latency_ - e->inputPathLatencySamples());
+  for (auto& pair : dc_) {
+    for (DcBlocker& f : pair) f.prepare(hostRate);
+  }
   detector_.prepare(hostRate);
   fadeStep_ = float(1.0 / std::max(1.0, hostRate * kSlotFadeSeconds));
   for (auto& buffer : fade_) buffer.assign(size_t(maxBlock), 0.0f);
@@ -53,6 +58,9 @@ void ProcessorSlot::prepare(double hostRate, int maxBlock, ConverterQuality q) {
 void ProcessorSlot::reset() {
   if (pending_ >= 0) current_ = pending_;
   for (auto& e : engines_) e->reset();
+  for (auto& pair : dc_) {
+    for (DcBlocker& f : pair) f.reset();
+  }
   detector_.reset();
   previous_ = -1;
   pending_ = -1;
@@ -66,6 +74,7 @@ void ProcessorSlot::reset() {
 void ProcessorSlot::restart() {
   if (pending_ >= 0) current_ = pending_;
   at(current_).reset();
+  for (DcBlocker& f : dc_[size_t(current_)]) f.reset();
   detector_.reset();
   previous_ = -1;
   pending_ = -1;
@@ -107,6 +116,7 @@ void ProcessorSlot::startFade(int engine, const ParamValues& outgoing) {
 void ProcessorSlot::startEngine() {
   NativeRateWrapper& next = at(current_);
   next.reset();
+  for (DcBlocker& f : dc_[size_t(current_)]) f.reset();
   next.setNote(note_);
   if (gate_) next.noteOn(note_, velocity_);
 }
@@ -148,6 +158,10 @@ void ProcessorSlot::render(int engine, const float* const* in, const SideSignals
       out[0][i] *= gain;
       out[1][i] *= gain;
     }
+  }
+  if (dcBlock_[size_t(engine)]) {
+    dc_[size_t(engine)][0].process(out[0], n);
+    dc_[size_t(engine)][1].process(out[1], n);
   }
 }
 

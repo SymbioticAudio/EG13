@@ -78,7 +78,7 @@
         }
       },
       "settings": {
-        "Level": 0.37,
+        "Level": 0.4625,
         "Pan": -0.15,
         "Transpose": -12,
         "Voice Mode": "Legato"
@@ -157,7 +157,7 @@
         }
       },
       "settings": {
-        "Level": 1.0,
+        "Level": 0.6442,
         "Pan": 0.15
       },
       "routes": [

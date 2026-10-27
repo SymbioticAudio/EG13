@@ -77,7 +77,7 @@ Each of a part's twelve routes has a **source**, a **destination**, an **amount*
 - **Pitch** is in semitones: ±100 % is ±24 semitones (so 2 % is about half a semitone). Pitch routes come on top of the part's pitch bend and transpose. Pitch routes sum to at most ±48 semitones.
 - **Pan** starts from the centre: −50 % is fully left, +50 % fully right.
 - **Amp**: see Amp and voices below.
-- **Part Level** adds to the part's Level setting.
+- **Part Level** adds to the part's Level knob position (0 to 100 %, the knob's travel, not its dB) and stops at the ends, so the part goes from silence to at most +12 dB ([Parts and routing](parts-and-routing.md)). +100 % from 0 dB reaches +12 dB; −50 % from the top gives the knob at 50 % (−6 dB).
 - **Part FX controls** add to the Part FX's P1 to P16 the same way. They are part-wide, so per-note sources (velocity, a per-note envelope or LFO) read the most recently played note.
 
 ## Mod slots: engine and scope

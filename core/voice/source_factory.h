@@ -17,6 +17,9 @@ struct SourceSpec {
   // Part FX engines: the slot scales this engine's output by it (its trim, partFxTrim; M5 G11),
   // inside the slot's crossfade, so each engine keeps its own trim through a type change.
   float outputGain = 1.0f;
+  // Shaper engines (task 8g): the slot runs this engine's output through its own DC filter
+  // (DcBlocker), inside the slot's crossfade. Off has none, so it stays bit-exact.
+  bool dcBlock = false;
 };
 
 using SourceFactory = SourceSpec (*)();

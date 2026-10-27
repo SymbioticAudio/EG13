@@ -32,7 +32,9 @@ SourceSpec makeFilter(int engine) {
   return makeOff();
 }
 
-SourceSpec makeShaper(int engine) {
+namespace {
+
+SourceSpec shaperEngine(int engine) {
   switch (ShaperEngine(engine)) {
     case ShaperEngine::RingMod:
       return {std::make_unique<WarpsEngine>(), WarpsEngine::kNativeRate, WarpsEngine::kNativeBlock};
@@ -40,6 +42,16 @@ SourceSpec makeShaper(int engine) {
     case ShaperEngine::Off: break;
   }
   return makeOff();
+}
+
+}  // namespace
+
+SourceSpec makeShaper(int engine) {
+  SourceSpec spec = shaperEngine(engine);
+  // The DC filter after every Shaper but Off (task 8g): the Ring Mod's fold and ring
+  // modulation put out DC (up to -13 dBFS) that nothing after the Shaper removes.
+  spec.dcBlock = ShaperEngine(engine) == ShaperEngine::RingMod || ShaperEngine(engine) == ShaperEngine::Eq;
+  return spec;
 }
 
 namespace {

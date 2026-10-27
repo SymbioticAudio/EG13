@@ -10,7 +10,7 @@ namespace eg13 {
 // every slot).
 SourceSpec makeOff();
 SourceSpec makeFilter(int engine);  // index = FilterEngine; unknown -> Off
-SourceSpec makeShaper(int engine);  // index = ShaperEngine; unknown -> Off
+SourceSpec makeShaper(int engine);  // index = ShaperEngine; unknown -> Off; all but Off: dcBlock
 // Part FX engines (M5): Granular 32000 Hz / 32, Granular Delay host rate (nested converters),
 // Resonator 48000 / 24, Reverb 32000 / 16. Each runs in whole native blocks (ruling G8).
 SourceSpec makePartFx(int engine);  // index = PartFxEngine; unknown -> Off

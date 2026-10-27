@@ -499,6 +499,8 @@ NoteScript noteScript(double seconds) { return {{48, 55, 62, 69}, 100.0f / 127.0
 
 NoteScript stressScript() { return {{36, 43, 48, 52, 55, 59, 62, 67}, 1.0f, 6.0, 7.0}; }
 
+NoteScript extremesScript() { return {{36, 48, 55, 64, 72, 79, 84, 96}, 1.0f, 6.0, 7.0, true}; }
+
 bool render(const std::string& presetJson, int part, double seconds, Audio& out, std::string& error,
             RenderOptions* options) {
   return renderScript(presetJson, part, noteScript(seconds), out, error, options);
@@ -555,7 +557,15 @@ bool renderScript(const std::string& presetJson, int part, const NoteScript& scr
       inR[i] = 0.25f * saw + 0.1f * noise();
     }
   }
-  for (const int note : script.notes) synth.noteOn(0, note, script.velocity);
+  if (script.expressionMax) {
+    synth.controlChange(0, 1, 127);
+    synth.controlChange(0, 74, 127);
+    synth.channelPressure(0, 1.0f);
+  }
+  for (const int note : script.notes) {
+    synth.noteOn(0, note, script.velocity);
+    if (script.expressionMax) synth.polyPressure(0, note, 1.0f);
+  }
   bool released = false;
   for (size_t at = 0; at < total;) {
     if (!released && at >= hold) {

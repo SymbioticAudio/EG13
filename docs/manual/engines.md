@@ -99,6 +99,8 @@ Stereo: while the voice is stereo, a second filter runs for the right channel, s
 
 Every voice has a Shaper slot after its Filter. **Off** passes the sound through unchanged.
 
+**DC filter.** Every Shaper but Off is followed by a DC filter: a high-pass at 8 Hz (second order), on each voice, with nothing to set. The Ring Mod / Vocoder's fold and ring modulation can put out a steady offset (up to about −13 dBFS) that nothing after the Shaper would remove, and that a long reverb or the master would carry. The filter takes it below −60 dBFS, and changes the sound by less than 0.01 dB above 40 Hz (the EQ's response is unchanged there). It is part of the engine's sound inside the slot, so it fades with the engine when you change the Shaper type. With the Shaper *Off* there is no filter and the sound passes bit for bit. The Ring Mod / Vocoder and the EQ themselves still match their originals exactly (the filter comes after them).
+
 ### Ring Mod / Vocoder (based on Warps)
 
 Warps combines two signals, a **carrier** and a **modulator**, in one of its algorithms. EG13 routes them as the module does: there are two inputs, CARRIER and MODULATOR, and when the internal oscillator is on it replaces whatever would feed CARRIER. Two controls choose what feeds each input.

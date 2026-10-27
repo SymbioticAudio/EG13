@@ -460,7 +460,9 @@ struct BaseSpec {
   int format;
 };
 
-// The table at BASE ede0d80 (before Part FX), captured from the table itself.
+// The table at BASE ede0d80 (before Part FX), captured from the table itself. One deliberate
+// change since (task 8g, owner 2026-10-27, before v1.0): Part Level's default is the 0 dB knob
+// position kPartLevelUnity and its format ParamFormat::PartLevel (27).
 const BaseSpec kBaseSpecs[] = {
 #include "param_table_base.inc"
 };
