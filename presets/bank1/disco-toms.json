@@ -1,0 +1,67 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Disco Toms",
+  "note": "Tuned electronic toms that sweep down on every hit, after the Peaks manual's envelope patched into pitch, played across the keyboard; harder hits sweep further, in a small room.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 28,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Digital Oscillator",
+        "params": {
+          "Shape": "Drum",
+          "Timbre": 0.4,
+          "Color": 0.4
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.032,
+          "Resonance": 0.0,
+          "Mode": "HP"
+        }
+      },
+      "Part FX": {
+        "engine": "Reverb",
+        "params": {
+          "Amount": 0.25,
+          "Time": 0.45,
+          "Brightness": 0.5
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Decay": 0.62,
+          "Sustain": 0.0,
+          "Release": 0.62
+        }
+      },
+      "Mod 2": {
+        "engine": "Function Generator",
+        "scope": "per voice",
+        "params": {
+          "Mode": "Envelope",
+          "Attack": 0.0,
+          "Decay": 0.5,
+          "Sustain": 0.0,
+          "Release": 0.5
+        }
+      },
+      "settings": {
+        "Level": 0.7792,
+        "Transpose": -12
+      },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 2 Function Generator", "via": "Velocity", "destination": "Pitch", "amount": 0.4 },
+        { "source": "Velocity", "destination": "Source: Timbre", "amount": 0.15 }
+      ]
+    }
+  }
+}

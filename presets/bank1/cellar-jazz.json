@@ -1,0 +1,116 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "Cellar Jazz",
+  "note": "A split at C4: a plucked upright bass below, after the Rings manual's string model, and soft mallets on metal bars above, after the Elements manual's strike exciter, with a vibraphone's motor tremolo and a warm room.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 29,
+  "master": {
+    "Mode": "Split",
+    "Split Note": "C4"
+  },
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Resonator",
+        "params": {
+          "Model": "String",
+          "Structure": 0.3,
+          "Brightness": 0.35,
+          "Damping": 0.7,
+          "Position": 0.25,
+          "Exciter": "Internal",
+          "Spread": 0.2,
+          "Polyphony": "2"
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.032,
+          "Resonance": 0.0,
+          "Mode": "HP"
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.45
+        }
+      },
+      "settings": {
+        "Level": 0.8577,
+        "Pan": -0.1,
+        "Transpose": -12,
+        "Voice Mode": "Mono"
+      },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Velocity", "destination": "Source: Brightness", "amount": 0.2 }
+      ]
+    },
+    "B": {
+      "Source": {
+        "engine": "Modal Synth",
+        "params": {
+          "Model": "Modal",
+          "Bow": 0.0,
+          "Blow": 0.0,
+          "Strike": 0.8,
+          "Mallet": 0.2,
+          "Strike Timbre": 0.25,
+          "Geometry": 0.5,
+          "Brightness": 0.5,
+          "Damping": 0.75,
+          "Position": 0.3,
+          "Space": 0.25
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.032,
+          "Resonance": 0.0,
+          "Mode": "HP"
+        }
+      },
+      "Part FX": {
+        "engine": "Reverb",
+        "params": {
+          "Amount": 0.3,
+          "Time": 0.6,
+          "Brightness": 0.45
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.65
+        }
+      },
+      "Mod 3": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Frequency": 0.6
+        }
+      },
+      "settings": {
+        "Level": 0.3725,
+        "Pan": 0.1
+      },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 0.75 },
+        { "source": "Mod 3 LFO Out 1", "via": "Mod 1 Envelope", "destination": "Amp", "amount": 0.2 },
+        { "source": "Velocity", "destination": "Source: Strike Timbre", "amount": 0.25 }
+      ]
+    }
+  }
+}

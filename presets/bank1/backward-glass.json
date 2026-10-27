@@ -1,0 +1,72 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Backward Glass",
+  "note": "After the Beads manual's reversed grains: a struck glassy resonator whose grains play backwards, an octave up and scattered in pitch, so every note swells in reverse out of its own echo.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 25,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Macro Oscillator",
+        "params": {
+          "Model": "Modal resonator",
+          "Harmonics": 0.6,
+          "Timbre": 0.65,
+          "Morph": 0.85,
+          "Decay": 0.8
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.8,
+          "Resonance": 0.0
+        }
+      },
+      "Part FX": {
+        "engine": "Granular Delay",
+        "params": {
+          "Dry/Wet": 0.55,
+          "Time": 0.3,
+          "Size": 0.15,
+          "Pitch": 0.925,
+          "Density": 0.72,
+          "Shape": 0.75,
+          "Feedback": 0.4,
+          "Reverb": 0.5,
+          "Pitch Random": 0.25,
+          "Time Random": 0.7
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.7
+        }
+      },
+      "Mod 3": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Range": "Low",
+          "Frequency": 0.5,
+          "Smoothness": 0.4
+        }
+      },
+      "settings": {
+        "Level": 0.6582
+      },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Velocity", "destination": "Source: Timbre", "amount": 0.15 },
+        { "source": "Mod 3 LFO Out 1", "destination": "Part FX: Size", "amount": 0.08 },
+        { "source": "Mod 3 LFO Out 2", "destination": "Part FX: Time", "amount": 0.1 }
+      ]
+    }
+  }
+}

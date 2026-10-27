@@ -1,0 +1,86 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Pachinko",
+  "note": "A held chord turned into a bright eighth-note sequence, after the Marbles manual's clocked, looping random melodies (an 8-step deja vu loop quantised to pentatonic) and the Tides manual's clocked attack-decay slopes; a digital echo after it.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 22,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Digital Oscillator",
+        "params": {
+          "Shape": "Saw Sync",
+          "Timbre": 0.35,
+          "Color": 0.4
+        }
+      },
+      "Filter": {
+        "engine": "Classic Filters",
+        "params": {
+          "Cutoff": 0.62,
+          "Resonance": 0.3,
+          "Model": "K35 Lowpass Moderate"
+        }
+      },
+      "Part FX": {
+        "engine": "Granular Delay",
+        "params": {
+          "Dry/Wet": 0.3,
+          "Time": 0.25,
+          "Size": 1.0,
+          "Feedback": 0.45,
+          "Reverb": 0.25,
+          "Density": 0.5
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.45
+        }
+      },
+      "Mod 3": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Mode": "AD",
+          "Sync": "On",
+          "Frequency": 0.723,
+          "Slope": 0.08,
+          "Shape": 0.15
+        }
+      },
+      "Mod 4": {
+        "engine": "Random / S&H",
+        "scope": "per voice",
+        "params": {
+          "Sync": "On",
+          "T Rate": 0.668,
+          "X Range": "Narrow",
+          "X Steps": 0.95,
+          "X Scale": "Pentatonic",
+          "X Spread": 0.45,
+          "X Deja Vu": "On",
+          "Deja Vu": 0.5,
+          "Length": 0.714
+        }
+      },
+      "settings": {
+        "Level": 0.6432,
+        "Transpose": -12
+      },
+      "routes": [
+        { "source": "Mod 3 LFO Out 1", "via": "Mod 1 Envelope", "destination": "Amp", "amount": 0.85 },
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 0.08 },
+        { "source": "Mod 4 Random / S&H X1", "destination": "Pitch", "amount": 1.0 },
+        { "source": "Mod 3 LFO Out 1", "destination": "Filter: Cutoff", "amount": 0.08 },
+        { "source": "Velocity", "destination": "Filter: Cutoff", "amount": 0.1 }
+      ]
+    }
+  }
+}
