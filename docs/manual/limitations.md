@@ -16,3 +16,4 @@
 - **Part FX delay with Part FX Off:** every part pays the Part FX delay (263 samples, 5.5 ms in Live; 539, 11 ms in Studio at 48 kHz) even with Part FX Off, so that switching the effect never moves the sound in time. See [Latency](latency.md).
 - **Part FX levels:** each effect is trimmed to about the level of the part without an effect at its default settings (see [Part FX](part-fx.md)); settings away from the defaults change the level as on the modules (Granular's peaks, for one, run up to about 4 dB above the part without an effect even at the defaults).
 - **Classic Filters Model** changes restart the filter and can click on a sounding note.
+- **Modulation display after a note ends:** the wave marks and the Part Level display follow the most recently started voice. After that voice is released and has died away, they keep the last values it showed until the next note starts. Sound is not affected.

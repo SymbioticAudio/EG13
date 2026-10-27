@@ -50,6 +50,12 @@ for arch in $ARCHS; do
     echo "build-ui.sh: libEG13UI.a contains EG13UIFixtures or a Swift resource bundle accessor" >&2
     exit 1
   fi
+  # The test-only path overrides (EG13_SETTINGS_PATH, EG13_PRESETS_PATH) are compiled out of release
+  # builds. Control: a debug library must still contain them.
+  if [ "$CONFIG" = release ] && grep -aqE "EG13_SETTINGS_PATH|EG13_PRESETS_PATH" "$TMP/libEG13UI-$arch.a"; then
+    echo "build-ui.sh: a release libEG13UI.a still contains an EG13_*_PATH environment override" >&2
+    exit 1
+  fi
   PARTS+=("$TMP/libEG13UI-$arch.a")
 done
 

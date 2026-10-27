@@ -77,9 +77,9 @@ class UiBridge {
   Synth& synth_;
   std::function<void()> requestFlush_;
   std::function<void()> requestPump_;
-  std::atomic<bool> pumpPending_{false};  // set by push on overflow, cleared by pump
+  std::atomic<bool> pumpPending_{false};  // set by push or drain when asking for a pump, cleared by pump
   std::atomic<bool> backlogPending_{false};  // main thread sets while overflow_ is non-empty; drain clears
-  std::atomic<bool> detached_{false};  // set by detach: neither side calls the hooks any more
+  std::atomic<bool> detached_{false};  // set by detach: later calls skip the hooks (a call already past the check can still run)
   std::atomic<bool> flushPending_{false};  // set by requestFlush, cleared by drain
   std::atomic<size_t> dropped_{0};
   SpscQueue<UiEvent, kQueueSize> queue_;

@@ -174,6 +174,8 @@ TEST_CASE("Without a host resize hook the request is refused", "[gui]") {
 }
 
 TEST_CASE("A new editor opens at the settings' default size", "[gui]") {
+  // Release editors ignore EG13_SETTINGS_PATH (scripts/build-ui.sh checks the name is not in them).
+  if (!eg13_ui_honors_path_overrides()) SKIP("this editor was built without the settings path override");
   const std::string path = std::string(::getenv("TMPDIR") ? ::getenv("TMPDIR") : "/tmp") + "/eg13-gui-settings.json";
   {
     std::FILE* file = std::fopen(path.c_str(), "w");

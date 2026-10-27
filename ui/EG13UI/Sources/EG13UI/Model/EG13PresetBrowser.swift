@@ -60,13 +60,11 @@ public final class EG13PresetBrowser {
 
     private var pluginName: String { kind == .effect ? "effect" : "instrument" }
 
-    /// The User folder: `$EG13_PRESETS_PATH` if set (tests), else
+    /// The User folder: `$EG13_PRESETS_PATH` if set (debug builds only: tests), else
     /// ~/Library/Application Support/SymbioticAudio/EG13/Presets. EG13 FX keeps its own in `FX/`
     /// inside it (see `defaultUserURL(for:)`).
     public static var defaultUserURL: URL {
-        if let path = ProcessInfo.processInfo.environment["EG13_PRESETS_PATH"], !path.isEmpty {
-            return URL(fileURLWithPath: path)
-        }
+        if let path = EG13DebugOverride.path("EG13_PRESETS_PATH") { return URL(fileURLWithPath: path) }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         return support.appendingPathComponent("SymbioticAudio/EG13/Presets")

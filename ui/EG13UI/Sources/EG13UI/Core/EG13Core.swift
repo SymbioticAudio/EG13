@@ -88,10 +88,10 @@ public protocol EG13Core: AnyObject {
     /// Loads a preset file's sound (a Performance into both parts, a Patch into the target part).
     /// The plugin keeps the setup fields. `.invalid` changed nothing.
     func applyPreset(json: String, target: EG13PresetTarget) -> EG13PresetApplyResult
-    /// The current sound as a preset file: a Patch of `part`, or a Performance when nil. Empty if
-    /// it could not be made.
     /// Loads the plugin's Init sound into both parts, keeping the setup fields.
     func applyInit() -> EG13PresetApplyResult
+    /// The current sound as a preset file: a Patch of `part`, or a Performance when nil. Empty if
+    /// it could not be made.
     func savePreset(part: Int?, name: String) -> String
     /// The browser string the project saved ("" for none).
     func browserState() -> String

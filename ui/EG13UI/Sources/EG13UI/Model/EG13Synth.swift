@@ -472,10 +472,22 @@ public final class EG13Synth {
         if push { resetPending() }
     }
 
+    /// Clears the pending ranges in place (it runs at 15 Hz); allocates only the first time.
     private func resetPending() {
         let slots = Int(EG13_NUM_MOD_SLOTS), outputs = EG13ModTrace.outputCount
-        let low = [Float](repeating: .infinity, count: outputs), high = [Float](repeating: -.infinity, count: outputs)
-        pendingMin = Array(repeating: Array(repeating: low, count: slots), count: EG13ParamID.parts)
-        pendingMax = Array(repeating: Array(repeating: high, count: slots), count: EG13ParamID.parts)
+        if pendingMin.isEmpty {
+            let low = [Float](repeating: .infinity, count: outputs), high = [Float](repeating: -.infinity, count: outputs)
+            pendingMin = Array(repeating: Array(repeating: low, count: slots), count: EG13ParamID.parts)
+            pendingMax = Array(repeating: Array(repeating: high, count: slots), count: EG13ParamID.parts)
+            return
+        }
+        for part in pendingMin.indices {
+            for slot in pendingMin[part].indices {
+                for output in pendingMin[part][slot].indices {
+                    pendingMin[part][slot][output] = .infinity
+                    pendingMax[part][slot][output] = -.infinity
+                }
+            }
+        }
     }
 }

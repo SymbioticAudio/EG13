@@ -256,6 +256,30 @@ TEST_CASE("route_set rejects bad codes") {
   REQUIRE(f.synth.patch().routes[0][1] == before);
 }
 
+TEST_CASE("route_set does not re-validate fields that did not change") {
+  Fixture f;
+  // A route whose source and destination belong to Mod 4, which is Off: both names are hidden.
+  const uint16_t hiddenSrc = uint16_t(eg13::kSrcMod + 3 * eg13::kMaxModOutputs);
+  const uint16_t hiddenDst = eg13::modParamDestination(3, 0);
+  char name[EG13_TEXT_SIZE];
+  REQUIRE_FALSE(f.api.source_name(f.api.context, 0, hiddenSrc, name, sizeof name));
+  eg13::Route hidden;
+  hidden.source = hiddenSrc;
+  hidden.destination = hiddenDst;
+  hidden.via = eg13::kSrcVelocity;
+  f.synth.setRoute(0, 5, hidden);
+  // Only the via changes: the hidden source and destination are kept.
+  REQUIRE(f.api.route_set(f.api.context, 0, 5, hiddenSrc, hiddenDst, eg13::kSrcModWheel));
+  REQUIRE(f.synth.patch().routes[0][5].via == eg13::kSrcModWheel);
+  REQUIRE(f.synth.patch().routes[0][5].source == hiddenSrc);
+  // Only the destination changes: the hidden source is kept.
+  REQUIRE(f.api.route_set(f.api.context, 0, 5, hiddenSrc, eg13::kDestPitch, eg13::kSrcModWheel));
+  REQUIRE(f.synth.patch().routes[0][5].destination == eg13::kDestPitch);
+  // A changed field is still checked.
+  REQUIRE_FALSE(f.api.route_set(f.api.context, 0, 5, hiddenSrc + 1, eg13::kDestPitch, eg13::kSrcModWheel));
+  REQUIRE_FALSE(f.api.route_set(f.api.context, 0, 5, hiddenSrc, hiddenDst + 1, eg13::kSrcModWheel));
+}
+
 TEST_CASE("names follow the engine") {
   Fixture f;
   REQUIRE(f.srcName(0, 0) == "<none>");
@@ -589,7 +613,14 @@ TEST_CASE("applying presets while notes play allocates nothing on the audio thre
     f.applyMessage(i % 3 == 0 ? perfA : i % 3 == 1 ? perfB : patch, i % 3 == 2 ? 1 : -1, &result);
     REQUIRE(result == EG13_PRESET_OK);
     const long seen = blocks.load();
-    while (blocks.load() < seen + 4) std::this_thread::yield();  // let a few blocks run between loads
+    // Let a few blocks run between loads; a stuck audio thread fails the test after 10 s.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (blocks.load() < seen + 4 && std::chrono::steady_clock::now() < deadline) std::this_thread::yield();
+    if (blocks.load() < seen + 4) {
+      stop.store(true, std::memory_order_release);
+      audio.join();
+      FAIL("the audio thread stopped running blocks");
+    }
   }
   eg13::UiSnapshot snap;
   f.synth.uiSnapshot(&snap);

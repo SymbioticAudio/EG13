@@ -130,7 +130,8 @@ typedef struct EG13CoreAPI {
    * for a part or route out of range. */
   bool (*route_get)(void* context, uint32_t part, uint32_t route, EG13Route* out);
   /* Sets a route's source, destination and via and marks the project dirty. Each code must be 0 or
-   * one the part names (source_name / destination_name succeed). False and no change otherwise.
+   * one the part names (source_name / destination_name succeed); a code the route already holds is
+   * not checked again. False and no change otherwise.
    * The amount is edited through begin_edit / edit / end_edit on the route's amount parameter. */
   bool (*route_set)(void* context, uint32_t part, uint32_t route, uint16_t source, uint16_t destination,
                     uint16_t via);

@@ -2151,3 +2151,17 @@ TEST_CASE("EG13 FX init patch processes Input through Granular with no MIDI") {
   INFO("RMS difference from Part FX Off " << diffRms(withFx, without, 24000, 48000));
   REQUIRE(diffRms(withFx, without, 24000, 48000) > 0.01);  // and Granular is in the chain
 }
+
+TEST_CASE("A per-part modulation slot publishes its range with no notes playing") {
+  Synth synth(PluginKind::Instrument, steadySource);
+  lfoOnPartLevel(synth, false);
+  synth.prepare(48000.0, 512);
+  synth.setActive(true);
+  (void)renderHost(synth, 24000, 512, nullptr);  // half a second, no note on
+  UiSnapshot snap;
+  synth.uiSnapshot(&snap);
+  // The free-running LFO swept a range, and Part Level shows its modulation.
+  REQUIRE(snap.modOutMax[0][3][0] - snap.modOutMin[0][3][0] > 0.5f);
+  REQUIRE(snap.modValue[0][kDestPartLevel] != 0.0f);
+  synth.setActive(false);
+}

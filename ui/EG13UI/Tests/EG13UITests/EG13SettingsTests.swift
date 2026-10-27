@@ -92,6 +92,22 @@ struct EG13SettingsTests {
         #expect(try Data(contentsOf: file) == good)
         #expect(names() == ["settings.json"])
         #expect(store.settings.defaultWindowPercent == 200)  // the session still uses it
+        #expect(store.saveError != nil, "the failure is reported, not silent")
+        // The next write that works clears the message.
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        store.update { $0.defaultWindowPercent = 150 }
+        #expect(store.saveError == nil)
+    }
+
+    @Test("The path overrides exist in debug builds only")
+    func overridesAreDebugOnly() {
+        setenv("EG13_SETTINGS_PATH", "/nonexistent/eg13-test/override.json", 1)
+        defer { unsetenv("EG13_SETTINGS_PATH") }
+        #if DEBUG
+        #expect(EG13SettingsStore.defaultURL.path == "/nonexistent/eg13-test/override.json")
+        #else
+        #expect(EG13SettingsStore.defaultURL.path != "/nonexistent/eg13-test/override.json")
+        #endif
     }
 
     @Test("A missing directory is created on the first save")

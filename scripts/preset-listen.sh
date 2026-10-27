@@ -5,7 +5,8 @@
 # self-contained page with one player per preset), and with --install also compiles each preset
 # into the User folder as "Draft – <name>" so it can be played in a DAW. An existing draft is kept
 # (you may have edited and saved it in EG13) unless --force is given.
-# Bash 3.2 / BSD tools only. EG13_PRESETS_PATH overrides the User folder (as in the editor);
+# Bash 3.2 / BSD tools only. EG13_PRESETS_PATH overrides the folder this script writes to (release plugins ignore it,
+# so a plugin only lists drafts written to the default folder);
 # EG13_PRESET_TOOL overrides the tool path.
 set -u
 

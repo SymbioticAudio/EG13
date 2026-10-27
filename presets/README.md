@@ -123,7 +123,7 @@ scripts/preset-listen.sh presets/<bank> [--install [--force]]
   Only `Draft – ` files are ever written, so a non-draft preset is never overwritten. A draft that
   already exists is kept (it may hold edits you saved in EG13 and have not sent back); `--force`
   replaces drafts.
-  `$EG13_PRESETS_PATH` overrides the User folder (`~/Library/Application Support/SymbioticAudio/EG13/Presets`).
+  `$EG13_PRESETS_PATH` overrides the folder the script writes to (default `~/Library/Application Support/SymbioticAudio/EG13/Presets`). Release builds of the plugin ignore the variable, so drafts written elsewhere do not show in the User bank.
 - Sending changes back: tweak the draft in a DAW, Save over it in EG13 (Save on a User preset), then
   `eg13_preset decompile "<User folder>/Draft – <name>.eg13perf" -o presets/<bank>/<slug>.json`
   (`.eg13patch` for a Patch) and remove the `Draft – ` prefix from `name`.

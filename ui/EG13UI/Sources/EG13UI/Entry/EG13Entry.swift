@@ -52,6 +52,15 @@ public func eg13UIDefaultZoom() -> Double {
     }
 }
 
+@_cdecl("eg13_ui_honors_path_overrides")
+public func eg13UIHonorsPathOverrides() -> Bool {
+    #if DEBUG
+    return true
+    #else
+    return false
+    #endif
+}
+
 @_cdecl("eg13_ui_destroy")
 public func eg13UIDestroy(_ handle: UnsafeMutableRawPointer?) {
     guard let handle else { return }

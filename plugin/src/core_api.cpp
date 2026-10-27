@@ -245,11 +245,16 @@ bool routeGet(void* context, uint32_t part, uint32_t route, EG13Route* out) noex
 bool routeSet(void* context, uint32_t part, uint32_t route, uint16_t source, uint16_t destination,
               uint16_t via) noexcept {
   if (!validPart(part) || route >= uint32_t(kNumRoutes)) return false;
-  char name[EG13_TEXT_SIZE];
-  if (source != kSrcNone && !sourceName(context, part, source, name, sizeof name)) return false;
-  if (via != kSrcNone && !sourceName(context, part, via, name, sizeof name)) return false;
-  if (destination != kDestNone && !destinationName(context, part, destination, name, sizeof name)) return false;
   CoreApiContext& c = ctx(context);
+  // Only a field that changes is checked: one the current engines hide (a route kept from a
+  // loaded state) can stay as it is while another field of the route is edited.
+  const Route current = c.synth.patch().routes[part][route];
+  char name[EG13_TEXT_SIZE];
+  if (source != current.source && source != kSrcNone && !sourceName(context, part, source, name, sizeof name)) return false;
+  if (via != current.via && via != kSrcNone && !sourceName(context, part, via, name, sizeof name)) return false;
+  if (destination != current.destination && destination != kDestNone &&
+      !destinationName(context, part, destination, name, sizeof name))
+    return false;
   Route r;
   r.source = source;
   r.destination = destination;

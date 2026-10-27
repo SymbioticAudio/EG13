@@ -50,6 +50,18 @@ extension EG13Settings: Codable {
     }
 }
 
+/// Path overrides from the environment for tests and the preview app. They exist only in debug
+/// builds: a release plugin never reads the environment of the host it runs in, and the
+/// variable names are not in the binary (scripts/build-ui.sh checks that).
+enum EG13DebugOverride {
+    static func path(_ name: String) -> String? {
+        #if DEBUG
+        if let path = ProcessInfo.processInfo.environment[name], !path.isEmpty { return path }
+        #endif
+        return nil
+    }
+}
+
 /// Reads and writes the settings file. A missing, corrupt or newer file loads as defaults. The
 /// file is written only when the user changes a setting, by writing a temp file and renaming it
 /// over the old one, so a crash never leaves half a file.
@@ -57,18 +69,19 @@ extension EG13Settings: Codable {
 @Observable
 public final class EG13SettingsStore {
     public private(set) var settings = EG13Settings()
+    /// Set when the last change could not be written (the Settings overlay shows it); cleared by
+    /// the next write that works. The change itself stays for this session.
+    public private(set) var saveError: String?
     @ObservationIgnored private let fixedURL: URL?
     /// The shared store: its file is `defaultURL` as of each read or write, so a test that points
     /// `EG13_SETTINGS_PATH` elsewhere mid-process is followed.
     @ObservationIgnored private let followsEnvironment: Bool
     private var url: URL? { followsEnvironment ? Self.defaultURL : fixedURL }
 
-    /// The file the plugin uses: `$EG13_SETTINGS_PATH` if set (tests), else
+    /// The file the plugin uses: `$EG13_SETTINGS_PATH` if set (debug builds only: tests), else
     /// ~/Library/Application Support/SymbioticAudio/EG13/settings.json.
     public static var defaultURL: URL {
-        if let path = ProcessInfo.processInfo.environment["EG13_SETTINGS_PATH"], !path.isEmpty {
-            return URL(fileURLWithPath: path)
-        }
+        if let path = EG13DebugOverride.path("EG13_SETTINGS_PATH") { return URL(fileURLWithPath: path) }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         return support.appendingPathComponent("SymbioticAudio/EG13/settings.json")
@@ -126,9 +139,15 @@ public final class EG13SettingsStore {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try data.write(to: temp)
+            // On disk before the rename, so a crash or power loss cannot leave an empty file.
+            let handle = try FileHandle(forWritingTo: temp)
+            defer { try? handle.close() }
+            if fsync(handle.fileDescriptor) != 0 { throw CocoaError(.fileWriteUnknown) }
             if rename(temp.path, url.path) != 0 { throw CocoaError(.fileWriteUnknown) }
+            saveError = nil
         } catch {
             try? FileManager.default.removeItem(at: temp)
+            saveError = "Could not save settings. They apply to this session only."
             Self.log.error("could not write the settings file \(url.path, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }

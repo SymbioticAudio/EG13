@@ -357,11 +357,17 @@ TEST_CASE("setFactoryPresetsForTesting swaps the table and nullptr restores it")
   const std::string json = compiled.json;
   const preset::FactoryPreset one = {"Bank 1", "Only", "", "", "", preset::Kind::Patch, PluginKind::Instrument,
                                      false, 1, json.c_str()};
-  preset::setFactoryPresetsForTesting(&one, 1);
+  // Restores the generated table when the test ends, also if a REQUIRE fails.
+  struct Restore {
+    ~Restore() { preset::setFactoryPresetsForTesting(nullptr, 0); }
+  };
   size_t count = 0;
-  REQUIRE(preset::factoryPresets(count) == &one);
-  REQUIRE(count == 1);
-  preset::setFactoryPresetsForTesting(nullptr, 0);
+  {
+    Restore restore;
+    preset::setFactoryPresetsForTesting(&one, 1);
+    REQUIRE(preset::factoryPresets(count) == &one);
+    REQUIRE(count == 1);
+  }
   preset::factoryPresets(count);
   REQUIRE(count == generated);
 }

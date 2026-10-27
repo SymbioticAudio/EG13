@@ -94,6 +94,15 @@ public struct EG13KnobStyle: Sendable, Equatable {
     /// EG13's default: arc inside the skirt band over a faint track, no ticks, white cap, grey arc.
     public static let `default` = EG13KnobStyle(accent: EG13Palette.whiteKnobArc.color, accentInk: EG13Palette.legend.color)
 
+    /// The one place the knob's proportions are worked out, for a knob drawn `d` across: the tick
+    /// band, the outside ring, the skirt's diameter and the cap's diameter.
+    func metrics(d: CGFloat, size: EG13KnobSize) -> (ticks: CGFloat, ring: CGFloat, skirt: CGFloat, cap: CGFloat) {
+        let ticks: CGFloat = tickCount(for: size) > 1 ? d * 0.08 : 0
+        let ring: CGFloat = arc && arcPlacement == .outside ? d * 0.07 : 0
+        let skirt = d - 2 * (ticks + ring)
+        return (ticks, ring, skirt, skirt * CGFloat(Self.capRatio(for: size)))
+    }
+
     static func capRatio(for size: EG13KnobSize) -> Double {
         size == .large ? 23.0 / 34.0 : 10.5 / 17.0
     }
@@ -177,13 +186,9 @@ enum EG13ModMarkGeometry {
         return CGRect(x: d / 2 + c.x - width / 2, y: d / 2 + c.y - height / 2, width: width, height: height)
     }
 
-    /// The cap's radius in a knob drawn `d` across (EG13KnobShape's own arithmetic).
+    /// The cap's radius in a knob drawn `d` across (EG13KnobShape draws from the same metrics).
     static func capRadius(d: CGFloat, style: EG13KnobStyle, size: EG13KnobSize) -> CGFloat {
-        let tickCount = style.tickCount(for: size)
-        let ticks: CGFloat = tickCount > 1 ? d * 0.08 : 0
-        let ring: CGFloat = style.arc && style.arcPlacement == .outside ? d * 0.07 : 0
-        let skirt = d - 2 * (ticks + ring)
-        return skirt * EG13KnobStyle.capRatio(for: size) / 2
+        style.metrics(d: d, size: size).cap / 2
     }
 
     /// Dark on the white cap, white on pink, teal and black.
@@ -263,11 +268,7 @@ public struct EG13KnobShape: View {
             let low = min(origin, n)
             let high = max(origin, n)
             let tickCount = style.tickCount(for: size)
-            let ticks: CGFloat = tickCount > 1 ? d * 0.08 : 0
-            let outside = style.arc && style.arcPlacement == .outside
-            let ring: CGFloat = outside ? d * 0.07 : 0
-            let skirt = d - 2 * (ticks + ring)
-            let cap = skirt * EG13KnobStyle.capRatio(for: size)
+            let (ticks, ring, skirt, cap) = style.metrics(d: d, size: size)
             let band = (skirt - cap) / 2
             // Arc stroke width and its radius inset from the outer edge of the drawing.
             let (arcWidth, arcInset): (CGFloat, CGFloat) = {

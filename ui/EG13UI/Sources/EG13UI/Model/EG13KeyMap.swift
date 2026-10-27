@@ -42,14 +42,14 @@ public enum EG13KeyMap {
 
     /// The value a handle takes when dragged to `key` (any key, off the strip too), given the
     /// part's current Low and High (MIDI notes, not clamped to the strip). The strip's ends are
-    /// open: a Low dragged to the leftmost key or past it is MIDI 0, a High dragged to the
-    /// rightmost key or past it is 127, so "all the way" never cuts notes off. Otherwise the key
-    /// is clamped to the strip, and a part's Low never goes above its High nor High below its Low.
-    /// The split marker stays on the strip.
+    /// open: a Low dragged past the leftmost key (A0) is MIDI 0, a High dragged past the rightmost
+    /// key (C8) is 127, so "all the way" never cuts notes off; on the end key itself it is A0 or
+    /// C8. Otherwise the key is clamped to the strip, and a part's Low never goes above its High
+    /// nor High below its Low. The split marker stays on the strip.
     public static func dragged(_ handle: Handle, to key: Int, low: Int, high: Int) -> Int {
         switch handle {
-        case .low: return min(key <= lowestKey ? lowestNote : min(key, highestKey), high)
-        case .high: return max(key >= highestKey ? highestNote : max(key, lowestKey), low)
+        case .low: return min(key < lowestKey ? lowestNote : min(key, highestKey), high)
+        case .high: return max(key > highestKey ? highestNote : max(key, lowestKey), low)
         case .split: return clampedKey(key)
         }
     }
