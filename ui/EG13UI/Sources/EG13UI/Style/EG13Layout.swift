@@ -4,14 +4,13 @@ import CoreGraphics
 /// sizes from here; view models never do, so the arrangement can change without touching them.
 ///
 /// The root is drawn at `baseSize` and scaled 75-200 % (plugin/src/gui_size.h). Top to bottom:
-/// header, the card strip (horizontal module cards, one under another), the matrix row, the
-/// bottom bar.
+/// header, the card strip (horizontal module cards, one under another, and the right-hand column
+/// with the Mods or the matrix), the bottom bar.
 public enum EG13Layout {
     public static let baseSize = CGSize(width: 1200, height: 760)
 
     public static let headerHeight: CGFloat = 56
     public static let bottomBarHeight: CGFloat = 78
-    public static let matrixHeight: CGFloat = 76
     public static let outerPadding: CGFloat = 12
     public static let gap: CGFloat = 8
 
@@ -54,11 +53,19 @@ public enum EG13Layout {
     /// column of mini-cards on the right (owner, 2026-10-25: the Mods column).
     public static var stripWidth: CGFloat { baseSize.width - 2 * outerPadding }
     public static let modCardWidth: CGFloat = 470
+    /// The MODS / MATRIX switch above the right column.
+    public static let paneSwitchHeight: CGFloat = 28
+    /// Matrix row parts: the number, the three LCD menus, the amount's value text.
+    public static let routeNumberWidth: CGFloat = 14
+    public static let routeSourceWidth: CGFloat = 90
+    public static let routeViaWidth: CGFloat = 82
+    public static let routeDestinationWidth: CGFloat = 120
+    public static let routeValueWidth: CGFloat = 46
     public static var slotCardWidth: CGFloat { stripWidth - modCardWidth - gap }
 
     /// Height left for the card strip.
     public static var stripHeight: CGFloat {
-        baseSize.height - headerHeight - bottomBarHeight - matrixHeight - 3 * gap - gap
+        baseSize.height - headerHeight - bottomBarHeight - 3 * gap
     }
 
     /// Knob rows of `count` knobs in `width` points, rows balanced: 16 knobs in a width that

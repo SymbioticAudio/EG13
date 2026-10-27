@@ -1,3 +1,4 @@
+import AppKit
 import EG13CBridge
 import SwiftUI
 import SymbioticTokens
@@ -37,8 +38,11 @@ public struct EG13KnobLayout: Equatable, Sendable {
     public var label: String?
     public var labelWidth: CGFloat?
     public var boxHeight: CGFloat?
+    /// Only the knob: no label and no value text (the matrix rows show the value beside it).
+    public var compact: Bool
 
-    public init(label: String? = nil, labelWidth: CGFloat? = nil, boxHeight: CGFloat? = nil) {
+    public init(label: String? = nil, labelWidth: CGFloat? = nil, boxHeight: CGFloat? = nil, compact: Bool = false) {
+        self.compact = compact
         self.label = label
         self.labelWidth = labelWidth
         self.boxHeight = boxHeight
@@ -55,6 +59,7 @@ private struct EG13KnobBody: View {
     @State private var showsRoutes = false
     @Environment(\.symbioticTheme) private var theme  // typography and spacing only
     @Environment(\.eg13ControlColors) private var colors
+    @Environment(\.eg13OpenRoute) private var openRoute
 
     init(param: EG13Param, style: EG13KnobStyle, size: EG13KnobSize, layout: EG13KnobLayout) {
         self.param = param
@@ -72,12 +77,15 @@ private struct EG13KnobBody: View {
                               style: style, size: size, isFocused: isFocused,
                               showsModulationMark: param.isRouted)
                     .frame(width: diameter, height: diameter)
-                    .eg13ControlInput($interaction, clickRect: markRect, onClickRect: markAction)
+                    .eg13ControlInput($interaction, clickRect: markRect, onClickRect: markAction,
+                                    contextMenu: contextMenu)
                     .overlay(alignment: .topLeading) { routesAnchor }
                     .frame(height: max(diameter, layout.boxHeight ?? diameter))
-                EG13ControlLabel(text: layout.label ?? EG13ParamLabels.short(param.name), style: style.label,
-                                 chip: style.accentInk, font: theme.type.caption.font, width: layout.labelWidth)
-                EG13ValueText(text: param.text, font: theme.type.caption.font, width: layout.labelWidth)
+                if !layout.compact {
+                    EG13ControlLabel(text: layout.label ?? EG13ParamLabels.short(param.name), style: style.label,
+                                     chip: style.accentInk, font: theme.type.caption.font, width: layout.labelWidth)
+                    EG13ValueText(text: param.text, font: theme.type.caption.font, width: layout.labelWidth)
+                }
             }
             .modifier(EG13ControlAccess(interaction: $interaction, label: param.accessibilityLabel,
                                         valueText: param.text, focus: $isFocused))
@@ -89,6 +97,17 @@ private struct EG13KnobBody: View {
 }
 
 extension EG13KnobBody {
+    /// Right-click or ctrl-click: Modulate from and Remove modulation. Built when the menu opens.
+    var contextMenu: (() -> NSMenu?)? {
+        let synth = param.owner, id = param.id
+        guard synth.canModulate(id), let part = EG13ParamID.partIndex(of: id) else { return nil }
+        return {
+            synth.contextMenu(for: id)?.makeMenu(
+                modulate: { synth.modulate(id: id, from: $0) },
+                remove: { synth.clearRoute(part: part, route: $0) })
+        }
+    }
+
     /// The mark's click area, only while the knob is modulated.
     var markRect: CGRect? {
         guard param.isRouted else { return nil }
@@ -110,7 +129,10 @@ extension EG13KnobBody {
                 .padding(.leading, rect.minX)
                 .padding(.top, rect.minY)
                 .popover(isPresented: $showsRoutes, arrowEdge: .bottom) {
-                    EG13MotionList(synth: param.owner, kind: EG13_SLOT_KIND_SOURCE, part: part, parameter: param.id)
+                    EG13MotionList(synth: param.owner, kind: EG13_SLOT_KIND_SOURCE, part: part, parameter: param.id) { route in
+                        showsRoutes = false
+                        openRoute(route)
+                    }
                 }
         }
     }
@@ -152,5 +174,17 @@ struct EG13ValueText: View {
                     .monospacedDigit()
             }
         }
+    }
+}
+
+private struct EG13OpenRouteKey: EnvironmentKey {
+    nonisolated(unsafe) static let defaultValue: (Int) -> Void = { _ in }
+}
+
+extension EnvironmentValues {
+    /// Opens a route in the matrix editor (a Motion row or the knob popover was chosen).
+    var eg13OpenRoute: (Int) -> Void {
+        get { self[EG13OpenRouteKey.self] }
+        set { self[EG13OpenRouteKey.self] = newValue }
     }
 }

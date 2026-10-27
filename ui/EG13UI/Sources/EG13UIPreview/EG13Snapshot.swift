@@ -103,6 +103,25 @@ enum EG13Snapshot {
         return ok ? 0 : 1
     }
 
+    /// The matrix editor: the right column on MATRIX at 100 % (Part A, route 3 highlighted as after a
+    /// Motion row) and Part B, with the modulation demo's routes. For checking, not for the gate.
+    static func runMatrix(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let core = EG13PreviewCore.modulationDemo()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<70 { synth.tick() }
+        let base = EG13Layout.baseSize
+        var ok = true
+        for part in 0..<EG13ParamID.parts {
+            synth.selectedPart = part
+            let column = EG13RightColumnState()
+            column.open(route: 2)
+            ok = write(EG13RootView(synth: synth, column: column), size: base, zoom: 1,
+                       to: "\(directory)/matrix-\(part == 0 ? "a" : "b").png") && ok
+        }
+        return ok ? 0 : 1
+    }
+
     /// The layout design set: both parts at 100%, Part A at 75%, the header close-up, a contact sheet
     /// of every engine for each slot kind, and the worst case (the tallest engines in every slot) as
     /// the full height of both columns, with the visible strip marked.

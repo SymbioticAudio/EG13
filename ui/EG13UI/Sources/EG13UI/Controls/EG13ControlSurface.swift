@@ -10,12 +10,15 @@ struct EG13ControlSurface: NSViewRepresentable {
     /// modulation mark. A drag that starts there adjusts the control like any other.
     var clickRect: CGRect?
     var onClickRect: (() -> Void)?
+    /// The knob's context menu (right-click or ctrl-click), built when it opens; nil for none.
+    var contextMenu: (() -> NSMenu?)?
 
     func makeNSView(context: Context) -> EG13ControlSurfaceView {
         let view = EG13ControlSurfaceView()
         view.interaction = interaction
         view.clickRect = clickRect
         view.onClickRect = onClickRect
+        view.contextMenu = contextMenu
         return view
     }
 
@@ -23,6 +26,7 @@ struct EG13ControlSurface: NSViewRepresentable {
         view.interaction = interaction
         view.clickRect = clickRect
         view.onClickRect = onClickRect
+        view.contextMenu = contextMenu
     }
 
     /// The surface goes away: end any open gesture, whatever state SwiftUI still holds.
@@ -40,6 +44,7 @@ final class EG13ControlSurfaceView: NSView {
     private var lastY: CGFloat = 0
     var clickRect: CGRect?
     var onClickRect: (() -> Void)?
+    var contextMenu: (() -> NSMenu?)?
     /// A press on the click area, not yet a click or a drag: where it started.
     private var pendingClick: (start: CGPoint, clickCount: Int)?
 
@@ -65,7 +70,19 @@ final class EG13ControlSurfaceView: NSView {
         return isFlipped ? -y : y  // positive upwards
     }
 
+    /// Right-click, and ctrl-click (handled in mouseDown): the knob's menu. It is a menu, not a gesture.
+    override func menu(for event: NSEvent) -> NSMenu? { contextMenu?() }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let menu = contextMenu?() else { return super.rightMouseDown(with: event) }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
     override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control), let menu = contextMenu?() {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+            return  // no gesture starts, and the mouse-up that follows finds none open
+        }
         lastY = localY(event)
         let point = topLeft(event)
         if let clickRect, onClickRect != nil, event.clickCount == 1, clickRect.contains(point) {
@@ -167,8 +184,9 @@ extension EnvironmentValues {
 extension View {
     /// Mouse and scroll input for a control, unless the environment is non-interactive.
     func eg13ControlInput(_ interaction: Binding<EG13ControlInteraction>, clickRect: CGRect? = nil,
-                          onClickRect: (() -> Void)? = nil) -> some View {
-        modifier(EG13ControlInput(interaction: interaction, clickRect: clickRect, onClickRect: onClickRect))
+                          onClickRect: (() -> Void)? = nil, contextMenu: (() -> NSMenu?)? = nil) -> some View {
+        modifier(EG13ControlInput(interaction: interaction, clickRect: clickRect, onClickRect: onClickRect,
+                                  contextMenu: contextMenu))
     }
 }
 
@@ -176,11 +194,13 @@ private struct EG13ControlInput: ViewModifier {
     let interaction: Binding<EG13ControlInteraction>
     let clickRect: CGRect?
     let onClickRect: (() -> Void)?
+    let contextMenu: (() -> NSMenu?)?
     @Environment(\.eg13InteractiveControls) private var interactive
 
     func body(content: Content) -> some View {
         if interactive {
-            content.overlay(EG13ControlSurface(interaction: interaction, clickRect: clickRect, onClickRect: onClickRect))
+            content.overlay(EG13ControlSurface(interaction: interaction, clickRect: clickRect, onClickRect: onClickRect,
+                                                contextMenu: contextMenu))
         } else {
             content
         }
