@@ -5,9 +5,18 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <atomic>
+#include <chrono>
 #include <string>
+#include <thread>
+#include <vector>
+#include <nlohmann/json.hpp>
 
 #include "core_api.h"
+#include "alloc_counter.h"
+#include "preset/factory.h"
+#include "preset/preset.h"
+#include "state/state.h"
 #include "mod/mod_routes.h"
 #include "synth/ui_snapshot.h"
 #include "params/param_ids.h"
@@ -25,7 +34,16 @@ namespace {
 // One synth, its bridge and the function table: the plugin without CLAP. The editor edits through
 // the table; drain() stands in for the audio thread's next process call.
 struct Fixture {
-  Fixture() : bridge(synth, {}), ctx{synth, bridge, {}}, api(eg13::makeCoreApi(ctx)) {}
+  explicit Fixture(eg13::PluginKind kind = eg13::PluginKind::Instrument)
+      : synth(kind), bridge(synth, {}), ctx{synth, bridge, {}, {}, {}, {}, {}, {}}, api(eg13::makeCoreApi(ctx)) {
+    eg13::attachFactoryPresets(api);
+    // The plugin's stateLoad path without the host: the store loads, the synth follows.
+    ctx.loadState = [this](const std::string& json) { return int(store.load(synth, json)); };
+    ctx.saveState = [this] { return store.save(synth); };
+    ctx.getBrowser = [this] { return store.browser(); };
+    ctx.setBrowser = [this](const std::string& value) { store.setBrowser(value); };
+    ctx.markDirty = [this] { ++dirty; };
+  }
   std::string name(uint32_t index) {
     char buf[EG13_TEXT_SIZE];
     REQUIRE(api.param_name(api.context, index, buf, sizeof buf));
@@ -46,7 +64,22 @@ struct Fixture {
     char buf[EG13_TEXT_SIZE];
     return api.destination_name(api.context, part, code, buf, sizeof buf) ? buf : "<none>";
   }
-  eg13::Synth synth{eg13::PluginKind::Instrument};
+  std::string applyMessage(const std::string& json, int target, int32_t* result = nullptr) {
+    char message[256] = "";
+    const int32_t r = api.preset_apply(api.context, json.c_str(), target, message, sizeof message);
+    if (result) *result = r;
+    return message;
+  }
+  std::string save(int part, const char* name = "Mine") {
+    const uint32_t need = api.preset_save(api.context, part, name, nullptr, 0);
+    std::string out(need, '\0');
+    REQUIRE(api.preset_save(api.context, part, name, out.data(), need) == need);
+    out.resize(need - 1);
+    return out;
+  }
+  eg13::Synth synth;
+  eg13::state::StateStore store;
+  int dirty = 0;
   eg13::UiBridge bridge;
   CoreApiContext ctx;
   EG13CoreAPI api;
@@ -317,4 +350,248 @@ TEST_CASE("version reads project version and git hash") {
   REQUIRE(v.find(')') == v.size() - 1);
   REQUIRE(std::isdigit(static_cast<unsigned char>(v[0])));
   REQUIRE_FALSE(f.api.version(f.api.context, nullptr, 0));
+}
+
+namespace {
+
+const uint32_t kEngineA = eg13::params::id(0, eg13::params::Slot::Source, 0);
+const uint32_t kEngineB = eg13::params::id(1, eg13::params::Slot::Source, 0);
+
+// A synth's sound as a preset file: both parts' source engines set.
+std::string presetJson(eg13::PluginKind kind, int part, double engineA, double engineB) {
+  eg13::Synth synth(kind);
+  synth.setParam(kEngineA, engineA);
+  synth.setParam(kEngineB, engineB);
+  eg13::preset::Meta meta;
+  meta.name = "Test";
+  return eg13::preset::save(synth, eg13::state::StateStore(), meta, part);
+}
+
+// Puts a factory table in for the test and restores the generated one on every exit.
+struct FactoryTable {
+  FactoryTable(const eg13::preset::FactoryPreset* table, size_t count) {
+    eg13::preset::setFactoryPresetsForTesting(table, count);
+  }
+  ~FactoryTable() { eg13::preset::setFactoryPresetsForTesting(nullptr, 0); }
+};
+
+eg13::preset::FactoryPreset entry(const char* bank, const char* name, eg13::PluginKind plugin, int order,
+                                  const std::string& json, bool firstLoad = false,
+                                  eg13::preset::Kind kind = eg13::preset::Kind::Performance) {
+  return {bank, name, "note", "credit", "licence", kind, plugin, firstLoad, order, json.c_str()};
+}
+
+}  // namespace
+
+TEST_CASE("preset_apply loads a Performance and marks the project dirty") {
+  Fixture f;
+  const std::string json = presetJson(eg13::PluginKind::Instrument, -1, 3, 5);
+  REQUIRE(f.synth.param(kEngineA) != 3);
+  int32_t result = -1;
+  const std::string message = f.applyMessage(json, -1, &result);
+  REQUIRE(result == EG13_PRESET_OK);
+  REQUIRE(message.empty());
+  REQUIRE(f.synth.param(kEngineA) == 3);
+  REQUIRE(f.synth.param(kEngineB) == 5);
+  REQUIRE(f.dirty == 1);
+}
+
+TEST_CASE("preset_apply into B leaves A") {
+  Fixture f;
+  f.synth.setParam(kEngineA, 2);
+  const std::string patch = presetJson(eg13::PluginKind::Instrument, 0, 6, 7);  // part A's sound, stored as part 0
+  int32_t result = -1;
+  f.applyMessage(patch, 1, &result);
+  REQUIRE(result == EG13_PRESET_OK);
+  REQUIRE(f.synth.param(kEngineA) == 2);
+  REQUIRE(f.synth.param(kEngineB) == 6);
+}
+
+TEST_CASE("preset_apply refuses an effect preset in the instrument, with a message") {
+  Fixture f;
+  const std::string json = presetJson(eg13::PluginKind::Effect, -1, 3, 5);
+  int32_t result = -1;
+  const std::string message = f.applyMessage(json, -1, &result);
+  REQUIRE(result == EG13_PRESET_INVALID);
+  REQUIRE_FALSE(message.empty());
+  REQUIRE(f.synth.param(kEngineA) != 3);  // nothing changed
+  REQUIRE(f.dirty == 0);
+  f.applyMessage("not json at all", -1, &result);  // a broken file is refused too
+  REQUIRE(result == EG13_PRESET_INVALID);
+  REQUIRE(f.api.preset_apply(f.api.context, nullptr, -1, nullptr, 0) == EG13_PRESET_INVALID);
+}
+
+TEST_CASE("preset_save returns the needed size when the buffer is small") {
+  Fixture f;
+  f.synth.setParam(kEngineA, 4);
+  const uint32_t need = f.api.preset_save(f.api.context, -1, "Glass", nullptr, 0);
+  REQUIRE(need > 100);
+  std::vector<char> small(need - 1, 'x');
+  REQUIRE(f.api.preset_save(f.api.context, -1, "Glass", small.data(), uint32_t(small.size())) == need);
+  REQUIRE(small[0] == 'x');  // nothing written: a truncated file would be unusable
+  const std::string file = f.save(-1, "Glass");
+  REQUIRE(file.size() + 1 == need);
+  const auto meta = eg13::preset::readMeta(file);
+  REQUIRE(meta);
+  REQUIRE(meta->name == "Glass");
+  REQUIRE(meta->bank == "User");
+  REQUIRE(meta->kind == eg13::preset::Kind::Performance);
+  REQUIRE(f.api.preset_save(f.api.context, 5, "x", nullptr, 0) == 0);  // no such part
+  const auto patch = eg13::preset::readMeta(f.save(1));
+  REQUIRE(patch);
+  REQUIRE(patch->kind == eg13::preset::Kind::Patch);
+  // What was saved loads back.
+  Fixture g;
+  int32_t result = -1;
+  g.applyMessage(file, -1, &result);
+  REQUIRE(result == EG13_PRESET_OK);
+  REQUIRE(g.synth.param(kEngineA) == 4);
+}
+
+TEST_CASE("browser state round-trips through StateStore, and a pre-M7 state gives an empty browser string") {
+  Fixture f;
+  char buffer[128];
+  REQUIRE(f.api.browser_state_get(f.api.context, buffer, sizeof buffer));
+  REQUIRE(std::string(buffer).empty());
+  const std::string browser = R"({"loaded":"Glass","edited":true})";
+  f.api.browser_state_set(f.api.context, browser.c_str());
+  REQUIRE(f.dirty == 1);
+  REQUIRE(f.api.browser_state_get(f.api.context, buffer, sizeof buffer));
+  REQUIRE(browser == buffer);
+  REQUIRE_FALSE(f.api.browser_state_get(f.api.context, buffer, uint32_t(browser.size())));  // no room for the NUL
+  // A project reopened: the same string. A preset applied meanwhile leaves it to the UI.
+  const std::string saved = f.store.save(f.synth);
+  Fixture g;
+  REQUIRE(g.store.load(g.synth, saved) == eg13::state::LoadResult::Ok);
+  REQUIRE(g.api.browser_state_get(g.api.context, buffer, sizeof buffer));
+  REQUIRE(browser == buffer);
+  f.applyMessage(presetJson(eg13::PluginKind::Instrument, -1, 3, 5), -1);
+  REQUIRE(f.api.browser_state_get(f.api.context, buffer, sizeof buffer));
+  REQUIRE(browser == buffer);
+  // Saved before M7: no key, so empty (the header then shows Init).
+  auto old = nlohmann::json::parse(saved);
+  old.erase("browser");
+  REQUIRE(g.store.load(g.synth, old.dump()) == eg13::state::LoadResult::Ok);
+  REQUIRE(g.api.browser_state_get(g.api.context, buffer, sizeof buffer));
+  REQUIRE(std::string(buffer).empty());
+}
+
+TEST_CASE("factory_preset_count lists only this kind") {
+  const std::string perf = presetJson(eg13::PluginKind::Instrument, -1, 1, 1);
+  const std::string fx = presetJson(eg13::PluginKind::Effect, -1, 1, 1);
+  const eg13::preset::FactoryPreset table[] = {
+      entry("FX", "Fx One", eg13::PluginKind::Effect, 1, fx),
+      entry("Bank 2", "Late", eg13::PluginKind::Instrument, 1, perf),
+      entry("Bank 1", "Second", eg13::PluginKind::Instrument, 2, perf, false, eg13::preset::Kind::Patch),
+      entry("Bank 1", "First", eg13::PluginKind::Instrument, 1, perf),
+      entry("FX", "Fx Two", eg13::PluginKind::Effect, 2, fx),
+  };
+  FactoryTable guard(table, 5);
+  EG13FactoryPreset out;
+  {
+    Fixture f;
+    REQUIRE(f.api.factory_preset_count(f.api.context) == 3);
+    const char* expected[] = {"First", "Second", "Late"};
+    for (uint32_t i = 0; i < 3; ++i) {
+      REQUIRE(f.api.factory_preset(f.api.context, i, &out));
+      REQUIRE(std::string(out.name) == expected[i]);
+      REQUIRE(std::string(out.json) == perf);
+      REQUIRE(std::string(out.note) == "note");
+    }
+    REQUIRE(f.api.factory_preset(f.api.context, 1, &out));
+    REQUIRE(out.kind == 1);
+    REQUIRE(std::string(out.bank) == "Bank 1");
+    REQUIRE_FALSE(f.api.factory_preset(f.api.context, 3, &out));
+  }
+  Fixture fx_(eg13::PluginKind::Effect);
+  REQUIRE(fx_.api.factory_preset_count(fx_.api.context) == 2);
+  REQUIRE(fx_.api.factory_preset(fx_.api.context, 0, &out));
+  REQUIRE(std::string(out.name) == "Fx One");
+  REQUIRE(out.kind == 0);
+}
+
+TEST_CASE("a new instrument instance starts on the firstLoad preset, and a new FX instance starts on Init") {
+  const std::string first = presetJson(eg13::PluginKind::Instrument, -1, 3, 5);
+  const std::string other = presetJson(eg13::PluginKind::Instrument, -1, 6, 7);
+  const std::string fx = presetJson(eg13::PluginKind::Effect, -1, 3, 5);
+  const eg13::preset::FactoryPreset table[] = {
+      entry("Bank 1", "Other", eg13::PluginKind::Instrument, 1, other),
+      entry("Bank 1", "Opener", eg13::PluginKind::Instrument, 2, first, true),
+      entry("FX", "Fx", eg13::PluginKind::Effect, 1, fx, true),  // never opens EG13 FX
+  };
+  FactoryTable guard(table, 3);
+  const auto apply = [](Fixture& f) {
+    return eg13::applyFirstLoadPreset(f.synth.kind(), f.ctx.saveState, f.ctx.loadState);
+  };
+  Fixture instrument;
+  REQUIRE(apply(instrument));
+  REQUIRE(instrument.synth.param(kEngineA) == 3);
+  REQUIRE(instrument.synth.param(kEngineB) == 5);
+  Fixture effect(eg13::PluginKind::Effect);
+  const double fxA = effect.synth.param(kEngineA);
+  REQUIRE_FALSE(apply(effect));
+  REQUIRE(effect.synth.param(kEngineA) == fxA);
+  // An instrument with no firstLoad preset keeps Init.
+  const eg13::preset::FactoryPreset noFirst[] = {entry("Bank 1", "Other", eg13::PluginKind::Instrument, 1, other)};
+  FactoryTable guard2(noFirst, 1);
+  Fixture plain;
+  REQUIRE_FALSE(apply(plain));
+  REQUIRE(plain.synth.param(kEngineA) == Fixture().synth.param(kEngineA));
+}
+
+TEST_CASE("applying presets while notes play allocates nothing on the audio thread") {
+  constexpr int kBlock = 128;
+  Fixture f;
+  f.synth.prepare(48000.0, kBlock);
+  f.synth.setActive(true);
+  const std::string perfA = presetJson(eg13::PluginKind::Instrument, -1, 3, 5);
+  const std::string perfB = presetJson(eg13::PluginKind::Instrument, -1, 6, 2);
+  const std::string patch = presetJson(eg13::PluginKind::Instrument, 0, 4, 4);
+
+  std::atomic<bool> noteOff{false}, stop{false};
+  std::atomic<size_t> allocations{0};
+  std::atomic<long> blocks{0};
+  std::thread audio([&] {
+    std::vector<float> l(kBlock), r(kBlock);
+    float* out[2] = {l.data(), r.data()};
+    f.synth.beginBlock();
+    f.synth.noteOn(0, 60, 0.8f);
+    f.synth.noteOn(0, 64, 0.8f);
+    f.synth.noteOn(0, 67, 0.8f);
+    bool released = false;
+    eg13::test::ScopedAllocationCounter counter;
+    while (!stop.load(std::memory_order_acquire)) {
+      f.synth.beginBlock();
+      if (!released && noteOff.load(std::memory_order_acquire)) {
+        for (int key : {60, 64, 67}) f.synth.noteOff(0, key);
+        released = true;
+      }
+      f.synth.process(nullptr, out, nullptr, kBlock);
+      blocks.fetch_add(1, std::memory_order_relaxed);
+    }
+    allocations.store(counter.count());
+  });
+  for (int i = 0; i < 50; ++i) {
+    int32_t result = -1;
+    f.applyMessage(i % 3 == 0 ? perfA : i % 3 == 1 ? perfB : patch, i % 3 == 2 ? 1 : -1, &result);
+    REQUIRE(result == EG13_PRESET_OK);
+    const long seen = blocks.load();
+    while (blocks.load() < seen + 4) std::this_thread::yield();  // let a few blocks run between loads
+  }
+  eg13::UiSnapshot snap;
+  f.synth.uiSnapshot(&snap);
+  REQUIRE(snap.activeVoices[0] + snap.activeVoices[1] > 0);  // the notes were still sounding
+  noteOff.store(true, std::memory_order_release);
+  // Release: the audio thread runs on until no voice sounds (or 50 s of waiting).
+  for (int wait = 0; wait < 5000; ++wait) {
+    f.synth.uiSnapshot(&snap);
+    if (snap.activeVoices[0] + snap.activeVoices[1] == 0 && blocks.load() > 0) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  stop.store(true, std::memory_order_release);
+  audio.join();
+  f.synth.uiSnapshot(&snap);
+  REQUIRE(allocations.load() == 0);
+  REQUIRE(snap.activeVoices[0] + snap.activeVoices[1] == 0);  // nothing stuck
+  f.synth.setActive(false);
 }

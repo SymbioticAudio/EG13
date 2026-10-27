@@ -48,6 +48,11 @@ target_include_directories(eg13_core_api PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plug
 target_include_directories(eg13_core_api PRIVATE ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(eg13_core_api PUBLIC eg13_ui_bridge eg13_core)
 target_compile_options(eg13_core_api PRIVATE -Wall -Wextra)
+# The factory-preset functions of the table, apart from eg13_core_api because the generated factory
+# table (below) needs the preset tool, and the tool uses eg13_core_api.
+add_library(eg13_core_api_factory STATIC plugin/src/core_api_factory.cpp)
+target_link_libraries(eg13_core_api_factory PUBLIC eg13_core_api eg13_preset_factory)
+target_compile_options(eg13_core_api_factory PRIVATE -Wall -Wextra)
 
 # The preset tool, and the factory preset table it generates from presets/ at build time (an empty
 # table while a directory is missing or empty). The table is linked into the plugin and the tests.

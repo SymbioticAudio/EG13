@@ -54,7 +54,7 @@ const char* const kPartKeys[kNumParts] = {"A", "B"};
 class RouteNames {
  public:
   explicit RouteNames(Synth& synth)
-      : bridge_(synth, {}), context_{synth, bridge_, {}, {}}, api_(makeCoreApi(context_)) {}
+      : bridge_(synth, {}), context_{synth, bridge_, {}, {}, {}, {}, {}, {}}, api_(makeCoreApi(context_)) {}
 
   std::string source(int part, uint16_t code) const { return name(part, code, true); }
   std::string destination(int part, uint16_t code) const { return name(part, code, false); }

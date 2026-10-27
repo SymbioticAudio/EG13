@@ -690,3 +690,30 @@ TEST_CASE("A schema 6 document holding more than schema 6 does warns, reads what
   REQUIRE(s.patch().routes[0][0] == Route{kSrcVelocity, kDestAmp, kSrcNone});
   REQUIRE(s.patch().routes[0][11] == Route{kSrcGate, kDestPan, kSrcNone});
 }
+
+TEST_CASE("Browser state round-trips through StateStore, and a pre-M7 state gives an empty browser string") {
+  Synth synth(PluginKind::Instrument);
+  state::StateStore store;
+  REQUIRE(store.browser().empty());
+  const std::string saved0 = nlohmann::json::parse(store.save(synth)).dump();
+  REQUIRE_FALSE(nlohmann::json::parse(saved0).contains("browser"));  // nothing to say: no key
+
+  const std::string browser = R"({"name":"Glass \"Pad\"","edited":true})";
+  store.setBrowser(browser);
+  const std::string saved = store.save(synth);
+  REQUIRE(nlohmann::json::parse(saved)["browser"] == browser);  // stored as an opaque string
+
+  state::StateStore other;
+  REQUIRE(other.load(synth, saved) == state::LoadResult::Ok);  // a known key: no warning
+  REQUIRE(other.browser() == browser);
+  REQUIRE(nlohmann::json::parse(other.save(synth))["browser"] == browser);
+
+  // A state without the key (saved before M7, or by a store that had none) clears it.
+  REQUIRE(other.load(synth, saved0) == state::LoadResult::Ok);
+  REQUIRE(other.browser().empty());
+  // A browser value that is not a string is ignored.
+  auto odd = nlohmann::json::parse(saved0);
+  odd["browser"] = 5;
+  REQUIRE(other.load(synth, odd.dump()) == state::LoadResult::Ok);
+  REQUIRE(other.browser().empty());
+}

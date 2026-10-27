@@ -4,10 +4,12 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "eg13_version.h"
 #include "engine/engine_registry.h"
 #include "mod/mod_routes.h"
+#include "preset/preset.h"
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 #include "synth/ui_snapshot.h"
@@ -268,7 +270,91 @@ void requestResize(void* context, uint32_t width, uint32_t height) noexcept {
   if (c.requestResize) c.requestResize(width, height);
 }
 
+uint32_t noFactoryPresets(void*) noexcept { return 0; }
+bool noFactoryPreset(void*, uint32_t, EG13FactoryPreset*) noexcept { return false; }
+
+// Merges the preset into the current state and loads the result; result is an EG13_PRESET_ value.
+int32_t applyPreset(PluginKind kind, const std::function<std::string()>& save,
+                    const std::function<int(const std::string&)>& load, const std::string& json,
+                    int targetPart, std::string& message) {
+  preset::ApplyResult applied;
+  const std::string merged = preset::mergeForApply(save(), json, kind, targetPart, applied);
+  if (merged.empty()) {
+    message = applied.message;
+    return EG13_PRESET_INVALID;
+  }
+  const int result = load(merged);
+  if (result == int(state::LoadResult::Invalid)) {
+    message = "The preset could not be applied.";
+    return EG13_PRESET_INVALID;
+  }
+  return result == int(state::LoadResult::OkWithWarnings) ? EG13_PRESET_WARNINGS : EG13_PRESET_OK;
+}
+
+int32_t presetApply(void* context, const char* json, int32_t targetPart, char* message,
+                    uint32_t size) noexcept {
+  CoreApiContext& c = ctx(context);
+  std::string text;
+  int32_t result = EG13_PRESET_INVALID;
+  try {
+    if (!c.loadState || !c.saveState || !json) {
+      text = "Presets are not available here.";
+    } else {
+      result = applyPreset(c.synth.kind(), c.saveState, c.loadState, json, int(targetPart), text);
+      if (result != EG13_PRESET_INVALID && c.markDirty) c.markDirty();
+    }
+  } catch (...) {
+    result = EG13_PRESET_INVALID;
+    text = "The preset could not be applied.";
+  }
+  copyText(text.c_str(), message, size);
+  return result;
+}
+
+uint32_t presetSave(void* context, int32_t part, const char* name, char* buffer, uint32_t size) noexcept {
+  try {
+    preset::Meta meta;
+    meta.name = name ? name : "";
+    meta.bank = "User";
+    // The preset holds sound only, so the unknown data a project's store preserves is not needed.
+    const std::string file = preset::save(ctx(context).synth, state::StateStore(), meta, int(part));
+    if (file.empty()) return 0;
+    const uint32_t needed = uint32_t(file.size()) + 1;
+    if (buffer && size >= needed) std::memcpy(buffer, file.c_str(), needed);
+    return needed;
+  } catch (...) {
+    return 0;
+  }
+}
+
+bool browserStateGet(void* context, char* buffer, uint32_t size) noexcept {
+  try {
+    const std::string value = ctx(context).getBrowser ? ctx(context).getBrowser() : std::string();
+    if (!buffer || size < value.size() + 1) return false;
+    std::memcpy(buffer, value.c_str(), value.size() + 1);
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+void browserStateSet(void* context, const char* json) noexcept {
+  CoreApiContext& c = ctx(context);
+  try {
+    if (!c.setBrowser) return;
+    c.setBrowser(json ? json : "");
+    if (c.markDirty) c.markDirty();
+  } catch (...) {
+  }
+}
+
 }  // namespace
+
+int32_t applyPresetJson(PluginKind kind, const std::function<std::string()>& save,
+                        const std::function<int(const std::string&)>& load, const std::string& json,
+                        int targetPart, std::string& message) {
+  return applyPreset(kind, save, load, json, targetPart, message);
+}
 
 EG13CoreAPI makeCoreApi(CoreApiContext& context) {
   EG13CoreAPI api{};
@@ -293,6 +379,12 @@ EG13CoreAPI makeCoreApi(CoreApiContext& context) {
   api.destination_for_param = destinationForParam;
   api.version = version;
   api.request_resize = requestResize;
+  api.factory_preset_count = noFactoryPresets;  // attachFactoryPresets (core_api_factory.cpp) fills these in
+  api.factory_preset = noFactoryPreset;
+  api.preset_apply = presetApply;
+  api.preset_save = presetSave;
+  api.browser_state_get = browserStateGet;
+  api.browser_state_set = browserStateSet;
   return api;
 }
 

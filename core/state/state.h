@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 
 namespace eg13 {
 class Synth;
@@ -22,6 +23,11 @@ class StateStore {
   // Invalid leaves the synth and the preserved data unchanged.
   LoadResult load(Synth& synth, const std::string& json);
 
+  // The UI's browser state: an opaque string it owns (loaded preset names, edited flag), saved as
+  // the "browser" key and restored by load; empty when the state has none.
+  const std::string& browser() const { return browser_; }
+  void setBrowser(std::string value) { browser_ = std::move(value); }
+
  private:
   std::string extraTopLevel_ = "{}";
   std::string extraParams_ = "{}";
@@ -29,6 +35,7 @@ class StateStore {
   // newer version's extra routes, numbers, segments and parts) is written back on save.
   std::string loadedRoutes_;
   std::string loadedShapes_;
+  std::string browser_;
 };
 
 }  // namespace eg13::state

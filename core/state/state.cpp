@@ -51,7 +51,7 @@ const Section kSections[kNumSlotKinds] = {
 size_t sectionWidth(SlotKind kind) { return slotParamCount(kind) + (isModSlot(kind) ? 1 : 0); }
 
 bool isKnownTopLevel(const std::string& key) {
-  if (key == "schemaVersion" || key == "params" || key == "routes" || key == "envelopeShapes") return true;
+  if (key == "schemaVersion" || key == "params" || key == "routes" || key == "envelopeShapes" || key == "browser") return true;
   for (const Section& s : kSections) {
     if (key == s.key) return true;
   }
@@ -229,6 +229,7 @@ std::string StateStore::save(const Synth& synth) const {
   }
   root["schemaVersion"] = kSchemaVersion;
   root["params"] = std::move(params);
+  if (!browser_.empty()) root["browser"] = browser_;
 
   const EngineStash stash = synth.engineStash();
   for (const Section& section : kSections) {
@@ -293,6 +294,7 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
     extraParams_ = "{}";
     loadedRoutes_.clear();
     loadedShapes_.clear();
+    browser_.clear();
     return LoadResult::OkWithWarnings;
   }
   bool warnings = schema > kSchemaVersion;
@@ -345,6 +347,8 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
   extraParams_ = std::move(paramsDump);
   loadedRoutes_ = std::move(routesDump);
   loadedShapes_ = std::move(shapesDump);
+  const auto browser = root.find("browser");
+  browser_ = browser != root.end() && browser->is_string() ? browser->get<std::string>() : std::string();
   return warnings ? LoadResult::OkWithWarnings : LoadResult::Ok;
 }
 

@@ -87,6 +87,21 @@ typedef struct EG13Snapshot {
   float mod_out_max[EG13_NUM_PARTS][EG13_NUM_MOD_SLOTS][EG13_MAX_MOD_OUTPUTS];
 } EG13Snapshot;
 
+/* A factory preset of this plugin's kind. The strings and json belong to the plugin and stay valid
+ * for its lifetime. json is a complete preset file, ready for preset_apply. */
+typedef struct EG13FactoryPreset {
+  const char* bank; /* "Bank 1", "Bank 2", "FX" */
+  const char* name;
+  const char* note;
+  const char* credit;
+  const char* licence;
+  uint32_t kind; /* 0 performance, 1 patch */
+  const char* json;
+} EG13FactoryPreset;
+
+/* preset_apply results. */
+enum { EG13_PRESET_OK = 0, EG13_PRESET_WARNINGS = 1, EG13_PRESET_INVALID = 2 };
+
 /* Index arguments are parameter-table indices (0 .. param_count - 1), not parameter IDs.
  * Functions returning bool return false (and write nothing) for an argument out of range.
  * Text is written NUL-terminated, truncated to size. */
@@ -129,6 +144,24 @@ typedef struct EG13CoreAPI {
   bool (*version)(void* context, char* buffer, uint32_t size);
   /* Ask the host to resize the editor to width x height logical points. */
   void (*request_resize)(void* context, uint32_t width, uint32_t height);
+  /* Presets (main thread). The factory list holds this plugin kind's presets only, in bank order
+   * (Bank 1, Bank 2, FX) then the preset's order. */
+  uint32_t (*factory_preset_count)(void* context);
+  bool (*factory_preset)(void* context, uint32_t index, EG13FactoryPreset* out);
+  /* Loads a preset file's sound: a Performance replaces both parts, a Patch goes into target_part.
+   * The setup fields (MIDI channel, output, MPE, CCs, master level, voice gain, latency mode) are
+   * kept. Marks the project dirty. Returns an EG13_PRESET_ result; for EG13_PRESET_INVALID nothing
+   * changed and message (NUL-terminated, truncated to size; may be NULL) says why. */
+  int32_t (*preset_apply)(void* context, const char* json, int32_t target_part /* -1 performance, 0 A, 1 B */,
+                          char* message, uint32_t size);
+  /* The current sound as a preset file: part -1 a Performance, 0 or 1 a Patch of that part, bank
+   * "User". Returns the bytes needed including the NUL (0 for a bad part) and writes the file only
+   * if it fits in size, so call once with size 0 to measure. */
+  uint32_t (*preset_save)(void* context, int32_t part, const char* name, char* buffer, uint32_t size);
+  /* The UI's browser state, an opaque string saved in the project ("" for none). False (and nothing
+   * written) if it does not fit in size with its NUL. */
+  bool (*browser_state_get)(void* context, char* buffer, uint32_t size);
+  void (*browser_state_set)(void* context, const char* json);
 } EG13CoreAPI;
 
 #ifdef __cplusplus
