@@ -54,6 +54,13 @@ struct EG13KeyRangeEditor {
 
     func end(_ handle: EG13KeyMap.Handle) { param(handle)?.endEdit() }
 
+    /// The handle a press at (x, y) grabs, from the current ranges and mode.
+    func hitTarget(x: Double, y: Double, width: Double, laneHeight: Double, hitWidth: Double) -> EG13KeyMap.Handle? {
+        let ranges = (0..<EG13ParamID.parts).map { range(part: $0) }
+        return EG13KeyMap.hitTarget(x: x, y: y, width: width, laneHeight: laneHeight, hitWidth: hitWidth,
+                                    mode: mode, ranges: ranges, split: EG13KeyMap.clampedKey(key(.split)))
+    }
+
     /// VoiceOver's increment and decrement: one semitone, as one gesture.
     func step(_ handle: EG13KeyMap.Handle, by delta: Int) {
         guard param(handle) != nil else { return }
@@ -63,19 +70,64 @@ struct EG13KeyRangeEditor {
     }
 }
 
+/// One press-drag-release on a handle. It sends nothing until the pointer has moved the handle to
+/// another key, so a plain click is no edit; then it is one begin, edit..., end. The handle follows
+/// the pointer by the distance moved, not to where the pointer is, so it does not jump on grab.
+struct EG13KeyRangeDrag {
+    let handle: EG13KeyMap.Handle
+    private let startX: Double
+    private let startKey: Int
+    private(set) var began = false
+
+    @MainActor
+    init(handle: EG13KeyMap.Handle, startX: Double, editor: EG13KeyRangeEditor) {
+        self.handle = handle
+        self.startX = startX
+        startKey = EG13KeyMap.clampedKey(editor.key(handle))
+    }
+
+    @MainActor
+    mutating func update(x: Double, width: Double, editor: EG13KeyRangeEditor) {
+        guard width > 0 else { return }
+        let moved = Int(((x - startX) / width * Double(EG13KeyMap.keyCount)).rounded())
+        let key = startKey + moved
+        if !began {
+            guard EG13KeyMap.clampedKey(key) != startKey else { return }
+            began = true
+            editor.begin(handle)
+        }
+        editor.move(handle, toKey: key)
+    }
+
+    /// Ends the gesture if one was begun. Safe to call twice.
+    @MainActor
+    mutating func end(editor: EG13KeyRangeEditor) {
+        guard began else { return }
+        began = false
+        editor.end(handle)
+    }
+}
+
 /// A non-playing 88-key strip, A0 to C8 (the owner's decision: EG13 has no keyboard to play). Part
 /// A's key range is a teal band and Part B's a pink one; the split note is a marker, in Split mode
 /// only; Part B's band is there only when Part B can sound. Dragging a band end or the marker edits
 /// Key Low, Key High or Split Note.
+///
+/// One gesture serves the whole strip and picks its handle at mouse-down (EG13KeyMap.hitTarget): a
+/// part's handles are grabbed in its own lane and the split marker on the keys row, so the marker
+/// never covers the handles that sit on the split (Part A's High and Part B's Low).
 struct EG13KeyRangeView: View {
     let synth: EG13Synth
     @Environment(\.symbioticTheme) private var theme
-    @State private var dragging: EG13KeyMap.Handle?
+    @State private var drag: EG13KeyRangeDrag?
+    /// A press that grabbed nothing: its moves are ignored.
+    @State private var ignoring = false
 
     static let laneHeight: CGFloat = 12
     static let keyHeight: CGFloat = 26
     static let handleWidth: CGFloat = 8
     static let hitWidth: CGFloat = 16
+    private static let space = "EG13KeyStrip"
 
     private var editor: EG13KeyRangeEditor { EG13KeyRangeEditor(synth: synth) }
 
@@ -95,11 +147,23 @@ struct EG13KeyRangeView: View {
                     splitMarker(width: width, editor: editor)
                 }
             }
-            .coordinateSpace(name: "EG13KeyStrip")
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+            .contentShape(Rectangle())
+            .coordinateSpace(name: Self.space)
+            .gesture(dragGesture(width: width, editor: editor))
         }
         .frame(height: Self.laneHeight * CGFloat(EG13ParamID.parts) + Self.keyHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Key range")
+        .onDisappear { finish() }
+        .onChange(of: synth.mode) { _, _ in finish() }
+    }
+
+    /// Ends an open drag (the popover closed or the mode removed the handle under it).
+    private func finish() {
+        if var open = drag { open.end(editor: editor) }
+        drag = nil
+        ignoring = false
     }
 
     private func keys(width: CGFloat) -> some View {
@@ -125,6 +189,7 @@ struct EG13KeyRangeView: View {
         }
         .frame(width: width, height: Self.keyHeight)
         .accessibilityHidden(true)
+        .allowsHitTesting(false)
     }
 
     private func band(part: Int, width: Double, editor: EG13KeyRangeEditor) -> some View {
@@ -142,23 +207,20 @@ struct EG13KeyRangeView: View {
             Rectangle().fill(colors.bright.color.opacity(0.22))
                 .frame(width: max(x1 - x0, 1), height: Self.keyHeight)
                 .offset(x: x0, y: Self.laneHeight * CGFloat(EG13ParamID.parts))
-                .allowsHitTesting(false)
                 .accessibilityHidden(true)
-            handle(.low(part: part), at: x0, y: y, color: colors.ink.color, width: width, editor: editor)
-            handle(.high(part: part), at: x1, y: y, color: colors.ink.color, width: width, editor: editor)
+            handle(.low(part: part), at: x0, y: y, color: colors.ink.color, editor: editor)
+            handle(.high(part: part), at: x1, y: y, color: colors.ink.color, editor: editor)
         }
+        .allowsHitTesting(false)
     }
 
     private func handle(_ handle: EG13KeyMap.Handle, at x: CGFloat, y: CGFloat, color: Color,
-                        width: Double, editor: EG13KeyRangeEditor) -> some View {
+                        editor: EG13KeyRangeEditor) -> some View {
         let key = EG13KeyMap.clampedKey(editor.key(handle))
         return RoundedRectangle(cornerRadius: 2).fill(color)
             .frame(width: Self.handleWidth, height: Self.laneHeight)
             .overlay(RoundedRectangle(cornerRadius: 2).stroke(EG13Palette.white.color, lineWidth: 1))
-            .frame(width: Self.hitWidth, height: Self.laneHeight)
-            .contentShape(Rectangle())
             .position(x: x, y: y + Self.laneHeight / 2)
-            .gesture(dragGesture(handle, width: width, editor: editor))
             .modifier(EG13HandleAccessibility(handle: handle, key: key, editor: editor))
     }
 
@@ -172,30 +234,34 @@ struct EG13KeyRangeView: View {
             Rectangle().fill(EG13Palette.legend.color).frame(width: 2, height: height)
             Rectangle().fill(EG13Palette.white.color).frame(width: 0.5, height: height)
         }
-        .frame(width: Self.hitWidth, height: height)
-        .contentShape(Rectangle())
+        .frame(width: 2, height: height)
         .position(x: x, y: height / 2)
-        .gesture(dragGesture(handle, width: width, editor: editor))
         .modifier(EG13HandleAccessibility(handle: handle, key: key, editor: editor))
+        .allowsHitTesting(false)
     }
 
-    private func dragGesture(_ handle: EG13KeyMap.Handle, width: Double, editor: EG13KeyRangeEditor) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named("EG13KeyStrip"))
+    private func dragGesture(width: Double, editor: EG13KeyRangeEditor) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
             .onChanged { value in
-                if dragging != handle {
-                    dragging = handle
-                    editor.begin(handle)
+                if drag == nil && !ignoring {
+                    let start = value.startLocation
+                    if let grabbed = editor.hitTarget(x: Double(start.x), y: Double(start.y), width: width,
+                                                      laneHeight: Double(Self.laneHeight),
+                                                      hitWidth: Double(Self.hitWidth)) {
+                        drag = EG13KeyRangeDrag(handle: grabbed, startX: Double(start.x), editor: editor)
+                    } else {
+                        ignoring = true
+                    }
                 }
-                editor.drag(handle, toX: Double(value.location.x), width: width)
+                guard var open = drag else { return }
+                open.update(x: Double(value.location.x), width: width, editor: editor)
+                drag = open
             }
-            .onEnded { _ in
-                editor.end(handle)
-                dragging = nil
-            }
+            .onEnded { _ in finish() }
     }
 }
 
-/// VoiceOver for one handle: "Part A lowest key, C2", adjustable by a semitone.
+/// VoiceOver for one handle: "Part A lowest key", valued with the note, adjustable by a semitone.
 private struct EG13HandleAccessibility: ViewModifier {
     let handle: EG13KeyMap.Handle
     let key: Int
@@ -205,6 +271,7 @@ private struct EG13HandleAccessibility: ViewModifier {
         content
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(EG13KeyMap.accessibilityLabel(handle, key: key))
+            .accessibilityValue(EG13KeyMap.noteName(key))
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: editor.step(handle, by: 1)

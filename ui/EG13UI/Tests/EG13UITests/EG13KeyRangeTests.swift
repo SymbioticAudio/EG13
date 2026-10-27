@@ -115,4 +115,48 @@ struct EG13KeyRangeTests {
         #expect(EG13KeyMap.accessibilityLabel(.high(part: 1), key: 108) == "Part B highest key, C8")
         #expect(EG13KeyMap.accessibilityLabel(.split, key: 60) == "Split note, C4")
     }
+
+    @Test("A press with no key change sends no gesture calls")
+    func tapIsNotAnEdit() {
+        set(EG13ParamID.part(0, .keyLow), 40)
+        core.calls = []
+        let low = EG13KeyMap.Handle.low(part: 0)
+        let width = 360.0
+        let startX = EG13KeyMap.x(forKey: 40, width: width)
+        var drag = EG13KeyRangeDrag(handle: low, startX: startX, editor: editor)
+        drag.update(x: startX, width: width, editor: editor)
+        drag.update(x: startX + 1.5, width: width, editor: editor)  // under half a key
+        drag.update(x: startX - 1.5, width: width, editor: editor)
+        drag.end(editor: editor)
+        #expect(core.calls.isEmpty)
+        #expect(editor.key(low) == 40)
+
+        // A real move is one begin, edits by the distance moved, one end.
+        var moving = EG13KeyRangeDrag(handle: low, startX: startX, editor: editor)
+        moving.update(x: startX + 3 * width / 88, width: width, editor: editor)
+        moving.update(x: startX + 5 * width / 88, width: width, editor: editor)
+        moving.end(editor: editor)
+        moving.end(editor: editor)
+        let id = EG13ParamID.part(0, .keyLow)
+        #expect(core.calls == [.begin(id), .edit(id, 43), .edit(id, 45), .end(id)])
+    }
+
+    @Test("At the split, both handles and the marker are each grabbable")
+    func hitTargetsAtTheSplit() {
+        let width = 360.0, lane = 12.0, hit = 16.0
+        let ranges = [30...59, 60...100]  // A High = split - 1, B Low = split
+        func target(_ x: Double, _ y: Double, _ mode: EG13Mode = .split) -> EG13KeyMap.Handle? {
+            EG13KeyMap.hitTarget(x: x, y: y, width: width, laneHeight: lane, hitWidth: hit,
+                                 mode: mode, ranges: ranges, split: 60)
+        }
+        let splitX = EG13KeyMap.x(forKey: 60, width: width)
+        #expect(target(splitX, 6) == .high(part: 0))
+        #expect(target(splitX, 18) == .low(part: 1))
+        #expect(target(splitX, 24 + 10) == .split)
+        #expect(target(splitX, 24 + 10, .layer) == nil)  // no marker outside Split
+        #expect(target(splitX + 60, 34) == nil)
+        #expect(target(splitX + 60, 6) == nil)
+        #expect(target(splitX, 18, .single) == nil)  // Part B's band is hidden in Single
+        #expect(target(EG13KeyMap.x(forKey: 30, width: width), 6) == .low(part: 0))
+    }
 }

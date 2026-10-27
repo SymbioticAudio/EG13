@@ -41,8 +41,8 @@ public enum EG13KeyMap {
     public static func dragged(_ handle: Handle, to key: Int, low: Int, high: Int) -> Int {
         let strip = clampedKey(key)
         switch handle {
-        case .low: return min(strip, max(clampedKey(high), lowestKey))
-        case .high: return max(strip, min(clampedKey(low), highestKey))
+        case .low: return min(strip, clampedKey(high))
+        case .high: return max(strip, clampedKey(low))
         case .split: return strip
         }
     }
@@ -59,6 +59,29 @@ public enum EG13KeyMap {
         let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
         let note = max(key, 0)
         return "\(names[note % 12])\(note / 12 - 1)"
+    }
+
+    /// The handle a press at (x, y) grabs, y measured from the top of the strip. Each part's band
+    /// ends are grabbed in the part's own lane (Part A the top one, Part B the one below); the split
+    /// marker is grabbed on the keys row below the lanes. So the marker never shadows Part A's High
+    /// and Part B's Low when they sit on the split. Within a lane the nearer end wins (the lower
+    /// one on a tie), and only when within `hitWidth / 2` of it. Hidden handles are not grabbed.
+    public static func hitTarget(x: Double, y: Double, width: Double, laneHeight: Double, hitWidth: Double,
+                                 mode: EG13Mode, ranges: [ClosedRange<Int>], split: Int) -> Handle? {
+        guard y >= 0, laneHeight > 0 else { return nil }
+        let reach = hitWidth / 2
+        let lane = Int(y / laneHeight)
+        if lane < ranges.count {
+            guard showsBand(part: lane, mode: mode) else { return nil }
+            let lowX = Self.x(forKey: ranges[lane].lowerBound, width: width)
+            let highX = trailingX(forKey: ranges[lane].upperBound, width: width)
+            let lowDistance = abs(x - lowX), highDistance = abs(x - highX)
+            if lowDistance <= reach, lowDistance <= highDistance { return .low(part: lane) }
+            if highDistance <= reach { return .high(part: lane) }
+            return nil
+        }
+        guard showsSplitMarker(mode: mode) else { return nil }
+        return abs(x - Self.x(forKey: split, width: width)) <= reach ? .split : nil
     }
 
     /// Part B's band shows only when Part B can sound: not in Single.
