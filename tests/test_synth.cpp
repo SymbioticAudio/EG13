@@ -707,8 +707,13 @@ TEST_CASE("P values sent after an engine change in the same block stay") {
   synth.setParam(engineId(0), 3);  // two switches before the host takes updates
   HostUpdate updates[2 * kSourceParamCount];
   // One entry per P, latest value.
-  REQUIRE(synth.takeHostUpdates(updates, int(2 * kSourceParamCount)) == int(kSourceParamCount));
-  REQUIRE(updates[2].value == 0.66f);
+  const int count = synth.takeHostUpdates(updates, int(2 * kSourceParamCount));
+  REQUIRE(count == int(kSourceParamCount));
+  // P3's write dropped its entry from the first switch, so it is queued again last, not in place.
+  const HostUpdate* p3 = std::find_if(updates, updates + count,
+                                      [](const HostUpdate& u) { return u.id == sourceId(0, 2); });
+  REQUIRE(p3 != updates + count);
+  REQUIRE(p3->value == 0.66f);
   synth.setActive(false);
 }
 
@@ -824,6 +829,26 @@ TEST_CASE("takeHostUpdates keeps what does not fit") {
   REQUIRE(updates[kAll - 4].id == sourceId(0, kAll - 1));
   REQUIRE(synth.takeHostUpdates(updates, kAll) == 0);
   synth.setActive(false);
+}
+
+// clap-wrapper 0.17's AU flush while deactivated (what auval does): every value the host set
+// arrives in one flush, each parameter's writes in turn, so a selector's switches come before the
+// P values set after them. The switch's queued update must not send the host back a value its own
+// later write replaced.
+TEST_CASE("A host write after an engine switch drops that P's queued host update") {
+  Synth synth(PluginKind::Instrument);  // never activated, as before the wrapper's activate
+  synth.beginBlock();
+  synth.setParam(engineId(0), 1);
+  synth.setParam(engineId(0), 0);
+  synth.setParam(engineId(0), 1);
+  synth.setParam(sourceId(0, 1), 0.25);
+  REQUIRE(synth.param(sourceId(0, 1)) == double(0.25f));
+  HostUpdate updates[kMaxHostUpdates];
+  const int count = synth.takeHostUpdates(updates, int(kMaxHostUpdates));
+  REQUIRE(count == int(kSourceParamCount) - 1);
+  for (int i = 0; i < count; ++i) REQUIRE(updates[i].id != sourceId(0, 1));
+  REQUIRE(updates[0].id == sourceId(0, 0));
+  REQUIRE(updates[1].id == sourceId(0, 2));
 }
 
 TEST_CASE("loadParams drops host updates from before the load") {

@@ -238,6 +238,9 @@ bool Synth::setParam(uint32_t id, double value) {
     switchEngine(kind, part, slotEngineFromSelector(kind, clamped));
   }
   values_[size_t(index)].store(clamped, std::memory_order_relaxed);
+  // A switch earlier in the same block or flush may have queued this id; this write replaces
+  // that value, so the host must not be sent it back.
+  dropHostUpdate(id);
   return true;
 }
 
@@ -511,6 +514,15 @@ void Synth::queueHostUpdate(const HostUpdate& update) {
     }
   }
   if (hostUpdateCount_ < int(kMaxHostUpdates)) hostUpdates_[hostUpdateCount_++] = update;
+}
+
+void Synth::dropHostUpdate(uint32_t id) {
+  for (int i = 0; i < hostUpdateCount_; ++i) {
+    if (hostUpdates_[i].id != id) continue;
+    for (int j = i + 1; j < hostUpdateCount_; ++j) hostUpdates_[j - 1] = hostUpdates_[j];
+    --hostUpdateCount_;
+    return;  // coalesced per id: at most one entry
+  }
 }
 
 float Synth::softLimit(float x) {

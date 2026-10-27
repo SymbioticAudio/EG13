@@ -228,6 +228,7 @@ class Synth {
   PartEngines partEngines(int part) const;               // main thread
   void feedOther(int part, int n);  // otherIn_[part]: the other part's output, soft-limited
   void queueHostUpdate(const HostUpdate& update);
+  void dropHostUpdate(uint32_t id);  // a later setParam of the id replaced the queued value
   void routeInput(int part, const float* const* in, int n);
   // One chunk of process(): n <= feedDelay_, so A only reads B samples already written.
   void processChunk(const float* const* in, float* const* mainOut, float* const* bus2Out, int n);
