@@ -48,7 +48,7 @@ The top of the right-hand column has a two-part LCD switch, **MODS** and **MATRI
 
 ## Modulate from
 
-Right-click a knob (or ctrl-click it) to open its context menu. Nothing about the knob changes, no gesture starts and the value is not touched. A knob with nothing to modulate it (Pan, the master controls, anything that is not a matrix destination) has no menu.
+Right-click a knob (or ctrl-click it) to open its context menu. Nothing about the knob changes, no gesture starts and the value is not touched. A knob that is not a matrix destination (the bottom-bar Pan knob, the master controls) has no menu. Voice pan is still a destination: choose it under Voice in the matrix destination menu.
 
 - **Modulate from** opens a list of sources (the same as the matrix's source menu, in the same order). Choosing one puts the source into the **first empty route** of the shown part, aimed at this knob, at an amount of +25 % (the amount is set as one edit). An empty route is one with no source, via or destination.
 - When all 12 routes are in use, the item reads **Matrix full** and is dimmed.

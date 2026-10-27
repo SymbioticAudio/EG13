@@ -35,6 +35,7 @@ struct EG13MatrixEditor: View {
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
                 if !Task.isCancelled { state.clearHighlight() }
             }
+            .onChange(of: part) { state.clearHighlight() }  // a highlight belongs to one part's route
         }
         .frame(width: width, alignment: .topLeading)
         .background(theme.surface.panel.color)
