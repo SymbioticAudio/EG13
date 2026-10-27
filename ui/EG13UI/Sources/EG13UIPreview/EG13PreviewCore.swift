@@ -1,4 +1,6 @@
+import Foundation
 import EG13CBridge
+import EG13UIFixtures
 import EG13UI
 
 /// A fake plugin for the preview: parameters live in memory, nothing needs a DAW. It has the
@@ -199,7 +201,7 @@ final class EG13PreviewCore: EG13Core {
             if [.ccA, .ccB, .ccC, .ccD].contains(where: isPart) { return "CC \(i)" }
             if isPart(.baseNote) || isPart(.keyLow) || isPart(.keyHigh) {
                 let note = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][i % 12]
-                return "\(note)\(i / 12 - 2)"
+                return "\(note)\(i / 12 - 1)"
             }
         }
         if d.isStepped { return "\(i)" }
@@ -227,7 +229,216 @@ final class EG13PreviewCore: EG13Core {
     }
     func endEdit(_ id: UInt32) { for synth in demoSynths { synth.tick() } }
     func displayFrame() -> EG13DisplayFrame {
-        EG13DisplayFrame(values: values, partPeaks: [[0.4, 0.35], [0.2, 0.25]], engineGeneration: generation)
+        frameCount += 1
+        let time = Double(frameCount) / Self.displayRate
+        var modOutMin = [[[Float]]](repeating: [[Float]](repeating: [Float](repeating: .infinity, count: 8), count: 4), count: 2)
+        var modOutMax = [[[Float]]](repeating: [[Float]](repeating: [Float](repeating: -.infinity, count: 8), count: 4), count: 2)
+        for part in 0..<EG13ParamID.parts {
+            let now = time + Self.partOffset * Double(part)
+            for slot in 0..<4 {
+                let engine = Self.engines(3 + slot)[current[3 + slot][part]].name
+                for output in 0..<EG13MatrixNames.outputCount(engine: engine) {
+                    // The range over the frame just ended: four samples across 1/30 s.
+                    var low = Float.infinity, high = -Float.infinity
+                    for sample in 0..<4 {
+                        let at = now - (3 - Double(sample)) / (4 * Self.displayRate)
+                        if let value = self.output(engine: engine, slot: slot, output: output, at: at) {
+                            low = min(low, Float(value))
+                            high = max(high, Float(value))
+                        }
+                    }
+                    modOutMin[part][slot][output] = low
+                    modOutMax[part][slot][output] = high
+                }
+            }
+        }
+        return EG13DisplayFrame(values: values, partPeaks: [[0.4, 0.35], [0.2, 0.25]],
+                                activeVoices: heldChord ? [4, 4] : [0, 0], engineGeneration: generation,
+                                modValues: modValues(time: time), modOutMin: modOutMin, modOutMax: modOutMax)
+    }
+
+    // MARK: Modulation
+
+    /// The preview's display rate: its 30 Hz tick, and so the unit of its animation clock.
+    static let displayRate = 30.0
+    /// Part B runs this far behind Part A, so the two parts' traces differ.
+    static let partOffset = 0.35
+    /// Display frames asked for so far; time is this over the display rate, so the animation
+    /// follows the tick (a snapshot of N ticks is the same every run).
+    private var frameCount = 0
+    /// A chord held down: voices sounding in both parts.
+    var heldChord = false
+    /// A static patch with no notes held, as the plugin idles (`--editor-static`): the mods
+    /// produce nothing unless a chord is held, so the traces hold gaps and go quiet.
+    var staticIdle = false
+
+    /// `modOutput`, or nothing on a static, idle core.
+    private func output(engine: String, slot: Int, output: Int, at time: Double) -> Double? {
+        staticIdle && !heldChord ? nil : Self.modOutput(engine: engine, slot: slot, output: output, at: time)
+    }
+
+    /// A mod engine's output at time `at`, or nil when it produces nothing (an idle envelope). An
+    /// envelope retriggers every 2 s (attack 40 ms, decay to a sustain of 0.45, release from 1.3 s
+    /// to 1.8 s, then idle); an LFO is a bipolar sine near 1 Hz, its second output the cosine; the
+    /// others are slow unipolar waves, or steps.
+    static func modOutput(engine: String, slot: Int, output: Int, at time: Double) -> Double? {
+        switch engine {
+        case "Envelope", "Function Generator":
+            let cycle = (time + 0.5 * Double(slot) + 0.3 * Double(output)).truncatingRemainder(dividingBy: 2)
+            switch cycle {
+            case ..<0.04: return cycle / 0.04
+            case ..<0.5: return 1 - 0.55 * (cycle - 0.04) / 0.46
+            case ..<1.3: return 0.45
+            case ..<1.8: return 0.45 * (1 - (cycle - 1.3) / 0.5)
+            default: return nil
+            }
+        case "LFO":
+            let phase = 2 * Double.pi * (1.1 * time + 0.2 * Double(slot))
+            return output == 0 ? sin(phase) : cos(phase)
+        case "Random / S&H":
+            let step = (time * 3).rounded(.down) + Double(output) * 7.3
+            return abs(sin(step * 12.9898)).truncatingRemainder(dividingBy: 1)
+        default:
+            return 0.5 + 0.5 * sin(2 * Double.pi * 0.4 * time + Double(output))
+        }
+    }
+
+    /// A source's level at `time`: a mod output (nil when idle reads 0), or a fixed source.
+    private func level(part: Int, source: UInt16, time: Double) -> Double {
+        switch source {
+        case 0: return 1
+        case 1: return 0.8   // velocity
+        case 9: return 0.5   // mod wheel
+        case 32..<64:
+            let slot = Int(source - 32) / 8, output = Int(source - 32) % 8
+            let engine = Self.engines(3 + slot)[current[3 + slot][part]].name
+            return self.output(engine: engine, slot: slot, output: output,
+                               at: time + Self.partOffset * Double(part)) ?? 0
+        default: return 0.5
+        }
+    }
+
+    /// The final value at each destination a route targets: the parameter's value plus the sum of
+    /// its routes' amounts times the source levels (times the via's), as the plugin reports it. NaN
+    /// elsewhere.
+    private func modValues(time: Double) -> [[Float]] {
+        var result = [[Float]](repeating: [Float](repeating: .nan, count: 144), count: EG13ParamID.parts)
+        for part in 0..<EG13ParamID.parts {
+            var sums: [Int: Double] = [:]
+            for (index, route) in routes[part].enumerated() where route.source != 0 && route.destination != 0 {
+                guard sourceName(part: part, code: route.source) != nil,
+                      destinationName(part: part, code: route.destination) != nil else { continue }
+                let amount = values[indexByID[EG13ParamID.routeAmount(part, index)]!]
+                let via = route.via == 0 ? 1 : level(part: part, source: route.via, time: time)
+                sums[Int(route.destination), default: 0] += amount * via * level(part: part, source: route.source, time: time)
+            }
+            for (destination, sum) in sums {
+                result[part][destination] = Float(min(max(base(part: part, destination: destination) + sum, 0), 1))
+            }
+        }
+        return result
+    }
+
+    /// The set value of a destination, 0...1 (Pitch sits at the centre, Amp at 1).
+    private func base(part: Int, destination: Int) -> Double {
+        switch destination {
+        case 1: return 0.5
+        case 2: return 1
+        case 4: return values[indexByID[EG13ParamID.part(part, .level)]!]
+        default:
+            let kinds: [(base: Int, kind: Int)] = [(16, 0), (32, 1), (48, 2), (64, 7), (80, 3), (96, 4), (112, 5), (128, 6)]
+            for entry in kinds where destination >= entry.base && destination < entry.base + 16 {
+                let id = EG13ParamID.slot(part, EG13SlotKind(rawValue: UInt32(entry.kind)), destination - entry.base + 1)
+                return indexByID[id].map { values[$0] } ?? 0
+            }
+            return 0
+        }
+    }
+
+    /// Puts a route in the matrix with its amount (the preview's stand-in for "Modulate from…").
+    func addRoute(part: Int, index: Int, source: UInt16, destination: UInt16, via: UInt16 = 0, amount: Double) {
+        routes[part][index] = (source, destination, via)
+        values[indexByID[EG13ParamID.routeAmount(part, index)]!] = amount
+        generation += 1
+    }
+
+    /// The init patch with a chord held, for the modulation visuals: more routes, so several cards
+    /// show a Motion button and several knobs a mark.
+    static func modulationDemo() -> EG13PreviewCore {
+        let core = standard()
+        core.heldChord = true
+        for part in 0..<EG13ParamID.parts {
+            core.addRoute(part: part, index: 1, source: 40, destination: 32, amount: 0.45)   // Mod 2 -> Cutoff
+            core.addRoute(part: part, index: 3, source: 32, destination: 33, amount: 0.25)   // Mod 1 -> Resonance
+            core.addRoute(part: part, index: 4, source: 48, destination: 17, amount: -0.3)   // Mod 3 -> Harmonics
+            core.addRoute(part: part, index: 5, source: 40, destination: 19, amount: 0.35)   // Mod 2 -> Morph
+            core.addRoute(part: part, index: 6, source: 1, destination: 18, amount: 0.2)     // Velocity -> Timbre
+            core.addRoute(part: part, index: 7, source: 49, destination: 64, amount: 0.3)    // Mod 3 Out 2 -> Blend
+            // Three routes into Mod 1's own knobs: its header strip has three routes in one Motion list.
+            core.addRoute(part: part, index: 8, source: 49, destination: 81, amount: 0.2)
+            core.addRoute(part: part, index: 9, source: 40, destination: 82, amount: -0.2)
+            core.addRoute(part: part, index: 10, source: 1, destination: 83, amount: 0.15)
+        }
+        return core
+    }
+
+    /// The `--mod-load` patch: the init patch, a chord held, three modulated knobs (Cutoff,
+    /// Resonance, Harmonics) and three traces (the three mod slots with an engine).
+    static func modulationLoad() -> EG13PreviewCore {
+        let core = standard()
+        core.heldChord = true
+        for part in 0..<EG13ParamID.parts {
+            core.addRoute(part: part, index: 3, source: 32, destination: 33, amount: 0.25)
+            core.addRoute(part: part, index: 4, source: 48, destination: 17, amount: -0.3)
+        }
+        return core
     }
     func requestResize(width: UInt32, height: UInt32) {}
+
+    // MARK: Matrix
+
+    /// The init patch's routes (spec §6): Mod 1 to Amp via Velocity, Mod 2 to Filter P1, Mod 3 to
+    /// Pitch via the mod wheel; the rest are free.
+    private var routes: [[(source: UInt16, destination: UInt16, via: UInt16)]] = (0..<EG13ParamID.parts).map { _ in
+        [(32, 2, 1), (40, 32, 0), (48, 1, 9)] + Array(repeating: (0, 0, 0), count: EG13ParamID.routeCount - 3)
+    }
+
+    private func modEngineNames(part: Int) -> [String] {
+        (3...6).map { Self.engines($0)[current[$0][part]].name }
+    }
+
+    func route(part: Int, index: Int) -> EG13ModRoute {
+        guard part >= 0, part < EG13ParamID.parts, index >= 0, index < EG13ParamID.routeCount else { return EG13ModRoute() }
+        let r = routes[part][index]
+        let amount = values[indexByID[EG13ParamID.routeAmount(part, index)]!]
+        return makeRoute(part: part, source: r.source, destination: r.destination, via: r.via, amount: amount)
+    }
+
+    func setRoute(part: Int, index: Int, source: UInt16, destination: UInt16, via: UInt16) -> Bool {
+        guard part >= 0, part < EG13ParamID.parts, index >= 0, index < EG13ParamID.routeCount,
+              source == 0 || sourceName(part: part, code: source) != nil,
+              via == 0 || sourceName(part: part, code: via) != nil,
+              destination == 0 || destinationName(part: part, code: destination) != nil else { return false }
+        routes[part][index] = (source, destination, via)
+        return true
+    }
+
+    func sourceName(part: Int, code: UInt16) -> String? {
+        EG13MatrixNames.sourceName(code: code, modEngines: modEngineNames(part: part))
+    }
+
+    func destinationName(part: Int, code: UInt16) -> String? {
+        EG13MatrixNames.destinationName(code: code) { kind in
+            Self.engines(kind)[self.current[kind][part]].params
+        }
+    }
+
+    func destination(forParam id: UInt32) -> UInt16 {
+        if id >> 16 < UInt32(EG13ParamID.parts), (id >> 8) & 0xFF == 0, id & 0xFF == 1 { return 4 }  // Part Level
+        guard let (kind, _, p) = slotOf(id), p >= 1, p <= EG13ParamID.slotParamCount(EG13SlotKind(rawValue: UInt32(kind))) else { return 0 }
+        let bases: [Int: Int] = [0: 16, 1: 32, 2: 48, 7: 64, 3: 80, 4: 96, 5: 112, 6: 128]
+        return UInt16(bases[kind]! + p - 1)
+    }
+
+    func version() -> String { "preview" }
 }

@@ -1,4 +1,5 @@
 import EG13CBridge
+import EG13UIFixtures
 @testable import EG13UI
 
 /// A scripted plugin for view-model tests: a few parameters, recorded calls.
@@ -105,6 +106,70 @@ final class EG13FakeCore: EG13Core {
 
     var dynamicNames = false
 
+    // MARK: Matrix
+
+    struct FakeRoute: Equatable { var source: UInt16 = 0, destination: UInt16 = 0, via: UInt16 = 0 }
+    /// The patch's routes: [part][route]. All free to start with.
+    var routes = [[FakeRoute]](repeating: [FakeRoute](repeating: FakeRoute(), count: 12), count: 2)
+    /// Codes the part's engines hide although the engines would name them.
+    var hiddenSources: Set<UInt16> = []
+    var hiddenDestinations: Set<UInt16> = []
+    var setRouteCalls: [(part: Int, index: Int, source: UInt16, destination: UInt16, via: UInt16)] = []
+    /// What the next display frame reports: [part][destination], NaN for none; and the mod outputs'
+    /// min and max since the last frame, [part][slot][output] (+inf, -inf for no data).
+    var modValues = [[Float]](repeating: [Float](repeating: .nan, count: 144), count: 2)
+    var modOutMin = [[[Float]]](repeating: [[Float]](repeating: [Float](repeating: .infinity, count: 8), count: 4), count: 2)
+    var modOutMax = [[[Float]]](repeating: [[Float]](repeating: [Float](repeating: -.infinity, count: 8), count: 4), count: 2)
+
+    private func modEngineNames(part: Int) -> [String] {
+        (3...6).map { kind in
+            guard let engines = slotEngines[kind], let current = currentBySlot[kind] else { return "Off" }
+            return engines[current[part]].name
+        }
+    }
+
+    func route(part: Int, index: Int) -> EG13ModRoute {
+        guard routes.indices.contains(part), routes[part].indices.contains(index) else { return EG13ModRoute() }
+        let r = routes[part][index]
+        let id = EG13ParamID.routeAmount(part, index)
+        let amount = descriptors.firstIndex { $0.id == id }.map { values[$0] } ?? 0
+        return makeRoute(part: part, source: r.source, destination: r.destination, via: r.via, amount: amount)
+    }
+
+    func setRoute(part: Int, index: Int, source: UInt16, destination: UInt16, via: UInt16) -> Bool {
+        setRouteCalls.append((part, index, source, destination, via))
+        guard routes.indices.contains(part), routes[part].indices.contains(index),
+              source == 0 || sourceName(part: part, code: source) != nil,
+              via == 0 || sourceName(part: part, code: via) != nil,
+              destination == 0 || destinationName(part: part, code: destination) != nil else { return false }
+        routes[part][index] = FakeRoute(source: source, destination: destination, via: via)
+        return true
+    }
+
+    func sourceName(part: Int, code: UInt16) -> String? {
+        guard !hiddenSources.contains(code) else { return nil }
+        return EG13MatrixNames.sourceName(code: code, modEngines: modEngineNames(part: part))
+    }
+
+    func destinationName(part: Int, code: UInt16) -> String? {
+        guard !hiddenDestinations.contains(code), dynamicNames else { return nil }
+        return EG13MatrixNames.destinationName(code: code) { kind in
+            let engine = self.slotEngines[kind]![self.currentBySlot[kind]![part]]
+            return engine.params
+        }
+    }
+
+    func destination(forParam id: UInt32) -> UInt16 {
+        let part = Int(id >> 16), slot = Int((id >> 8) & 0xFF), p = Int(id & 0xFF)
+        if slot == 0 && p == 1 && part < 2 { return 4 }  // Part Level
+        let bases = [1: 16, 2: 32, 3: 48, 4: 64, 5: 80, 6: 96, 7: 112, 8: 128]
+        guard part < 2, let base = bases[slot], p >= 1, p <= 16 else { return 0 }
+        if slot == 2 && p > 4 || slot == 3 && p > 12 { return 0 }
+        return UInt16(base + p - 1)
+    }
+
+    func version() -> String { "test" }
+
     /// The full table with the plugin's real engines and P names (EG13EngineCatalog), for the
     /// tests that check names, labels and panel data against every engine.
     static func fullCatalog() -> EG13FakeCore {
@@ -161,7 +226,8 @@ final class EG13FakeCore: EG13Core {
     /// Peaks are read-and-reset, like the real snapshot.
     func displayFrame() -> EG13DisplayFrame {
         let frame = EG13DisplayFrame(values: values, partPeaks: peaks, activeVoices: voices,
-                                     engineGeneration: generation)
+                                     engineGeneration: generation, modValues: modValues,
+                                     modOutMin: modOutMin, modOutMax: modOutMax)
         peaks = [[0, 0], [0, 0]]
         return frame
     }

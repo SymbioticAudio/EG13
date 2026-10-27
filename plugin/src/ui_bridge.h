@@ -36,7 +36,9 @@ class UiBridge {
   // for a params flush when it is not processing. At most one request is pending until the
   // next drain.
   // requestPump (optional) runs when events overflowed into the main-thread backlog: the owner
-  // arranges a main-thread call to pump(). At most one request is pending until pump() runs.
+  // arranges a main-thread call to pump(). push() makes the first request (one pending until
+  // pump() runs); after that only drain() asks, once per drain that sees a backlog. pump()
+  // never asks, so a host that never drains gets no request loop.
   explicit UiBridge(Synth& synth, std::function<void()> requestFlush,
                     std::function<void()> requestPump = {});
   // Closes any gesture still open (closeAllGestures). The end events only reach the host if a
@@ -68,6 +70,7 @@ class UiBridge {
 
  private:
   void push(const UiEvent& event);
+  void markBacklog();  // flag a backlog for drain(), then retry moveBacklog
   void moveBacklog();  // overflow_ into the queue as far as it fits
   void requestFlush();
 
@@ -75,6 +78,8 @@ class UiBridge {
   std::function<void()> requestFlush_;
   std::function<void()> requestPump_;
   std::atomic<bool> pumpPending_{false};  // set by push on overflow, cleared by pump
+  std::atomic<bool> backlogPending_{false};  // main thread sets while overflow_ is non-empty; drain clears
+  std::atomic<bool> detached_{false};  // set by detach: neither side calls the hooks any more
   std::atomic<bool> flushPending_{false};  // set by requestFlush, cleared by drain
   std::atomic<size_t> dropped_{0};
   SpscQueue<UiEvent, kQueueSize> queue_;

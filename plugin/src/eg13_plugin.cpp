@@ -25,6 +25,7 @@ struct Plugin {
   clap_plugin_t clap{};
   const clap_host_t* host;
   const clap_host_params_t* hostParams = nullptr;
+  const clap_host_state_t* hostState = nullptr;
   PluginKind kind;
   const clap_host_latency_t* hostLatency = nullptr;
   uint32_t reportedLatency = 0;
@@ -54,8 +55,9 @@ Plugin* self(const clap_plugin_t* p) { return static_cast<Plugin*>(p->plugin_dat
 // plugin (deactivate, activate). request_restart is thread-safe (clap/host.h). CLAP and VST3
 // hosts restart at once (the VST3 wrapper turns the request into
 // restartComponent(kIoChanged | kLatencyChanged): third_party/clap-wrapper wrapasvst3.cpp:1352-1355
-// and :1509-1515); clap-wrapper's AU restartPlugin() is empty, so an AU host applies it
-// when it next initialises the plugin (docs/manual/latency.md).
+// and :1509-1515); clap-wrapper's AU restartPlugin() flags a restart that its idle tick
+// performs, cycling the CLAP deactivate/activate under the initialised AU
+// (docs/manual/latency.md).
 void requestRestartIfModeChanged(Plugin* plugin) {
   if (!plugin->active.load(std::memory_order_acquire)) return;  // the next activate prepares it
   if (plugin->synth.requestedQuality() == plugin->synth.preparedQuality()) return;
@@ -346,6 +348,8 @@ bool pluginInit(const clap_plugin_t* p) {
   Plugin* plugin = self(p);
   plugin->hostParams = static_cast<const clap_host_params_t*>(
       plugin->host->get_extension(plugin->host, CLAP_EXT_PARAMS));
+  plugin->hostState = static_cast<const clap_host_state_t*>(
+      plugin->host->get_extension(plugin->host, CLAP_EXT_STATE));
   plugin->hostLatency = static_cast<const clap_host_latency_t*>(
       plugin->host->get_extension(plugin->host, CLAP_EXT_LATENCY));
   plugin->hostGui = static_cast<const clap_host_gui_t*>(
@@ -368,6 +372,9 @@ bool pluginInit(const clap_plugin_t* p) {
 #else
         (void)plugin; (void)width; (void)height;
 #endif
+      },
+      [plugin] {
+        if (plugin->hostState && plugin->hostState->mark_dirty) plugin->hostState->mark_dirty(plugin->host);
       }});
   plugin->coreApi = makeCoreApi(*plugin->coreContext);
 #if EG13_HAS_UI

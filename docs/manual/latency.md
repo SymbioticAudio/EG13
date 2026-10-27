@@ -59,9 +59,9 @@ Alone, the other engines add less at 48 kHz (Live / Studio): Granular Delay 243 
 
 ### Changing the mode
 
-A new Latency Mode takes effect when the host restarts the plugin, because every converter is rebuilt and the reported latency changes. Until then EG13 keeps playing in the mode it started with, and the latency it reports always matches what you hear. This also applies when you load a project saved in the other mode.
+A new Latency Mode takes effect when the plugin restarts, because every converter is rebuilt and the reported latency changes. Until then EG13 keeps playing in the mode it started with, and the latency it reports always matches what you hear. This also applies when you load a project saved in the other mode.
 
 - **CLAP and VST3 hosts** restart the plugin straight away when you change the setting.
-- **AU hosts** apply the change only when they next start the plugin, for example when you reopen the project or change the sample rate. (The AU wrapper EG13 uses can't ask the host for a restart.)
+- **AU hosts** restart it within a moment of the change too, and the new latency is reported to the host.
 
 Modulation adds no latency: a key reaches the modulation engines within about half a millisecond, and their outputs reach the sound every 16 samples.

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <limits>
 
 #include "engine/engine_registry.h"
 #include "synth/param_table.h"
@@ -79,6 +80,7 @@ void Part::reset() {
   tickPos_ = 0;
   pendingJump_ = false;
   lastVoice_ = -1;
+  display_ = ModDisplay();
   partGate_ = false;
   partRetrigger_ = false;
   modulated_ = false;
@@ -377,11 +379,66 @@ void Part::startTick(const PartParams& params, int offset) {
   // The Part FX's controls for this tick (they act after the voices' latency, in PartFx).
   ParamValues fx;
   modulation_.partFxParams(params.partFx, &fx);
+  fxParams_ = fx;
   fx_.beginTick(fx, fxNote(), fxTrigger_);
   fxTrigger_ = false;
   for (int v = 0; v < kVoices; ++v) {
     controlValid_[v] = false;
     if (voices_[size_t(v)]->active()) controlVoice(v, params, part, Voice::kControlBlock);
+  }
+  sampleModOutputs();
+}
+
+void Part::sampleModOutputs() {
+  if (!displayEnabled_) return;
+  for (int s = 0; s < kNumModSlots; ++s) {
+    if (modulation_.engine(s) == 0) continue;  // Off
+    const bool perPart = modulation_.perPart(s);
+    // A per-voice slot shows the last-started voice only while it sounds: a finished voice's
+    // instance is frozen (it no longer runs), so it reports no data and the traces go quiet.
+    if (!perPart && (lastVoice_ < 0 || !voices_[size_t(lastVoice_)]->active())) continue;
+    const float* out = modulation_.outputs(s, perPart ? -1 : lastVoice_);
+    const int outputs = std::min(modulation_.outputCount(s), kMaxModOutputs);  // the rest: no data
+    for (int o = 0; o < outputs; ++o) {
+      display_.outMin[s][o] = std::min(display_.outMin[s][o], out[o]);
+      display_.outMax[s][o] = std::max(display_.outMax[s][o], out[o]);
+    }
+  }
+}
+
+void Part::clearModOutRange() {
+  const float inf = std::numeric_limits<float>::infinity();
+  for (int s = 0; s < kNumModSlots; ++s) {
+    for (int o = 0; o < kMaxModOutputs; ++o) {
+      display_.outMin[s][o] = inf;
+      display_.outMax[s][o] = -inf;
+    }
+  }
+}
+
+void Part::refreshModValues(const PartParams& params) {
+  float* value = display_.value;
+  std::fill(value, value + kNumDestinations, std::numeric_limits<float>::quiet_NaN());
+  const VoiceControl* c = lastVoice_ >= 0 ? &controls_[lastVoice_] : nullptr;  // none: the host values
+  const SlotParams& slots = c ? c->params : params.slots;
+  for (int i = 0; i < kMaxSlotParams; ++i) {
+    value[kDestSourceP + i] = slots.source.p[i];
+    value[kDestFilterP + i] = slots.filter.p[i];
+    value[kDestShaperP + i] = slots.shaper.p[i];
+  }
+  const float pitch = c ? c->pitch : 0.0f;
+  value[kDestPitch] = std::clamp(pitch / 48.0f + 0.5f, 0.0f, 1.0f);
+  value[kDestAmp] = c && c->ampRouted ? c->amp : 1.0f;
+  value[kDestPan] = c ? c->pan * 0.5f + 0.5f : 0.5f;  // the core's -1..1, shown 0..1 with the centre at 0.5
+  value[kDestPartLevel] = partLevel_;
+  for (int i = 0; i < kPartFxParamCount; ++i) value[kDestPartFxP + i] = fxParams_.p[i];
+  for (int s = 0; s < kNumModSlots; ++s) {
+    if (modulation_.engine(s) == 0) continue;  // Off: no value
+    const bool perPart = modulation_.perPart(s);
+    const ParamValues& p = perPart ? modulation_.modulatedParams(s, -1)
+                           : lastVoice_ >= 0 ? modulation_.modulatedParams(s, lastVoice_)
+                                             : params.mod.slot[s];
+    for (int i = 0; i < kModParamCount; ++i) value[modParamDestination(s, i)] = p.p[i];
   }
 }
 
@@ -399,6 +456,7 @@ void Part::process(const VoiceInputs& in, float* const* out, const PartParams& p
   for (int done = 0; done < n;) {
     // Modulation runs on a fixed grid of 16-sample ticks, whatever the host's block sizes.
     if (tickPos_ == 0) startTick(params, done);
+    bool started = false;
     const int count = std::min(Voice::kControlBlock - tickPos_, n - done);
     for (int v = 0; v < kVoices; ++v) {
       // A voice that started since the tick began gets controls for the rest of the tick. A
@@ -408,8 +466,10 @@ void Part::process(const VoiceInputs& in, float* const* out, const PartParams& p
         ModPartInputs part = partInputs(params, done);
         part.beatJump = false;
         controlVoice(v, params, part, Voice::kControlBlock - tickPos_);
+        started = true;
       }
     }
+    if (started) sampleModOutputs();
     const float* input[2] = {in.input ? in.input[0] + done : nullptr, in.input ? in.input[1] + done : nullptr};
     const float* other[2] = {in.other ? in.other[0] + done : nullptr, in.other ? in.other[1] + done : nullptr};
     VoiceInputs slice;

@@ -21,10 +21,6 @@ UI work is paused until M6 comes up in normal milestone order, after M5. The pla
 - Dependencies approved: symbiotic-design from 0.1.0 (Tokens and Icons; Brand behind `#if canImport`).
 - Approved mock (private to the owner): https://claude.ai/artifact/Dao1y9KMKtEV41Pvd5fwL3
 
-## Spike code (unreviewed and incomplete)
-
-`docs/superpowers/m6-spike/` holds the planning agent's experiments: a SwiftPM EG13UI package linked into a C++ bundle, a core-api C header and an SPSC queue test. Use it as research input for the M6 plan, not as finished code.
-
 ## To resume
 
 1. Rebase this branch onto main after M2 to M5 have merged.
@@ -193,3 +189,160 @@ Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-editor
 5. Matrix row stays; the part tab names (from round 2) are now shown for the selected part only.
 
 Status: **approved by the owner on 2026-10-25** ("round 3 approved"), with the open choices accepted as shown: white-knob arc #E6E6E6, black-cap arc #A8A8A5, blue panel knobs shown teal, and the fallback engines as listed.
+
+## Modulation design log, round 1 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-modulation docs/superpowers/m6-design/modulation-r1` writes `editor-a.png`, `editor-b.png` (Part B), `editor-a-75.png`, `ring.png` (200 %), `chips.png` (200 %) and `traces.png` (200 %). The preview core animates its mod outputs from its tick count, so the PNGs are the same on every run: the patch is the init patch plus eight more routes, a chord held, 70 ticks in (an envelope 0.33 s into its cycle). The rulings below are the controller's (M6b Task 6 brief), not yet the owner's.
+
+### What is shown
+
+- **Ring** (`ring.png`): the Filter card (Cutoff and Resonance ride on routes) and eight knobs in each state: live above and below the set value, teal and pink caps, range only (no live value, no dot), black cap, small knob. The ring is a thin second arc in the knob's arc colour, drawn just inside the skirt band against the cap, under the value arc; the dot is the same colour. Nothing else on the knob changes.
+- **Chips** (`chips.png`, and in `editor-a.png`): each card's header strip, to the right of the engine menu. A chip is a small LCD well (the engine menu's colours): dark at rest, lit green with the source's live level (the source trace's latest max); the steady source (velocity) shows at 70 %. Source has five routes (the fifth, "VEL → TIMBRE", is the "+1"), Filter two, Mod 1 has three routes into its own knobs and room for only "+3".
+- **Traces** (`traces.png`, and in `editor-a.png`): the 64 x 20 pt well at the right end of a mod card's header strip, the slot's first output over 2 s, a min-max bar per frame and a line through the middles; the line breaks where an envelope is idle. The LFO (Mod 3) is bipolar and centred; the envelopes are bottom-up. Mod 4 is Off and has none.
+
+### Open choices for the owner
+
+1. **Ring placement and weight.** It sits in the 15 % of the skirt band the value arc leaves free next to the cap, so at 100 % it is about 1 pt wide on a large knob and 0.8 pt on a small one. On a pink or teal knob the ring and the dot are the same colour as the cap, so the dot reads as a bump on the cap's rim. Alternatives: thicken the ring by shrinking the value arc (this changes the approved arc), or put the ring outside the skirt.
+2. **Chip colour.** LCD (dark to green) rather than the part colour or a grey; it matches the engine menus and adds no colour. Alternative: the part's ink colour (teal or pink) with the fill following the level.
+3. **Mod card header is full.** The badge, engine menu and Scope leave room for the 64 pt trace and about one short chip; any more become "+k". Alternative: a narrower trace, or the trace in its own row (taller mod cards, which scroll sooner with four large engines), or chips only in the slot cards.
+4. **Where Pitch and Amp chips go.** The Source card (they have no knob). Pan and Part Level routes show no chip (their controls are in the bottom bar). Alternative: chips on the bottom bar's Level and Pan.
+5. **Trace scale.** A trace is centred when it has gone negative in the last 2 s, bottom-up otherwise (the core does not say which an output is), so an LFO that has only been positive for 2 s would redraw bottom-up.
+6. **CPU.** The display costs about 11 % of one core in the preview with the init patch, a chord, three modulated knobs and three traces (budget 10 %): see the Task 6 report.
+
+Status: awaiting owner feedback.
+
+## Modulation design log, round 2 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-modulation docs/superpowers/m6-design/modulation-r2` writes `editor-a.png`, `editor-b.png`, `editor-a-75.png`, `ring.png` (four caps, live and range-only, 200 %) and `motion-menu.png` (the Filter card's list, 200 %). Same patch and tick count as round 1.
+
+### Owner feedback on round 1, as decisions
+
+1. **Ring.** Almost invisible. Decision: remove the thin inner ring and the dot. The arc is on the cap itself, in the LCD green (#AFD22C), from the set value to the live value, at the value arc's angles; width 18 % of the cap radius, at least 2.5 pt; range-only at 35 % opacity. The value arc in the skirt band is untouched.
+2. **Motion chips.** Not understood; "a separate drop down menu for Motion might make more sense, when Motion is in use". Decision: chips deleted. A card with routes into it has one `MOTION n` LCD button after the engine picker (none without routes); it opens a popover (a menu cannot show live levels) listing each route in full ("Mod 2 Envelope → Cutoff  +30 %") with a level bar per row; a row calls the click closure Task 7 wires to the matrix. Mod cards get the same button; the trace keeps its place.
+3. **Crowding.** Card headers were very crowded. Resolved by the chips going: a header is now badge or icon and title, engine menu, Scope (mods), the button, and the trace (mods).
+4. **CPU.** "Let's try 15 fps motion." Decision: every second tick (15 Hz) refreshes the modulation fields (arcs, lists, traces). Knobs, meters and the rest stay at 30 Hz. The 0.001 threshold and the per-param observation isolation are kept. The trace holds 30 frames (still 2 s) and each frame is the min-max over both ticks it covers (the core clears its range on every read, so the skipped tick's range is folded in). An engine change refreshes at once.
+
+### Result
+
+CPU, `--mod-load`, release, 20 s window from 6 s after launch, three runs: 5.1, 5.1, 4.6 % of one core (round 1: 11.4, 12.0, 13.3 %).
+
+### Choices made here, open for the owner
+
+1. **Dark outline.** The green on the white cap was marginal, so every cap's arc has a 1.2 pt dark outline (the LCD well colour). Alternative: no outline, or only on the white cap.
+2. **Arc over the indicator.** The arc is drawn over the cap's indicator line; where they meet, the green covers the indicator's tip by a few points.
+3. **Popover, not a menu.** Needed for the live level bars. It is 340 pt wide, LCD colours.
+4. **Row text.** Source name in full ("Mod 1 Envelope"), destination without its card prefix ("Cutoff"), the amount as set (not live).
+5. **Pitch and Amp** still list on the Source card; Pan and Part Level have no list.
+
+Status: awaiting owner feedback.
+
+
+## Modulation design log, round 3 (2026-10-26): the wave mark
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-modulation docs/superpowers/m6-design/modulation-r3` writes `editor-a.png`, `editor-b.png`, `editor-a-75.png`, `mark.png` (one knob per cap colour at 75, 100 and 200 %, at the minimum, the maximum and the middle), `motion-menu.png` and `traces.png`.
+
+Owner decisions from round 2:
+
+1. The green arc did not read at 75 %, read poorly at 100 % and fails for colour-blind users: removed, live and range-only, with its outline. Knobs no longer observe the modulated value and no longer redraw per frame.
+2. The MOTION button and its list are kept.
+3. A knob that is modulated shows a **shape on its cap** and no amount (a knob cannot convey two values well). Live detail stays in the MOTION list and traces. Clarified later the same day: a larger generic wave, 75 % of the cap's width, 1.5 sine cycles, centred, stroke at least 2 pt, drawn under the pointer; dark (#333333) on white, white on pink, teal and black. It is static and never the source's own shape.
+4. A colour-blind palette setting is deferred to M7.
+
+Built: the mark is `EG13SineCycle` stroked in `EG13KnobShape`, shown when `EG13Param.isRouted` (a visible route targets the knob; written only when it changes, so the knob ignores every modulation value update). Click: the knob's NSView surface takes a 14 x 10 pt click area at the cap's centre (a press that stays within 3 pt is a click and opens a popover with `EG13MotionList` filtered to the knob; a longer drag, or a double-click, is the normal knob gesture). The context-menu fallback was not needed. CPU with `--mod-load`: 3.8, 4.0, 4.0 % (round 2: 5.1, 5.1, 4.6).
+
+Open choices:
+
+- The wave is full opacity. If the pointer reads poorly over it on a white cap, lighten the wave to about 60 %.
+- The click area is small and central so most of the cap still behaves as a knob; the mark itself is larger than the click area.
+- The mark appears at the next modulation refresh (up to 67 ms) after a route is added or removed.
+- Popover behaviour inside the real plugin's NSHostingView and the click area's hit-testing are untested by automation (the preview renders cannot show them).
+
+## Modulation design log, round 4 (2026-10-26): a small wave that dodges the pointer
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-modulation docs/superpowers/m6-design/modulation-r4` (`mark.png`, `editor-a.png`, `editor-a-75.png` are the round's files; the run also writes others).
+
+Owner feedback on round 3: the large wave crossed the pointer and cluttered the cap. Decision: shrink it to about 45 % of the cap's width (1.5 cycles, stroke at least 2 pt, so 1.5 pt at 75 %) and place it in the top or bottom third of the cap, whichever the pointer is not in. Pointer in the upper half (from its actual angle, horizontal counts as upper): wave in the bottom third; pointer in the lower half (near min or max): wave in the top third. Same inks (#333333 on white; white on pink, teal, black), full opacity. The wave moves only when the value crosses horizontal; it is never animated.
+
+Built: `EG13ModMarkGeometry.pointerIsUp` and `centre(capRadius:normalized:)` (the wave's centre is 0.55 cap radii from the cap's centre); the click area follows the wave. Test "the wave never intersects the pointer" sweeps 0 to 1 in 1 % steps on all three knob sizes against the wave's stroked bounding box and the pointer's width.
+
+Open choices: the wave jumps between the two places at horizontal; a small knob's wave is close to the cap's edge; the 14 x 10 pt click area moves with the wave.
+
+**Modulation display approved by the owner on 2026-10-26** (round 4: the 45 % wave in the top or bottom third, the MOTION n menu, 15 Hz traces).
+
+## M6b layout design log, round 1 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r1 docs/superpowers/m6-design/m6b-layout-r1`. The preview core has the modulation demo's routes; PNGs are 100 % unless named.
+
+### What is shown
+
+- `editor-matrix.png`, `editor-matrix-75.png`: Part A with the right column on MATRIX (12 route rows: source, via and destination menus, a small amount knob, a clear button), at 100 % and 75 %.
+- `editor-mods.png`: the same with MODS shown.
+- `part-settings-split.png`, `part-settings-layer.png`: the Part settings content for A and B side by side (at 150 %), with the key-range strip. Split: A low, B high, the split marker between. Layer: both parts over most of the range, no marker.
+- `settings.png`, `about.png`: the Settings and About panel over the editor.
+- `context-menu.png`: the knob context menu (Harmonics, which has one route) as a list: "Modulate from" with its sources, and "Remove modulation: <source>". A real NSMenu cannot be snapshotted, so this is a drawn copy; the real menu uses the system look.
+
+### Open choices for the owner
+
+1. **Settings and About: sheet or overlay.** Built as an in-editor overlay (dimmed editor, panel in the middle), not a SwiftUI `.sheet`: a sheet is a host-window sheet that would not scale with the editor's zoom and that image renders cannot show, and its behaviour inside a plugin host window is untested. A sheet is a small change if you prefer it.
+2. **Matrix row layout.** Source, via, destination, amount knob, clear, with the row number at the left. Is the amount knob (28 pt) large enough, and should the amount read to the right as now, or left of the knob?
+3. **MODS / MATRIX switch placement.** Top left of the right column, as an LCD pair. Alternatives: top right, or in the header.
+4. **Part settings strip.** The key-range strip is at the top of each part's card with the bands above the keys. Should the strip sit nearer Key Low and Key High?
+5. **Settings content.** Only the two decided settings and the current-window size buttons. The text under each setting is explanatory; shorter text is possible.
+6. **Context menu.** "Modulate from" opens a submenu of every source (21 in the demo). A grouped submenu (Keys, Controllers, Mods) is possible if the list is too long.
+7. **About.** Version and build come from the core (`0.6.0 (abc1234)` in a real build; the preview core says "preview").
+
+### Not yet tested
+
+The overlay inside a real host's NSHostingView (clicks outside, focus) and the settings file on another machine are untested by automation.
+
+
+## M6b layout design log, round 2 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r2 docs/superpowers/m6-design/m6b-layout-r2` writes `editor-matrix.png`, `editor-mods.png`, `editor-busy.png` (Modal Synth with 16 knobs as the Source, Granular Delay with 15, the most a Part FX has, as the Part FX) and `context-menu.png` (a drawn copy: Modulate from > Keys / Controllers / Mods, with Controllers and Mods opened).
+
+Round 1 feedback: the owner approved everything else; two changes.
+
+Decisions
+1. **Spread the left column.** The four cards keep their heights; the free height is shared equally between them: gap = max(8 pt, (column height - sum of card heights) / (n - 1)), no space above the first or below the last (EG13Layout.spreadGap, drawn by EG13SpreadStack). Cards taller than the column keep the 8 pt gap and the column scrolls as before. Also applied to the right column's Mods view (four mini-cards), so both columns line up; the matrix view is unchanged.
+2. **Group "Modulate from".** Keys (codes 1-8), Controllers (9-16), Mods (32 and up, one submenu per mod slot titled with the slot's name, e.g. "Mod 1 Envelope"). Derived from the codes (EG13SourceGrouping), not hand-listed; empty groups (a mod slot that is Off) are left out. The matrix row's source and via menus use the same grouping (they replace Performance / Mod 1...4). "Matrix full" is unchanged.
+
+Status: awaiting owner feedback.
+
+
+## M6b layout design log, round 3 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r3 docs/superpowers/m6-design/m6b-layout-r3` writes `editor-matrix.png`, `editor-mods.png` and `editor-busy.png` (same patches as round 2).
+
+Owner decision (2026-10-26), reversing round 2's spread layout:
+1. **Stack from the top.** The cards in both columns, the left module cards and the right Mods mini-cards, stack from the top with the normal gap (EG13Layout.gap, 8 pt). Spare height collects at the bottom of the column. A busy patch behaves as before: minimum gaps, and the column scrolls. EG13SpreadStack, EG13Layout.spreadGap and its tests are deleted.
+2. Round 2's grouped "Modulate from" menus stay.
+
+Status: awaiting owner feedback.
+
+
+## M6b layout design log, round 4 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r4 docs/superpowers/m6-design/m6b-layout-r4` writes `editor-matrix.png`, `editor-mods.png` and `editor-busy.png` (the busy patch now also has the tallest engine in every mod card, so the Mods column really overflows).
+
+Round 3 feedback: "that didn't work": the bottom bar was still pinned to the window bottom.
+
+Decisions
+1. **The bottom bar floats up.** It sits one EG13Layout.gap under the taller of the two columns (left cards, or the right Mods or Matrix content). Every vertical gap is that gap (header to columns, between cards, columns to bar); the blank space collects below the bar. Bar top = min(header + gap + max(left, right) + gap, the pinned position): a busy patch fills the strip, the columns scroll and the bar is at the bottom as before. Window size and the 1200x760 canvas are unchanged; the content heights are measured (EG13Scrolling's onHeight).
+2. **Mod card header.** The trace shrinks to the room left (minimum 40 pt). If that is not enough next to MOTION n (Mod 1 with an Envelope engine is about 20 pt short), the MOTION button moves to a second header line instead of clipping anything.
+
+Status: awaiting owner feedback.
+
+
+## M6b layout design log, round 5 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r5 docs/superpowers/m6-design/m6b-layout-r5` writes `editor-matrix.png`, `editor-mods.png` and `editor-busy.png` (busy unchanged from round 4).
+
+Round 4 feedback: editor-busy fine; in editor-mods the Mods column was taller and the left cards stopped short, leaving dark space under Part FX.
+
+Decisions
+1. **Justify the shorter column.** H = max(left, right content height, each measured at the minimum gaps), capped at the strip height. Both columns are laid out in H; each column's gap = max(8 pt, (H - sum of its card heights) / (n - 1)) (EG13Layout.spreadGap, drawn by EG13SpreadStack, now given the taller column's height rather than the full strip). The taller column keeps minimum gaps, the shorter spreads, so both end on one line. The MATRIX pane is one block, top-aligned, rows not stretched; if it is the taller side the left cards spread to it.
+2. Round 4 rules stay: the bottom bar sits one gap under the columns, remaining blank space at the window bottom. A busy patch: H is the full strip, both columns scroll (a column shorter than the strip is still spread to it).
+
+Status: awaiting owner feedback.
+
+**M6b layout approved by the owner on 2026-10-26** (round 5): MODS/MATRIX switch and matrix rows; grouped "Modulate from" (Keys, Controllers, Mods); key-range strip in Part settings; Settings and About overlay; columns end on one line (the shorter column spreads its gaps), the bottom bar floats one gap below them and spare space sits at the window bottom; busy patches use minimum gaps and scroll.

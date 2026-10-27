@@ -1,6 +1,9 @@
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -139,6 +142,31 @@ class Part {
   const VoiceControl& lastControl(int voice) const { return controls_[voice]; }  // tests
   const PartModulation& modulation() const { return modulation_; }               // tests
 
+  // What the editor shows of the modulation (the Synth publishes it once per chunk; audio thread).
+  struct ModDisplay {
+    // The final normalized value at each destination code: the last-started voice's for the
+    // voice destinations, the part's for Part Level, Part FX and per-part slots. Pitch is
+    // semitones / 48 + 0.5, Pan -1..1 mapped to 0..1 (centre 0.5), Amp the routed level (1 when
+    // the gate drives it). NaN: None, the reserved codes and a P of an Off mod slot.
+    float value[kNumDestinations];
+    // Min and max of every mod output since clearModOutRange(), sampled at each control tick
+    // (the last-started voice's instance for a per-voice slot, only while that voice sounds;
+    // only the outputs the slot's engine has). +inf / -inf: nothing sampled.
+    float outMin[kNumModSlots][kMaxModOutputs];
+    float outMax[kNumModSlots][kMaxModOutputs];
+    ModDisplay() {
+      std::fill(value, value + kNumDestinations, std::nanf(""));
+      for (int s = 0; s < kNumModSlots; ++s) {
+        std::fill(outMin[s], outMin[s] + kMaxModOutputs, std::numeric_limits<float>::infinity());
+        std::fill(outMax[s], outMax[s] + kMaxModOutputs, -std::numeric_limits<float>::infinity());
+      }
+    }
+  };
+  const ModDisplay& modDisplay() const { return display_; }
+  void refreshModValues(const PartParams& params);  // end of a modulated process() call
+  void clearModOutRange();
+  void setDisplayEnabled(bool on) { displayEnabled_ = on; }  // benchmark baseline: skip the per-tick sampling
+
  private:
   void perform(const VoiceActions& actions);
   void startNote(int v, int key, float velocity);  // a voice's new note: its mod sources
@@ -156,6 +184,7 @@ class Part {
   ModVoiceInputs voiceInputs(int v) const;
   ModPartInputs partInputs(const PartParams& params, int offset) const;
   void startTick(const PartParams& params, int offset);  // the grid: part slots, then every voice
+  void sampleModOutputs();
   void controlVoice(int v, const PartParams& params, const ModPartInputs& part, int length);
 
   std::vector<std::unique_ptr<Voice>> voices_;
@@ -183,6 +212,9 @@ class Part {
   int tickPos_ = 0;                  // samples into the 16-sample grid tick
   bool pendingJump_ = false;
   bool modulated_ = false;   // the last process() call was the modulated path
+  ParamValues fxParams_;     // its Part FX P's after the routes at the last tick
+  ModDisplay display_;
+  bool displayEnabled_ = true;
   float partLevel_ = 1.0f;   // its Part Level (base + routes) at the last tick
   float outputLevel_ = 1.0f;  // the Part Level applied now: partLevel_, latencySamples() later
   std::vector<float> levelLine_;  // partLevel_ per sample, latencySamples() long

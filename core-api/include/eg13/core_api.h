@@ -15,6 +15,16 @@ extern "C" {
  * static_asserts it against eg13::kParamCount. */
 enum { EG13_MAX_PARAMS = 323, EG13_NUM_PARTS = 2, EG13_TEXT_SIZE = 64 };
 
+/* Matrix sizes; core_api.cpp static_asserts them against the core (kNumRoutes, kNumModSlots,
+ * kMaxModOutputs, kNumDestinations, kNumSources). */
+enum {
+  EG13_NUM_ROUTES = 12,
+  EG13_NUM_MOD_SLOTS = 4,
+  EG13_MAX_MOD_OUTPUTS = 8,
+  EG13_NUM_DESTINATIONS = 144,
+  EG13_NUM_SOURCES = 64
+};
+
 /* Parameter ID: (part << 16) | (slot << 8) | index. Mirrors eg13::params::Slot, value for
  * value (core_api.cpp static_asserts each). Part 0xFF is the master. */
 typedef enum EG13Slot {
@@ -56,12 +66,25 @@ typedef struct EG13ParamInfo {
   double min, max, def;
 } EG13ParamInfo;
 
+/* One matrix route. Source, destination and via are the core's codes (0 = none); the amount is
+ * the route's host parameter value (-1..1), read from the snapshot or by param_index. */
+typedef struct EG13Route {
+  uint16_t source, destination, via;
+  double amount;
+} EG13Route;
+
 typedef struct EG13Snapshot {
   uint32_t param_count;
   double values[EG13_MAX_PARAMS];     /* by parameter index */
   float part_peak[EG13_NUM_PARTS][2]; /* largest |sample| per part (L, R) since the last snapshot */
   int32_t active_voices[EG13_NUM_PARTS];
   uint32_t engine_generation; /* changes on every engine switch: UI, host or state load */
+  /* Final normalized value (0..1) at each destination code: the last-started voice, or the part
+   * for per-part destinations. Pitch is semitones / 48 + 0.5, Pan 0.5 at the centre. NaN: none. */
+  float mod_value[EG13_NUM_PARTS][EG13_NUM_DESTINATIONS];
+  /* Min and max of each mod output since the previous snapshot. +inf / -inf: no data. */
+  float mod_out_min[EG13_NUM_PARTS][EG13_NUM_MOD_SLOTS][EG13_MAX_MOD_OUTPUTS];
+  float mod_out_max[EG13_NUM_PARTS][EG13_NUM_MOD_SLOTS][EG13_MAX_MOD_OUTPUTS];
 } EG13Snapshot;
 
 /* Index arguments are parameter-table indices (0 .. param_count - 1), not parameter IDs.
@@ -88,6 +111,22 @@ typedef struct EG13CoreAPI {
   void (*end_edit)(void* context, uint32_t id);
   /* Display rate. Also retries edits that did not fit the queue. */
   void (*snapshot)(void* context, EG13Snapshot* out);
+  /* Routes: the patch's source, destination and via, plus the amount. False (nothing written)
+   * for a part or route out of range. */
+  bool (*route_get)(void* context, uint32_t part, uint32_t route, EG13Route* out);
+  /* Sets a route's source, destination and via and marks the project dirty. Each code must be 0 or
+   * one the part names (source_name / destination_name succeed). False and no change otherwise.
+   * The amount is edited through begin_edit / edit / end_edit on the route's amount parameter. */
+  bool (*route_set)(void* context, uint32_t part, uint32_t route, uint16_t source, uint16_t destination,
+                    uint16_t via);
+  /* Names for matrix pickers. False for 0, reserved codes, and codes the part's current engines
+   * hide: "Velocity", "Mod 1 Envelope", "Mod 3 LFO Out 2"; "Pitch", "Filter: Cutoff", "Mod 2: Rate". */
+  bool (*source_name)(void* context, uint32_t part, uint16_t code, char* buffer, uint32_t size);
+  bool (*destination_name)(void* context, uint32_t part, uint16_t code, char* buffer, uint32_t size);
+  /* The destination code of a P parameter ID (Source, Filter, Shaper, Part FX or mod P), else 0. */
+  uint16_t (*destination_for_param)(void* context, uint32_t id);
+  /* "0.6.0 (abc1234)": CMake project version and git short hash ("unknown" outside git). */
+  bool (*version)(void* context, char* buffer, uint32_t size);
   /* Ask the host to resize the editor to width x height logical points. */
   void (*request_resize)(void* context, uint32_t width, uint32_t height);
 } EG13CoreAPI;

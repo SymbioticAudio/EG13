@@ -1,0 +1,297 @@
+{
+  "slots": {
+    "filter": [
+      {
+        "name": "Off",
+        "params": []
+      },
+      {
+        "name": "Analog Filter",
+        "params": [
+          {"name": "Frequency", "values": ["10.02 kHz", "1.00 kHz", "100 Hz"]},
+          {"name": "Resonance", "values": ["100%", "10%", "0%"]},
+          {"name": "Mode", "values": ["LP4", "LP2", "BP2"]}
+        ]
+      },
+      {
+        "name": "Classic Filters",
+        "params": [
+          {"name": "Cutoff", "values": ["10.02 kHz", "1.00 kHz", "100 Hz"]},
+          {"name": "Resonance", "values": ["100%", "10%", "0%"]},
+          {"name": "Model", "values": ["Vember Classic Lowpass 12 dB Standard", "Vember Classic Lowpass 12 dB Clean", "Vember Classic Lowpass 12 dB Driven", "Vember Classic Lowpass 24 dB Standard", "Vember Classic Lowpass 24 dB Clean", "Vember Classic Lowpass 24 dB Driven", "Vember Classic Highpass 12 dB Standard", "Vember Classic Highpass 12 dB Clean", "Vember Classic Highpass 12 dB Driven", "Vember Classic Highpass 24 dB Standard", "Vember Classic Highpass 24 dB Clean", "Vember Classic Highpass 24 dB Driven", "Vember Classic Bandpass 12 dB Standard", "Vember Classic Bandpass 12 dB Clean", "Vember Classic Bandpass 12 dB Driven", "Vember Classic Bandpass 24 dB Standard", "Vember Classic Bandpass 24 dB Clean", "Vember Classic Bandpass 24 dB Driven", "Vember Classic Notch 12 dB Standard", "Vember Classic Notch 12 dB Mild", "Vember Classic Notch 24 dB Standard", "Vember Classic Notch 24 dB Mild", "Vember Classic Allpass", "Vember Ladder Lowpass 6 dB", "Vember Ladder Lowpass 12 dB", "Vember Ladder Lowpass 18 dB", "Vember Ladder Lowpass 24 dB", "OB-Xd 2-pole Lowpass Standard", "OB-Xd 2-pole Lowpass Pushed", "OB-Xd 2-pole Highpass Standard", "OB-Xd 2-pole Highpass Pushed", "OB-Xd 2-pole Bandpass Standard", "OB-Xd 2-pole Bandpass Pushed", "OB-Xd 2-pole Notch Standard", "OB-Xd 2-pole Notch Pushed", "OB-Xd 4-pole Lowpass 6 dB", "OB-Xd 4-pole Lowpass 12 dB", "OB-Xd 4-pole Lowpass 18 dB", "OB-Xd 4-pole Lowpass 24 dB", "OB-Xd 4-pole Lowpass 24 dB 24 dB (Legacy)", "OB-Xd 4-pole Lowpass Morph", "OB-Xd Xpander Lowpass 6 dB", "OB-Xd Xpander Lowpass 12 dB", "OB-Xd Xpander Lowpass 18 dB", "OB-Xd Xpander Lowpass 24 dB", "OB-Xd Xpander Highpass 6 dB", "OB-Xd Xpander Highpass 12 dB", "OB-Xd Xpander Highpass 18 dB", "OB-Xd Xpander Bandpass 12 dB", "OB-Xd Xpander Bandpass 12 dB/6 dB", "OB-Xd Xpander Bandpass 18 dB/6 dB", "OB-Xd Xpander Bandpass 24 dB", "OB-Xd Xpander Notch 12 dB", "OB-Xd Xpander Phaser 18 dB", "OB-Xd Xpander Notch+LP 12 dB/6 dB", "OB-Xd Xpander Phaser+LP 18 dB/6 dB", "K35 Lowpass None", "K35 Lowpass Mild", "K35 Lowpass Moderate", "K35 Lowpass Heavy", "K35 Lowpass Extreme", "K35 Lowpass Continuous", "K35 Highpass None", "K35 Highpass Mild", "K35 Highpass Moderate", "K35 Highpass Heavy", "K35 Highpass Extreme", "K35 Highpass Continuous", "Diode Ladder Lowpass 6 dB", "Diode Ladder Lowpass 12 dB", "Diode Ladder Lowpass 18 dB", "Diode Ladder Lowpass 24 dB", "Vintage Ladder Lowpass Runge-Kutta", "Vintage Ladder Lowpass Runge-Kutta Compensated", "Vintage Ladder Lowpass Huovilainen", "Vintage Ladder Lowpass Huovilainen Compensated", "Cutoff Warp Lowpass 1 Stage tanh", "Cutoff Warp Lowpass 1 Stage Soft Clip", "Cutoff Warp Lowpass 1 Stage OJD", "Cutoff Warp Lowpass 2 Stages tanh", "Cutoff Warp Lowpass 2 Stages Soft Clip", "Cutoff Warp Lowpass 2 Stages OJD", "Cutoff Warp Lowpass 3 Stages tanh", "Cutoff Warp Lowpass 3 Stages Soft Clip", "Cutoff Warp Lowpass 3 Stages OJD", "Cutoff Warp Lowpass 4 Stages tanh", "Cutoff Warp Lowpass 4 Stages Soft Clip", "Cutoff Warp Lowpass 4 Stages OJD", "Cutoff Warp Highpass 1 Stage tanh", "Cutoff Warp Highpass 1 Stage Soft Clip", "Cutoff Warp Highpass 1 Stage OJD", "Cutoff Warp Highpass 2 Stages tanh", "Cutoff Warp Highpass 2 Stages Soft Clip", "Cutoff Warp Highpass 2 Stages OJD", "Cutoff Warp Highpass 3 Stages tanh", "Cutoff Warp Highpass 3 Stages Soft Clip", "Cutoff Warp Highpass 3 Stages OJD", "Cutoff Warp Highpass 4 Stages tanh", "Cutoff Warp Highpass 4 Stages Soft Clip", "Cutoff Warp Highpass 4 Stages OJD", "Cutoff Warp Bandpass 1 Stage tanh", "Cutoff Warp Bandpass 1 Stage Soft Clip", "Cutoff Warp Bandpass 1 Stage OJD", "Cutoff Warp Bandpass 2 Stages tanh", "Cutoff Warp Bandpass 2 Stages Soft Clip", "Cutoff Warp Bandpass 2 Stages OJD", "Cutoff Warp Bandpass 3 Stages tanh", "Cutoff Warp Bandpass 3 Stages Soft Clip", "Cutoff Warp Bandpass 3 Stages OJD", "Cutoff Warp Bandpass 4 Stages tanh", "Cutoff Warp Bandpass 4 Stages Soft Clip", "Cutoff Warp Bandpass 4 Stages OJD", "Cutoff Warp Notch 1 Stage tanh", "Cutoff Warp Notch 1 Stage Soft Clip", "Cutoff Warp Notch 1 Stage OJD", "Cutoff Warp Notch 2 Stages tanh", "Cutoff Warp Notch 2 Stages Soft Clip", "Cutoff Warp Notch 2 Stages OJD", "Cutoff Warp Notch 3 Stages tanh", "Cutoff Warp Notch 3 Stages Soft Clip", "Cutoff Warp Notch 3 Stages OJD", "Cutoff Warp Notch 4 Stages tanh", "Cutoff Warp Notch 4 Stages Soft Clip", "Cutoff Warp Notch 4 Stages OJD", "Cutoff Warp Allpass 1 Stage tanh", "Cutoff Warp Allpass 1 Stage Soft Clip", "Cutoff Warp Allpass 1 Stage OJD", "Cutoff Warp Allpass 2 Stages tanh", "Cutoff Warp Allpass 2 Stages Soft Clip", "Cutoff Warp Allpass 2 Stages OJD", "Cutoff Warp Allpass 3 Stages tanh", "Cutoff Warp Allpass 3 Stages Soft Clip", "Cutoff Warp Allpass 3 Stages OJD", "Cutoff Warp Allpass 4 Stages tanh", "Cutoff Warp Allpass 4 Stages Soft Clip", "Cutoff Warp Allpass 4 Stages OJD", "Resonance Warp Lowpass 1 Stage tanh", "Resonance Warp Lowpass 1 Stage Soft Clip", "Resonance Warp Lowpass 2 Stages tanh", "Resonance Warp Lowpass 2 Stages Soft Clip", "Resonance Warp Lowpass 3 Stages tanh", "Resonance Warp Lowpass 3 Stages Soft Clip", "Resonance Warp Lowpass 4 Stages tanh", "Resonance Warp Lowpass 4 Stages Soft Clip", "Resonance Warp Highpass 1 Stage tanh", "Resonance Warp Highpass 1 Stage Soft Clip", "Resonance Warp Highpass 2 Stages tanh", "Resonance Warp Highpass 2 Stages Soft Clip", "Resonance Warp Highpass 3 Stages tanh", "Resonance Warp Highpass 3 Stages Soft Clip", "Resonance Warp Highpass 4 Stages tanh", "Resonance Warp Highpass 4 Stages Soft Clip", "Resonance Warp Bandpass 1 Stage tanh", "Resonance Warp Bandpass 1 Stage Soft Clip", "Resonance Warp Bandpass 2 Stages tanh", "Resonance Warp Bandpass 2 Stages Soft Clip", "Resonance Warp Bandpass 3 Stages tanh", "Resonance Warp Bandpass 3 Stages Soft Clip", "Resonance Warp Bandpass 4 Stages tanh", "Resonance Warp Bandpass 4 Stages Soft Clip", "Resonance Warp Notch 1 Stage tanh", "Resonance Warp Notch 1 Stage Soft Clip", "Resonance Warp Notch 2 Stages tanh", "Resonance Warp Notch 2 Stages Soft Clip", "Resonance Warp Notch 3 Stages tanh", "Resonance Warp Notch 3 Stages Soft Clip", "Resonance Warp Notch 4 Stages tanh", "Resonance Warp Notch 4 Stages Soft Clip", "Resonance Warp Allpass 1 Stage tanh", "Resonance Warp Allpass 1 Stage Soft Clip", "Resonance Warp Allpass 2 Stages tanh", "Resonance Warp Allpass 2 Stages Soft Clip", "Resonance Warp Allpass 3 Stages tanh", "Resonance Warp Allpass 3 Stages Soft Clip", "Resonance Warp Allpass 4 Stages tanh", "Resonance Warp Allpass 4 Stages Soft Clip", "Fast SVF Lowpass", "Fast SVF Highpass", "Fast SVF Bandpass", "Fast SVF Notch", "Fast SVF Peak", "Fast SVF Allpass", "Fast SVF Low Shelf", "Fast SVF Bell", "Fast SVF High Shelf", "Tri-pole 1 Stage Low/Low/Low", "Tri-pole 1 Stage Low/High/Low", "Tri-pole 1 Stage High/Low/High", "Tri-pole 1 Stage High/High/High", "Tri-pole 2 Stages Low/Low/Low", "Tri-pole 2 Stages Low/High/Low", "Tri-pole 2 Stages High/Low/High", "Tri-pole 2 Stages High/High/High", "Tri-pole 3 Stages Low/Low/Low", "Tri-pole 3 Stages Low/High/Low", "Tri-pole 3 Stages High/Low/High", "Tri-pole 3 Stages High/High/High", "Comb Negative Feedback, Variable Mix", "Comb Negative Feedback, Mix 100%", "Comb Negative Feedback, Mix 50%", "Comb Postive Feedback, Mix 50%", "Comb Positive Feedback, Mix 100%", "Comb Positive Feedback, Variable Mix", "Comb Bipolar, Variable Mix", "Sample & Hold"]},
+          {"name": "Character", "values": ["100%", "10%", "0%"]}
+        ]
+      },
+      {
+        "name": "State Variable Filter",
+        "params": [
+          {"name": "Cutoff", "values": ["10.02 kHz", "1.00 kHz", "100 Hz"]},
+          {"name": "Resonance", "values": ["Q 10.02", "Q 0.50"]},
+          {"name": "Mode", "values": ["LP", "BP", "HP"]}
+        ]
+      }
+    ],
+    "mod": [
+      {
+        "name": "Off",
+        "params": []
+      },
+      {
+        "name": "Envelope",
+        "params": [
+          {"name": "Mode", "values": ["ADSR", "AD", "Looping", "Custom"]},
+          {"name": "Attack", "values": ["1000 ms", "10.03 s", "100 ms"]},
+          {"name": "Attack Shape", "values": ["100%", "10%", "0%"]},
+          {"name": "Decay", "values": ["1000 ms", "10.03 s", "100 ms"]},
+          {"name": "Decay Shape", "values": ["100%", "10%", "0%"]},
+          {"name": "Sustain", "values": ["100%", "10%", "0%"]},
+          {"name": "Sustain Time", "values": ["1000 ms", "10.03 s", "100 ms"]},
+          {"name": "Release", "values": ["1000 ms", "10.03 s", "100 ms"]},
+          {"name": "Release Shape", "values": ["100%", "10%", "0%"]},
+          {"name": "Seg 5 A", "values": ["100%", "10%", "0%"]},
+          {"name": "Seg 5 B", "values": ["100%", "10%", "0%"]},
+          {"name": "Seg 6 A", "values": ["100%", "10%", "0%"]},
+          {"name": "Seg 6 B", "values": ["100%", "10%", "0%"]}
+        ]
+      },
+      {
+        "name": "LFO",
+        "params": [
+          {"name": "Mode", "values": ["Cycle", "AD", "AR"]},
+          {"name": "Sync", "values": ["Off", "On"]},
+          {"name": "Frequency", "values": ["+10.0 st", "-48.0 st", "+0.0 st"]},
+          {"name": "Shape", "values": ["100%", "10%", "0%"]},
+          {"name": "Slope", "values": ["100%", "10%", "0%"]},
+          {"name": "Shift", "values": ["100%", "10%", "0%"]},
+          {"name": "Smoothness", "values": ["100%", "10%", "0%"]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "Output", "values": ["Phase", "Gates", "Amplitude", "Frequency"]},
+          {"name": "Range", "values": ["Medium", "Low"]}
+        ]
+      },
+      {
+        "name": "Random / S&H",
+        "params": [
+          {"name": "T Model", "values": ["Coin Toss", "Clusters", "Drums"]},
+          {"name": "T Deja Vu", "values": ["Off", "On"]},
+          {"name": "T Rate", "values": ["+100%", "-100%", "+10%"]},
+          {"name": "T Bias", "values": ["100%", "10%", "0%"]},
+          {"name": "Deja Vu", "values": ["100%", "10%", "0%"]},
+          {"name": "X Range", "values": ["Narrow", "Positive", "Full"]},
+          {"name": "X Spread", "values": ["100%", "10%", "0%"]},
+          {"name": "X Bias", "values": ["100%", "10%", "0%"]},
+          {"name": "X Steps", "values": ["100%", "10%", "0%"]},
+          {"name": "T Range", "values": ["1x", "1/4x", "4x"]},
+          {"name": "T Jitter", "values": ["100%", "10%", "0%"]},
+          {"name": "Length", "values": ["1 step", "2 steps", "3 steps", "4 steps", "5 steps", "6 steps", "7 steps", "8 steps", "10 steps", "12 steps", "14 steps", "16 steps"]},
+          {"name": "X Mode", "values": ["Identical", "Bump", "Tilt"]},
+          {"name": "X Scale", "values": ["Major", "Minor", "Pentatonic", "Pelog", "Raag Bhairav", "Raag Shri"]},
+          {"name": "X Deja Vu", "values": ["Off", "On"]},
+          {"name": "Sync", "values": ["Off", "On"]}
+        ]
+      },
+      {
+        "name": "Function Generator",
+        "params": [
+          {"name": "Mode", "values": ["Envelope", "LFO", "Tap LFO", "Random"]},
+          {"name": "Attack", "values": ["100 ms", "1.02 s", "10 ms"]},
+          {"name": "Rate", "values": ["100.3 Hz", "10.0 Hz", "0.03 Hz"]},
+          {"name": "Decay", "values": ["100 ms", "1.02 s", "10 ms"]},
+          {"name": "Wave Shape", "values": ["100%", "10%", "0%"]},
+          {"name": "Sustain", "values": ["100%", "10%", "0%"]},
+          {"name": "Phase", "values": ["100%", "10%", "0%"]},
+          {"name": "Release", "values": ["100 ms", "1.02 s", "10 ms"]},
+          {"name": "Smoothness", "values": ["100%", "10%", "0%"]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "Waveform", "values": ["Sine", "Triangle", "Square", "Steps", "Noise"]}
+        ]
+      }
+    ],
+    "partFx": [
+      {
+        "name": "Off",
+        "params": []
+      },
+      {
+        "name": "Granular",
+        "params": [
+          {"name": "Blend", "values": ["100%", "10%", "0%"]},
+          {"name": "Position", "values": ["100%", "10%", "0%"]},
+          {"name": "Size", "values": ["100%", "10%", "0%"]},
+          {"name": "Pitch", "values": ["+10.0 st", "-24.0 st", "+0.0 st"]},
+          {"name": "Density", "values": ["100%", "10%", "0%"]},
+          {"name": "Texture", "values": ["100%", "10%", "0%"]},
+          {"name": "Feedback", "values": ["100%", "10%", "0%"]},
+          {"name": "Reverb", "values": ["100%", "10%", "0%"]},
+          {"name": "Freeze", "values": ["Off", "On"]},
+          {"name": "Mode", "values": ["Granular", "Stretch", "Looping delay", "Spectral"]},
+          {"name": "Quality", "values": ["16-bit stereo", "16-bit mono", "8-bit stereo", "8-bit mono"]},
+          {"name": "Spread", "values": ["100%", "10%", "0%"]},
+          {"name": "In Gain", "values": ["100%", "10%", "0%"]}
+        ]
+      },
+      {
+        "name": "Granular Delay",
+        "params": [
+          {"name": "Dry/Wet", "values": ["100%", "10%", "0%"]},
+          {"name": "Time", "values": ["100%", "10%", "0%"]},
+          {"name": "Size", "values": ["100%", "10%", "0%"]},
+          {"name": "Pitch", "values": ["+10.1 st", "-24.0 st", "+0.0 st"]},
+          {"name": "Density", "values": ["100%", "10%", "0%"]},
+          {"name": "Shape", "values": ["100%", "10%", "0%"]},
+          {"name": "Feedback", "values": ["100%", "10%", "0%"]},
+          {"name": "Reverb", "values": ["100%", "10%", "0%"]},
+          {"name": "Freeze", "values": ["Off", "On"]},
+          {"name": "Quality", "values": ["Digital", "Vintage digital", "Clean tape", "Dirty tape"]},
+          {"name": "Seed", "values": ["Free", "Notes"]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "Time Random", "values": ["+100%", "-100%", "+10%"]},
+          {"name": "Size Random", "values": ["+100%", "-100%", "+10%"]},
+          {"name": "Shape Random", "values": ["+100%", "-100%", "+10%"]},
+          {"name": "Pitch Random", "values": ["+100%", "-100%", "+10%"]}
+        ]
+      },
+      {
+        "name": "Resonator",
+        "params": [
+          {"name": "Mix", "values": ["100%", "10%", "0%"]},
+          {"name": "Structure", "values": ["100%", "10%", "0%"]},
+          {"name": "Brightness", "values": ["100%", "10%", "0%"]},
+          {"name": "Damping", "values": ["100%", "10%", "0%"]},
+          {"name": "Spread", "values": ["100%", "10%", "0%"]},
+          {"name": "Position", "values": ["100%", "10%", "0%"]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "Model", "values": ["Modal", "Sympathetic", "String", "FM Voice", "Sympathetic Q", "String + Reverb"]},
+          {"name": "Polyphony", "values": ["1", "2", "4"]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "Tune", "values": ["+10.0 st", "-12.0 st", "+0.0 st"]}
+        ]
+      },
+      {
+        "name": "Reverb",
+        "params": [
+          {"name": "Amount", "values": ["100%", "10%", "0%"]},
+          {"name": "Time", "values": ["100%", "10%", "0%"]},
+          {"name": "Diffusion", "values": ["100%", "10%", "0%"]},
+          {"name": "Brightness", "values": ["100%", "10%", "0%"]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "(unused)", "values": [""]},
+          {"name": "Freeze", "values": ["Off", "On"]}
+        ]
+      }
+    ],
+    "shaper": [
+      {
+        "name": "Off",
+        "params": []
+      },
+      {
+        "name": "Ring Mod / Vocoder",
+        "params": [
+          {"name": "Algorithm", "values": ["Crossfade", "Fold", "Analog RM", "Digital RM", "XOR", "Compare", "Vocoder", "Vocoder (long release)", "Vocoder (frozen)"]},
+          {"name": "Timbre", "values": ["100%", "10%", "0%"]},
+          {"name": "Carrier Level", "values": ["100%", "10%", "0%"]},
+          {"name": "Mod Level", "values": ["100%", "10%", "0%"]},
+          {"name": "Carrier", "values": ["Internal Osc", "Voice", "Source AUX", "Input", "Other part"]},
+          {"name": "Modulator", "values": ["Voice", "Source AUX", "Input", "Other part"]},
+          {"name": "Osc Pitch", "values": ["+10.0 st", "-24.0 st", "+0.0 st"]},
+          {"name": "Osc Shape", "values": ["Sine / Saw", "Triangle / Pulse", "Saw / Noise"]},
+          {"name": "Mode", "values": ["Modulation", "Freq shifter"]}
+        ]
+      },
+      {
+        "name": "EQ",
+        "params": [
+          {"name": "High Freq", "values": ["10.02 kHz", "1.00 kHz", "100 Hz"]},
+          {"name": "High Gain", "values": ["+10.0 dB", "-18.0 dB", "+0.0 dB"]},
+          {"name": "Mid 1 Freq", "values": ["10.02 kHz", "1.00 kHz", "100 Hz"]},
+          {"name": "Mid 1 Gain", "values": ["+10.0 dB", "-18.0 dB", "+0.0 dB"]},
+          {"name": "Mid 1 Q", "values": ["Q 10.02", "Q 0.50"]},
+          {"name": "Mid 2 Freq", "values": ["10.02 kHz", "1.00 kHz", "100 Hz"]},
+          {"name": "Mid 2 Gain", "values": ["+10.0 dB", "-18.0 dB", "+0.0 dB"]},
+          {"name": "Mid 2 Q", "values": ["Q 10.02", "Q 0.50"]},
+          {"name": "Low Freq", "values": ["10.02 kHz", "1.00 kHz", "100 Hz"]},
+          {"name": "Low Gain", "values": ["+10.0 dB", "-18.0 dB", "+0.0 dB"]},
+          {"name": "Input Pad", "values": ["Off", "-6 dB"]},
+          {"name": "Output", "values": ["EQ", "Mid 1 LP", "Mid 1 BP", "Mid 1 HP", "Mid 2 LP", "Mid 2 BP", "Mid 2 HP"]}
+        ]
+      }
+    ],
+    "source": [
+      {
+        "name": "Macro Oscillator",
+        "params": [
+          {"name": "Model", "values": ["Filtered waveforms", "Phase distortion", "6-op FM 1", "6-op FM 2", "6-op FM 3", "Wave terrain", "String machine", "Chiptune", "Virtual analog", "Waveshaping", "2-op FM", "Granular formant", "Harmonic", "Wavetable", "Chords", "Speech", "Granular cloud", "Filtered noise", "Particle noise", "Inharmonic string", "Modal resonator", "Bass drum", "Snare drum", "Hi-hat"]},
+          {"name": "Harmonics", "values": ["100%", "10%", "0%"]},
+          {"name": "Timbre", "values": ["100%", "10%", "0%"]},
+          {"name": "Morph", "values": ["100%", "10%", "0%"]},
+          {"name": "Frequency", "values": ["+10.0 st", "-12.0 st", "+0.0 st"]},
+          {"name": "Decay", "values": ["100%", "10%", "0%"]},
+          {"name": "LPG Colour", "values": ["100%", "10%", "0%"]},
+          {"name": "Aux Mix", "values": ["100%", "10%", "0%"]}
+        ]
+      },
+      {
+        "name": "Digital Oscillator",
+        "params": [
+          {"name": "Shape", "values": ["CSAW", "Morph", "Saw/Square", "Fold", "Buzz", "Square Sub", "Saw Sub", "Square Sync", "Saw Sync", "Triple Saw", "Triple Square", "Triple Triangle", "Triple Sine", "Triple Ring", "Saw Swarm", "Saw Comb", "Toy", "Filter LP", "Filter Peak", "Filter BP", "Filter HP", "VOSIM", "Vowel", "Vowel FOF", "Harmonics", "FM", "Feedback FM", "Chaotic FM", "Plucked", "Bowed", "Blown", "Fluted", "Bell", "Drum", "Kick", "Cymbal", "Snare", "Wavetables", "Wave Map", "Wave Line", "Wave Paraphonic", "Filtered Noise", "Twin Peaks", "Clocked Noise", "Granular Cloud", "Particle Noise", "Digital Mod"]},
+          {"name": "Timbre", "values": ["100%", "10%", "0%"]},
+          {"name": "Color", "values": ["100%", "10%", "0%"]},
+          {"name": "Frequency", "values": ["+10.0 st", "-12.0 st", "+0.0 st"]},
+          {"name": "Signature", "values": ["100%", "10%", "0%"]},
+          {"name": "Bit Depth", "values": ["2 bit", "3 bit", "4 bit", "6 bit", "8 bit", "12 bit", "16 bit"]},
+          {"name": "Sample Rate", "values": ["4 kHz", "8 kHz", "16 kHz", "24 kHz", "32 kHz", "48 kHz", "96 kHz"]}
+        ]
+      },
+      {
+        "name": "Modal Synth",
+        "params": [
+          {"name": "Model", "values": ["Modal", "String", "Strings"]},
+          {"name": "Contour", "values": ["100%", "10%", "0%"]},
+          {"name": "Bow", "values": ["100%", "10%", "0%"]},
+          {"name": "Blow", "values": ["100%", "10%", "0%"]},
+          {"name": "Strike", "values": ["100%", "10%", "0%"]},
+          {"name": "Flow", "values": ["100%", "10%", "0%"]},
+          {"name": "Mallet", "values": ["100%", "10%", "0%"]},
+          {"name": "Bow Timbre", "values": ["100%", "10%", "0%"]},
+          {"name": "Blow Timbre", "values": ["100%", "10%", "0%"]},
+          {"name": "Strike Timbre", "values": ["100%", "10%", "0%"]},
+          {"name": "Geometry", "values": ["100%", "10%", "0%"]},
+          {"name": "Brightness", "values": ["100%", "10%", "0%"]},
+          {"name": "Damping", "values": ["100%", "10%", "0%"]},
+          {"name": "Position", "values": ["100%", "10%", "0%"]},
+          {"name": "Space", "values": ["100%", "10%", "0%"]},
+          {"name": "Ext In", "values": ["Off", "Blow", "Strike", "Both"]}
+        ]
+      },
+      {
+        "name": "Resonator",
+        "params": [
+          {"name": "Model", "values": ["Modal", "Sympathetic", "String", "FM Voice", "Sympathetic Q", "String + Reverb"]},
+          {"name": "Structure", "values": ["100%", "10%", "0%"]},
+          {"name": "Brightness", "values": ["100%", "10%", "0%"]},
+          {"name": "Damping", "values": ["100%", "10%", "0%"]},
+          {"name": "Position", "values": ["100%", "10%", "0%"]},
+          {"name": "Exciter", "values": ["Internal", "Input", "Both"]},
+          {"name": "Frequency", "values": ["+10.0 st", "-12.0 st", "+0.0 st"]},
+          {"name": "Spread", "values": ["100%", "10%", "0%"]},
+          {"name": "Polyphony", "values": ["1", "2", "4"]}
+        ]
+      },
+      {
+        "name": "Audio Input",
+        "params": [
+          {"name": "Gain", "values": ["+10.0 dB", "-24.0 dB", "+0.0 dB"]},
+          {"name": "Attack", "values": ["100 ms", "1.00 s", "10 ms"]},
+          {"name": "Release", "values": ["1000 ms", "100 ms", "1.01 s"]}
+        ]
+      }
+    ]
+  },
+  "version": 1
+}

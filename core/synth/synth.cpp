@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <thread>
 
 #include "util/soft_clip.h"
@@ -29,6 +30,15 @@ Synth::Synth(PluginKind kind, SourceFactory factory) : kind_(kind) {
 
 // Each part its own random seeds (Random / S&H, the Random source). Constructors, before prepare().
 void Synth::seedParts() {
+  const float inf = std::numeric_limits<float>::infinity();
+  for (auto& part : modOutMin_)
+    for (auto& slot : part)
+      for (auto& v : slot) v.store(inf, std::memory_order_relaxed);
+  for (auto& part : modOutMax_)
+    for (auto& slot : part)
+      for (auto& v : slot) v.store(-inf, std::memory_order_relaxed);
+  for (auto& part : modValue_)
+    for (auto& v : part) v.store(std::nanf(""), std::memory_order_relaxed);
   for (int p = 0; p < kNumParts; ++p) parts_[size_t(p)]->setSeedBase(uint32_t(p + 1) * 1000u);
 }
 
@@ -228,6 +238,9 @@ bool Synth::setParam(uint32_t id, double value) {
     switchEngine(kind, part, slotEngineFromSelector(kind, clamped));
   }
   values_[size_t(index)].store(clamped, std::memory_order_relaxed);
+  // A switch earlier in the same block or flush may have queued this id; this write replaces
+  // that value, so the host must not be sent it back.
+  dropHostUpdate(id);
   return true;
 }
 
@@ -245,11 +258,19 @@ ParamSnapshot Synth::defaultSnapshot() const {
 }
 
 void Synth::uiSnapshot(UiSnapshot* out) const {  // main thread
+  const float inf = std::numeric_limits<float>::infinity();
   const bool pending = hasPending();
   for (size_t i = 0; i < kParamCount; ++i) out->values[i] = pending ? pendingValues_[i] : load(i);
   for (int p = 0; p < kNumParts; ++p) {
     for (int ch = 0; ch < 2; ++ch) out->partPeak[p][ch] = partPeak_[p][ch].exchange(0.0f, std::memory_order_relaxed);
     out->activeVoices[p] = activeVoices_[p].load(std::memory_order_relaxed);
+    for (int d = 0; d < kNumDestinations; ++d) out->modValue[p][d] = modValue_[p][d].load(std::memory_order_relaxed);
+    for (int s = 0; s < kNumModSlots; ++s) {
+      for (int o = 0; o < kMaxModOutputs; ++o) {
+        out->modOutMin[p][s][o] = modOutMin_[p][s][o].exchange(inf, std::memory_order_relaxed);
+        out->modOutMax[p][s][o] = modOutMax_[p][s][o].exchange(-inf, std::memory_order_relaxed);
+      }
+    }
   }
   out->engineGeneration = engineGeneration_.load(std::memory_order_acquire);
 }
@@ -495,6 +516,15 @@ void Synth::queueHostUpdate(const HostUpdate& update) {
   if (hostUpdateCount_ < int(kMaxHostUpdates)) hostUpdates_[hostUpdateCount_++] = update;
 }
 
+void Synth::dropHostUpdate(uint32_t id) {
+  for (int i = 0; i < hostUpdateCount_; ++i) {
+    if (hostUpdates_[i].id != id) continue;
+    for (int j = i + 1; j < hostUpdateCount_; ++j) hostUpdates_[j - 1] = hostUpdates_[j];
+    --hostUpdateCount_;
+    return;  // coalesced per id: at most one entry
+  }
+}
+
 float Synth::softLimit(float x) {
   const float a = std::fabs(x);
   if (a <= 1.0f) return x;
@@ -609,6 +639,28 @@ void Synth::process(const float* const* in, float* const* mainOut, float* const*
   }
 }
 
+// Once per chunk: the part's display values stored, its mod output ranges folded into the held min and
+// max (CAS, the mirror of partPeak_) and the part's own range cleared for the next chunk.
+void Synth::publishModulation(int p, const PartParams& params) {
+  Part& part = *parts_[size_t(p)];
+  part.refreshModValues(params);
+  const Part::ModDisplay& d = part.modDisplay();
+  for (int i = 0; i < kNumDestinations; ++i) modValue_[p][i].store(d.value[i], std::memory_order_relaxed);
+  for (int s = 0; s < kNumModSlots; ++s) {
+    for (int o = 0; o < kMaxModOutputs; ++o) {
+      float lo = modOutMin_[p][s][o].load(std::memory_order_relaxed);
+      while (d.outMin[s][o] < lo &&
+             !modOutMin_[p][s][o].compare_exchange_weak(lo, d.outMin[s][o], std::memory_order_relaxed)) {
+      }
+      float hi = modOutMax_[p][s][o].load(std::memory_order_relaxed);
+      while (d.outMax[s][o] > hi &&
+             !modOutMax_[p][s][o].compare_exchange_weak(hi, d.outMax[s][o], std::memory_order_relaxed)) {
+      }
+    }
+  }
+  part.clearModOutRange();
+}
+
 void Synth::processChunk(const float* const* in, float* const* mainOut, float* const* bus2Out, int n) {
   bool toBus2[kNumParts];
   bool heard[kNumParts];
@@ -649,6 +701,7 @@ void Synth::processChunk(const float* const* in, float* const* mainOut, float* c
     part.process(inputs, out, params, n);
     // Published for the editor's main-thread read (Voice::active_ is plain, audio-thread only).
     activeVoices_[p].store(part.activeVoiceCount(), std::memory_order_relaxed);
+    if (publishModulation_) publishModulation(p, params);
     const int output = part.settings().output;
     heard[p] = output != 2;  // Other part only: feeds the other part, not heard
     toBus2[p] = bus2Out != nullptr && output == 1;

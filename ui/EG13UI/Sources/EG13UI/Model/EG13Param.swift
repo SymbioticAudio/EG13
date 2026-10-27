@@ -17,6 +17,9 @@ public final class EG13Param {
     /// times makes no core call).
     public private(set) var text: String
 
+    /// Whether at least one visible route targets this parameter: the knob's modulation mark. Written
+    /// only when it changes, so a knob that reads it ignores every modulation value update.
+    public private(set) var isRouted = false
     @ObservationIgnored private unowned let synth: EG13Synth
     @ObservationIgnored private var snapshot: Double
     /// The user's value while the gesture is open.
@@ -73,6 +76,13 @@ public final class EG13Param {
         value = shown
         text = synth.text(at: index, value: shown)
     }
+
+    func setRouted(_ new: Bool) {
+        if new != isRouted { isRouted = new }
+    }
+
+    /// The synth this parameter belongs to (the knob's route popover reads its routes).
+    var owner: EG13Synth { synth }
 
     /// The text depends on the engine as well as the value: reformat after a generation change.
     func refreshText() {

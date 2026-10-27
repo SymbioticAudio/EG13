@@ -185,6 +185,12 @@ class Synth {
   // engine generation). Reading the peaks resets them (hold-until-read), hence the mutable
   // atomics. No allocation, no locks.
   void uiSnapshot(UiSnapshot* out) const;
+  // Benchmark baseline only: off skips the modulation publish and the per-tick sampling.
+  void setModulationPublish(bool on) {
+    publishModulation_ = on;
+    for (auto& part : parts_) part->setDisplayEnabled(on);
+  }
+  void publishModulation(int part, const PartParams& params);  // audio thread: once per chunk, after process
   // Main thread: true once after any engine switch (names and text changed).
   bool takeEngineChanged() { return engineChanged_.exchange(false, std::memory_order_acq_rel); }
 
@@ -222,6 +228,7 @@ class Synth {
   PartEngines partEngines(int part) const;               // main thread
   void feedOther(int part, int n);  // otherIn_[part]: the other part's output, soft-limited
   void queueHostUpdate(const HostUpdate& update);
+  void dropHostUpdate(uint32_t id);  // a later setParam of the id replaced the queued value
   void routeInput(int part, const float* const* in, int n);
   // One chunk of process(): n <= feedDelay_, so A only reads B samples already written.
   void processChunk(const float* const* in, float* const* mainOut, float* const* bus2Out, int n);
@@ -255,6 +262,12 @@ class Synth {
   // Per part and channel: the absolute peak of the part's output (after level, pan and the B mute) since the
   // last uiSnapshot. The audio thread raises it once per chunk; uiSnapshot reads and zeroes it.
   mutable std::atomic<float> partPeak_[kNumParts][2] = {};
+  // The modulation display (Part::ModDisplay), published once per chunk. modOutMin_ starts at +inf and
+  // modOutMax_ at -inf and are left there when nothing ran: the UI reads inf as "no data".
+  bool publishModulation_ = true;
+  std::atomic<float> modValue_[kNumParts][kNumDestinations] = {};
+  mutable std::atomic<float> modOutMin_[kNumParts][kNumModSlots][kMaxModOutputs] = {};
+  mutable std::atomic<float> modOutMax_[kNumParts][kNumModSlots][kMaxModOutputs] = {};
   std::vector<float> partIn_[kNumParts][2];
   std::vector<float> otherIn_[kNumParts][2];  // the other part's output, soft-limited
   std::vector<float> feedRing_[2];  // B's output for A, delayed by feedDelay_

@@ -15,6 +15,7 @@
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 #include "synth/synth.h"
+#include "synth/ui_snapshot.h"
 #include "synth_helpers.h"
 #include "ui_bridge.h"
 
@@ -453,4 +454,44 @@ TEST_CASE("CPU: UiBridge::drain of 64 edits per block stays within its own budge
               kEdits, kBlock, kRate, 1e6 * drainSeconds / double(kBlocks), percent);
   REQUIRE(sink.pushed >= size_t(kEdits) * size_t(kBlocks));
   REQUIRE(percent < 0.1);
+}
+
+TEST_CASE("CPU: modulation publish stays within its own budget", "[.benchmark][modulation publish]") {
+  // The full publish cost: real 128-sample process() calls with both parts holding 8 voices, timed
+  // with the publish and the per-tick output sampling on, minus the same calls with them skipped
+  // (Synth::setModulationPublish). Passes alternate and the fastest of each is kept.
+  constexpr double kRate = 48000.0;
+  constexpr int kBlock = 128;
+  constexpr int kBlocks = 20000;
+  Synth synth(PluginKind::Instrument);
+  synth.setParam(paramSpec(masterParamIndex(MasterParam::Mode)).id, double(PartMode::Layer));
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  std::vector<float> l(kBlock), r(kBlock);
+  float* out[2] = {l.data(), r.data()};
+  for (int key = 48; key < 56; ++key) synth.noteOn(0, key, 0.8f);
+  for (int b = 0; b < 50; ++b) synth.process(nullptr, out, nullptr, kBlock);
+  UiSnapshot snap;
+  auto pass = [&](bool publish) {
+    synth.setModulationPublish(publish);
+    const auto start = std::chrono::steady_clock::now();
+    for (int b = 0; b < kBlocks; ++b) {
+      synth.process(nullptr, out, nullptr, kBlock);
+      if (b % 100 == 0) synth.uiSnapshot(&snap);  // the editor's reads, ~30 Hz
+    }
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+  };
+  double with = 1e9, without = 1e9;
+  for (int round = 0; round < 5; ++round) {
+    with = std::min(with, pass(true));
+    without = std::min(without, pass(false));
+  }
+  synth.setActive(false);
+  const double budgetSeconds = double(kBlock) / kRate;
+  const double extra = (with - without) / double(kBlocks);
+  const double percent = 100.0 * extra / budgetSeconds;
+  std::printf("modulation publish, both parts, 8 voices each, per %d-sample block at %.0f Hz: with %.3f us, without %.3f us, publish %.3f us = %.4f%% of the block's real-time budget (budget 0.5%%)\n",
+              kBlock, kRate, 1e6 * with / double(kBlocks), 1e6 * without / double(kBlocks), 1e6 * extra, percent);
+  REQUIRE(std::isfinite(snap.modValue[1][kDestPitch]));
+  REQUIRE(percent < 0.5);
 }

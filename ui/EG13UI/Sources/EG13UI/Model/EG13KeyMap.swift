@@ -1,33 +1,109 @@
-/// Which parts a key on the on-screen keyboard reaches, mirroring the synth's routing
-/// (spec §5.3): mode, split note and each part's key range.
-public struct EG13KeyMap: Equatable, Sendable {
-    public var mode: EG13Mode
-    public var splitNote: Int
-    public var keyRanges: [ClosedRange<Int>]  // per part
-    /// Multi mode plays the part shown in the editor.
-    public var selectedPart: Int
+import Foundation
 
-    public init(mode: EG13Mode, splitNote: Int, keyRanges: [ClosedRange<Int>], selectedPart: Int) {
-        self.mode = mode
-        self.splitNote = splitNote
-        self.keyRanges = keyRanges
-        self.selectedPart = selectedPart
+/// The key-range graphic's geometry and rules (spec §8, M6b decision 7): a non-playing 88-key
+/// strip, A0 to C8, that shows each part's key range and the split note, and whose handles edit
+/// Key Low, Key High and Split Note. Pure functions, so the view stays drawing and gestures.
+public enum EG13KeyMap {
+    public static let lowestKey = 21  // A0
+    public static let highestKey = 108  // C8
+    public static let keyCount = highestKey - lowestKey + 1
+
+    /// What a drag can move.
+    public enum Handle: Hashable, Sendable {
+        case low(part: Int)
+        case high(part: Int)
+        case split
     }
 
-    public func parts(forKey key: Int) -> [Int] {
-        let candidates: [Int]
-        switch mode {
-        case .single: candidates = [0]
-        case .layer: candidates = [0, 1]
-        case .split: candidates = [key < splitNote ? 0 : 1]
-        case .multi: candidates = [selectedPart]
+    /// The left edge of a key, in a strip `width` wide; a key past either end is clamped to it.
+    public static func x(forKey key: Int, width: Double) -> Double {
+        let index = clampedKey(key) - lowestKey
+        return width * Double(index) / Double(keyCount)
+    }
+
+    /// The right edge of a key.
+    public static func trailingX(forKey key: Int, width: Double) -> Double {
+        let index = clampedKey(key) - lowestKey + 1
+        return width * Double(index) / Double(keyCount)
+    }
+
+    /// The key under an x position; outside the strip it is the nearest end key.
+    public static func key(forX x: Double, width: Double) -> Int {
+        guard width > 0, !x.isNaN else { return lowestKey }
+        let index = Int((x / width * Double(keyCount)).rounded(.down))
+        return clampedKey(lowestKey + index)
+    }
+
+    public static func clampedKey(_ key: Int) -> Int { min(max(key, lowestKey), highestKey) }
+
+    /// The lowest and highest MIDI notes: the strip's left and right ends stand for them.
+    public static let lowestNote = 0
+    public static let highestNote = 127
+
+    /// The value a handle takes when dragged to `key` (any key, off the strip too), given the
+    /// part's current Low and High (MIDI notes, not clamped to the strip). The strip's ends are
+    /// open: a Low dragged to the leftmost key or past it is MIDI 0, a High dragged to the
+    /// rightmost key or past it is 127, so "all the way" never cuts notes off. Otherwise the key
+    /// is clamped to the strip, and a part's Low never goes above its High nor High below its Low.
+    /// The split marker stays on the strip.
+    public static func dragged(_ handle: Handle, to key: Int, low: Int, high: Int) -> Int {
+        switch handle {
+        case .low: return min(key <= lowestKey ? lowestNote : min(key, highestKey), high)
+        case .high: return max(key >= highestKey ? highestNote : max(key, lowestKey), low)
+        case .split: return clampedKey(key)
         }
-        return candidates.filter { $0 < keyRanges.count && keyRanges[$0].contains(key) }
     }
 
-    /// Velocity from where the key was pressed: 0 at the top edge, 1 at the bottom.
-    public static func velocity(forVerticalPosition y: Double) -> Double {
-        let position = min(max(y.isNaN ? 1 : y, 0), 1)
-        return 0.2 + 0.8 * position
+    public static func isWhite(_ key: Int) -> Bool {
+        switch ((key % 12) + 12) % 12 {
+        case 1, 3, 6, 8, 10: return false
+        default: return true
+        }
+    }
+
+    /// "C4" is MIDI note 60, as the core writes it.
+    public static func noteName(_ key: Int) -> String {
+        let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+        let note = max(key, 0)
+        return "\(names[note % 12])\(note / 12 - 1)"
+    }
+
+    /// The handle a press at (x, y) grabs, y measured from the top of the strip. Each part's band
+    /// ends are grabbed in the part's own lane (Part A the top one, Part B the one below); the split
+    /// marker is grabbed on the keys row below the lanes. So the marker never shadows Part A's High
+    /// and Part B's Low when they sit on the split. Within a lane the nearer end wins (the lower
+    /// one on a tie), and only when within `hitWidth / 2` of it. Hidden handles are not grabbed.
+    public static func hitTarget(x: Double, y: Double, width: Double, laneHeight: Double, hitWidth: Double,
+                                 mode: EG13Mode, ranges: [ClosedRange<Int>], split: Int) -> Handle? {
+        guard y >= 0, laneHeight > 0 else { return nil }
+        let reach = hitWidth / 2
+        let lane = Int(y / laneHeight)
+        if lane < ranges.count {
+            guard showsBand(part: lane, mode: mode) else { return nil }
+            let lowX = Self.x(forKey: ranges[lane].lowerBound, width: width)
+            let highX = trailingX(forKey: ranges[lane].upperBound, width: width)
+            let lowDistance = abs(x - lowX), highDistance = abs(x - highX)
+            if lowDistance <= reach, lowDistance <= highDistance { return .low(part: lane) }
+            if highDistance <= reach { return .high(part: lane) }
+            return nil
+        }
+        guard showsSplitMarker(mode: mode) else { return nil }
+        return abs(x - Self.x(forKey: split, width: width)) <= reach ? .split : nil
+    }
+
+    /// Part B's band shows only when Part B can sound: not in Single.
+    public static func showsBand(part: Int, mode: EG13Mode) -> Bool { part == 0 || mode != .single }
+
+    /// The split marker shows only in Split mode.
+    public static func showsSplitMarker(mode: EG13Mode) -> Bool { mode == .split }
+
+    /// The handle's VoiceOver label, "Part A lowest key, C2".
+    public static func accessibilityLabel(_ handle: Handle, key: Int) -> String {
+        let name = noteName(key)
+        switch handle {
+        case .low(let part): return "\(EG13PartName.name(part)) lowest key, \(name)"
+        case .high(let part): return "\(EG13PartName.name(part)) highest key, \(name)"
+        case .split: return "Split note, \(name)"
+        }
     }
 }

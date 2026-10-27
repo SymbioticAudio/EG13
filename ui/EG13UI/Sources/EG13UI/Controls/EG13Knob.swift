@@ -1,10 +1,7 @@
+import AppKit
+import EG13CBridge
 import SwiftUI
 import SymbioticTokens
-
-/// Turns modulation features on in M4 (motion chips open "Modulate from…").
-public enum EG13Features {
-    public static let modulation = false
-}
 
 /// A knob for one parameter: EG13KnobShape for drawing, EG13ControlInteraction for
 /// behaviour, VoiceOver and keyboard through real SwiftUI accessibility modifiers.
@@ -12,24 +9,22 @@ public struct EG13Knob: View {
     let param: EG13Param
     let style: EG13KnobStyle
     let size: EG13KnobSize
-    let showsMotionChip: Bool
     let layout: EG13KnobLayout
 
     /// - Parameter layout: the label other than the parameter's name, the width the label and the
     ///   value text may take (longer text wraps), and the box the knob is centred in. The knob's
     ///   drawing is the approved design in every case.
-    public init(param: EG13Param, style: EG13KnobStyle, size: EG13KnobSize, showsMotionChip: Bool = false,
+    public init(param: EG13Param, style: EG13KnobStyle, size: EG13KnobSize,
                 layout: EG13KnobLayout = EG13KnobLayout()) {
         self.param = param
         self.style = style
         self.size = size
-        self.showsMotionChip = showsMotionChip
         self.layout = layout
     }
 
     public var body: some View {
         // A new param is a new control: its interaction state must not carry over.
-        EG13KnobBody(param: param, style: style, size: size, showsMotionChip: showsMotionChip, layout: layout)
+        EG13KnobBody(param: param, style: style, size: size, layout: layout)
             .id(ObjectIdentifier(param))
     }
 
@@ -43,8 +38,11 @@ public struct EG13KnobLayout: Equatable, Sendable {
     public var label: String?
     public var labelWidth: CGFloat?
     public var boxHeight: CGFloat?
+    /// Only the knob: no label and no value text (the matrix rows show the value beside it).
+    public var compact: Bool
 
-    public init(label: String? = nil, labelWidth: CGFloat? = nil, boxHeight: CGFloat? = nil) {
+    public init(label: String? = nil, labelWidth: CGFloat? = nil, boxHeight: CGFloat? = nil, compact: Bool = false) {
+        self.compact = compact
         self.label = label
         self.labelWidth = labelWidth
         self.boxHeight = boxHeight
@@ -55,18 +53,18 @@ private struct EG13KnobBody: View {
     let param: EG13Param
     let style: EG13KnobStyle
     let size: EG13KnobSize
-    let showsMotionChip: Bool
     let layout: EG13KnobLayout
     @State private var interaction: EG13ControlInteraction
     @FocusState private var isFocused: Bool
+    @State private var showsRoutes = false
     @Environment(\.symbioticTheme) private var theme  // typography and spacing only
     @Environment(\.eg13ControlColors) private var colors
+    @Environment(\.eg13OpenRoute) private var openRoute
 
-    init(param: EG13Param, style: EG13KnobStyle, size: EG13KnobSize, showsMotionChip: Bool, layout: EG13KnobLayout) {
+    init(param: EG13Param, style: EG13KnobStyle, size: EG13KnobSize, layout: EG13KnobLayout) {
         self.param = param
         self.style = style
         self.size = size
-        self.showsMotionChip = showsMotionChip
         self.layout = layout
         _interaction = State(initialValue: param.makeInteraction())
     }
@@ -76,22 +74,81 @@ private struct EG13KnobBody: View {
         VStack(spacing: theme.spacing.xxs) {
             VStack(spacing: theme.spacing.xxs) {
                 EG13KnobShape(normalized: param.normalized, origin: param.isBipolar ? 0.5 : 0,
-                              style: style, size: size, isFocused: isFocused)
+                              style: style, size: size, isFocused: isFocused,
+                              showsModulationMark: param.isRouted)
                     .frame(width: diameter, height: diameter)
-                    .eg13ControlInput($interaction)
+                    .eg13ControlInput($interaction, clickRect: markRect, onClickRect: markAction,
+                                    contextMenu: contextMenu)
+                    .overlay(alignment: .topLeading) { routesAnchor }
                     .frame(height: max(diameter, layout.boxHeight ?? diameter))
-                EG13ControlLabel(text: layout.label ?? EG13ParamLabels.short(param.name), style: style.label,
-                                 chip: style.accentInk, font: theme.type.caption.font, width: layout.labelWidth)
-                EG13ValueText(text: param.text, font: theme.type.caption.font, width: layout.labelWidth)
+                if !layout.compact {
+                    EG13ControlLabel(text: layout.label ?? EG13ParamLabels.short(param.name), style: style.label,
+                                     chip: style.accentInk, font: theme.type.caption.font, width: layout.labelWidth)
+                    EG13ValueText(text: param.text, font: theme.type.caption.font, width: layout.labelWidth)
+                }
             }
             .modifier(EG13ControlAccess(interaction: $interaction, label: param.accessibilityLabel,
                                         valueText: param.text, focus: $isFocused))
+            .modifier(EG13RoutesAction(isRouted: param.isRouted, open: { showsRoutes = true }))
             .help("\(param.name): \(param.text)")
-            if showsMotionChip {
-                EG13MotionChip(paramName: param.name)
-            }
         }
         .onChange(of: param.descriptor) { _, _ in interaction.cancel(); interaction = param.makeInteraction() }
+    }
+}
+
+extension EG13KnobBody {
+    /// Right-click or ctrl-click: Modulate from and Remove modulation. Built when the menu opens.
+    var contextMenu: (() -> NSMenu?)? {
+        let synth = param.owner, id = param.id
+        guard synth.canModulate(id), let part = EG13ParamID.partIndex(of: id) else { return nil }
+        return {
+            synth.contextMenu(for: id)?.makeMenu(
+                modulate: { synth.modulate(id: id, from: $0) },
+                remove: { synth.clearRoute(part: part, route: $0) })
+        }
+    }
+
+    /// The mark's click area, only while the knob is modulated.
+    var markRect: CGRect? {
+        guard param.isRouted else { return nil }
+        let d = EG13Knob.diameter(size)
+        return EG13ModMarkGeometry.hitRect(d: d, capRadius: EG13ModMarkGeometry.capRadius(d: d, style: style, size: size),
+                                           normalized: param.normalized)
+    }
+
+    var markAction: (() -> Void)? {
+        param.isRouted ? { showsRoutes.toggle() } : nil
+    }
+
+    /// An invisible box over the mark, the popover's anchor. It takes no clicks: the knob's surface does.
+    @ViewBuilder var routesAnchor: some View {
+        if let rect = markRect, let part = EG13ParamID.partIndex(of: param.id) {
+            Color.clear
+                .frame(width: rect.width, height: rect.height)
+                .allowsHitTesting(false)
+                .padding(.leading, rect.minX)
+                .padding(.top, rect.minY)
+                .popover(isPresented: $showsRoutes, arrowEdge: .bottom) {
+                    EG13MotionList(synth: param.owner, kind: EG13_SLOT_KIND_SOURCE, part: part, parameter: param.id) { route in
+                        showsRoutes = false
+                        openRoute(route)
+                    }
+                }
+        }
+    }
+}
+
+/// VoiceOver and keyboard route to the mark's popover: a custom action on a modulated knob.
+private struct EG13RoutesAction: ViewModifier {
+    let isRouted: Bool
+    let open: () -> Void
+
+    func body(content: Content) -> some View {
+        if isRouted {
+            content.accessibilityAction(named: "Show modulation routes", open)
+        } else {
+            content
+        }
     }
 }
 
@@ -120,26 +177,14 @@ struct EG13ValueText: View {
     }
 }
 
-/// The "MOTION" chip under a modulatable knob. Disabled until M4 builds the
-/// "Modulate from…" popover; it never shows routes that do not exist.
-struct EG13MotionChip: View {
-    let paramName: String
-    @Environment(\.eg13ControlColors) private var colors
-    @Environment(\.symbioticTheme) private var theme  // typography and spacing only
+private struct EG13OpenRouteKey: EnvironmentKey {
+    nonisolated(unsafe) static let defaultValue: (Int) -> Void = { _ in }
+}
 
-    var body: some View {
-        Button {} label: {
-            Text("MOTION")
-                .font(theme.type.caption.font)
-                .padding(.horizontal, theme.spacing.xs)
-                .frame(height: EG13Layout.motionChipHeight)
-                .overlay(Capsule().stroke(colors.tick, lineWidth: 0.6))
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(colors.tick)
-        .disabled(!EG13Features.modulation)
-        .help("Modulation arrives in a later version")
-        .accessibilityLabel("Modulate \(paramName)")
-        .accessibilityHint("Not available yet")
+extension EnvironmentValues {
+    /// Opens a route in the matrix editor (a Motion row or the knob popover was chosen).
+    var eg13OpenRoute: (Int) -> Void {
+        get { self[EG13OpenRouteKey.self] }
+        set { self[EG13OpenRouteKey.self] = newValue }
     }
 }

@@ -22,6 +22,7 @@ add_library(eg13_nlohmann INTERFACE)
 target_include_directories(eg13_nlohmann SYSTEM INTERFACE ${CMAKE_SOURCE_DIR}/third_party/nlohmann)
 
 add_subdirectory(core)
+add_subdirectory(tools/ui_tables)
 
 # The UI bridge (edit queue to the synth and the host) has no Apple code, so it builds and is
 # tested on Linux too. The CLAP headers are all it needs from the plugin side.
@@ -31,10 +32,20 @@ target_include_directories(eg13_ui_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plu
 target_link_libraries(eg13_ui_bridge PUBLIC clap eg13_core)
 target_compile_options(eg13_ui_bridge PRIVATE -Wall -Wextra)
 
+# Version text for the About screen: the project version and the git short hash, fixed at configure
+# time ("unknown" outside git).
+execute_process(COMMAND git rev-parse --short HEAD WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE EG13_GIT_HASH OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET RESULT_VARIABLE EG13_GIT_RESULT)
+if(NOT EG13_GIT_RESULT EQUAL 0 OR EG13_GIT_HASH STREQUAL "")
+  set(EG13_GIT_HASH "unknown")
+endif()
+configure_file(cmake/eg13_version.h.in ${CMAKE_BINARY_DIR}/generated/eg13_version.h @ONLY)
+
 # The C function table the editors use (core-api/include is the pure-C public header).
 add_library(eg13_core_api STATIC plugin/src/core_api.cpp)
 target_include_directories(eg13_core_api PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin/src
   ${CMAKE_CURRENT_SOURCE_DIR}/core-api/include)
+target_include_directories(eg13_core_api PRIVATE ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(eg13_core_api PUBLIC eg13_ui_bridge eg13_core)
 target_compile_options(eg13_core_api PRIVATE -Wall -Wextra)
 
@@ -57,6 +68,15 @@ if(EG13_BUILD_TESTS)
   enable_testing()
   add_subdirectory(third_party/Catch2)
   add_subdirectory(tests)
+
+  # The editor's engine tables (names and value strings) are generated from the core and committed;
+  # this fails when an engine changed without regenerating them.
+  add_dependencies(eg13_tests eg13_ui_tables)
+  add_test(NAME ui_tables_up_to_date
+    COMMAND ${CMAKE_COMMAND} -DTOOL=$<TARGET_FILE:eg13_ui_tables>
+      -DGOLDEN=${CMAKE_SOURCE_DIR}/ui/EG13UI/Sources/EG13UIFixtures/core-tables.json
+      -DOUT=${CMAKE_CURRENT_BINARY_DIR}/ui_tables_up_to_date.json
+      -P ${CMAKE_SOURCE_DIR}/tools/ui_tables/check_ui_tables.cmake)
 endif()
 
 if(EG13_BUILD_PLUGIN)

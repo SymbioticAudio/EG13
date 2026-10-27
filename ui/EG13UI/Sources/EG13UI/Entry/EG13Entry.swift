@@ -44,6 +44,14 @@ public func eg13UICreate(_ api: UnsafePointer<EG13CoreAPI>?, _ kind: Int32, _ zo
     return UnsafeMutableRawPointer(bitPattern: bits)
 }
 
+@_cdecl("eg13_ui_default_zoom")
+public func eg13UIDefaultZoom() -> Double {
+    onMain {
+        EG13SettingsStore.shared.reload()
+        return EG13SettingsStore.shared.settings.defaultZoom
+    }
+}
+
 @_cdecl("eg13_ui_destroy")
 public func eg13UIDestroy(_ handle: UnsafeMutableRawPointer?) {
     guard let handle else { return }

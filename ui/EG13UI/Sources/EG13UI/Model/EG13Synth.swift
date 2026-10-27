@@ -5,7 +5,8 @@ import QuartzCore
 /// The editor's model of one plugin instance: every host parameter, the part shown, meters
 /// and the engine slots. The single source of truth the views read, over the core API.
 ///
-/// `tick()` runs at display rate (30 Hz, driven by a Timer the editor owns). It copies the
+/// `tick()` runs at display rate (30 Hz, driven by a Timer the editor owns); the modulation fields
+/// (marks, Motion lists, traces) refresh on every second tick, 15 Hz (owner, gate 6a round 2). It copies the
 /// snapshot into the model and never calls begin, edit or end: only the user's gestures
 /// do. While a gesture is open on a parameter, `value(_:)` returns the user's last edit for
 /// it, not the snapshot's; the override ends with the gesture, whichever way it ends.
@@ -22,6 +23,12 @@ public final class EG13Synth {
                                                          defaultValue: 0)
 
     public let kind: Kind
+    /// The app-wide settings (default window size, modulation display).
+    public let settings: EG13SettingsStore
+    /// Whether the modulation visuals (marks, MOTION buttons, traces) show and refresh.
+    public var showsModulation: Bool { settings.settings.modulationDisplay }
+    /// Modulation refreshes run so far (tests check that none run with the display off).
+    @ObservationIgnored private(set) var modulationRefreshCount = 0
     public private(set) var params: [EG13Param] = []
     /// Meter levels after ballistics, linear: [part][left, right]. Instant attack, 300 ms decay.
     public private(set) var meters: [[Float]] = [[0, 0], [0, 0]]
@@ -32,6 +39,14 @@ public final class EG13Synth {
     public var selectedPart = 0
     /// Patch name; presets arrive in M7.
     public let patchName = "Init"
+
+    /// The matrix, per part: codes and names as the core reports them (amounts are read live from
+    /// the amount parameters). Reloaded on an engine generation change and after `setRoute`.
+    public private(set) var routeTable: [[EG13ModRoute]] = Array(
+        repeating: Array(repeating: EG13ModRoute(), count: EG13ParamID.routeCount), count: EG13ParamID.parts)
+    /// The matrix pickers' choices per part: the codes the part's current engines name.
+    private var sourceCodes: [[EG13MatrixCode]] = Array(repeating: [], count: EG13ParamID.parts)
+    private var destinationCodes: [[EG13MatrixCode]] = Array(repeating: [], count: EG13ParamID.parts)
 
     private var descriptors: [EG13ParamDescriptor] = []
     private var names: [String] = []
@@ -47,14 +62,35 @@ public final class EG13Synth {
     @ObservationIgnored private var heldIDs: Set<UInt32> = []
     @ObservationIgnored private var openGestures: Set<UInt32> = []
     @ObservationIgnored private var engineGeneration: UInt32 = 0
+    /// The destination code of each parameter that is a P (never changes), and the parameter of
+    /// each destination, per part.
+    @ObservationIgnored var destinationByID: [UInt32: UInt16] = [:]
+    @ObservationIgnored private var paramByDestination: [[UInt16: EG13Param]] = Array(
+        repeating: [:], count: EG13ParamID.parts)
+    /// The parameters the last tick showed as modulated.
+    @ObservationIgnored private var modulatedIDs: Set<UInt32> = []
+    /// Whether the next `tick()` refreshes the modulation fields (tests align on it).
+    var nextTickRefreshesModulation: Bool { tickCount % 2 == 0 }
+    /// Ticks run so far; the modulation fields refresh on the odd ones (and whenever the engines changed).
+    @ObservationIgnored private var tickCount = 0
+    /// The trace ranges of the tick between two modulation ticks: the core resets its range on every
+    /// read, so the skipped tick's range is folded into the next frame, [part][slot][output].
+    @ObservationIgnored private var pendingMin: [[[Float]]] = []
+    @ObservationIgnored private var pendingMax: [[[Float]]] = []
+    @ObservationIgnored private var traces: [[EG13ModTrace]] = (0..<EG13ParamID.parts).map { _ in
+        (0..<Int(EG13_NUM_MOD_SLOTS)).map { _ in EG13ModTrace() }
+    }
     @ObservationIgnored private var ballistics = [[EG13MeterBallistics]](
         repeating: [EG13MeterBallistics(), EG13MeterBallistics()], count: EG13ParamID.parts)
     @ObservationIgnored private let clock: () -> Double
     @ObservationIgnored private var lastTick: Double
 
     /// clock: seconds, monotonic. Tests pass their own so meter timing needs no sleeps.
-    public init(core: any EG13Core, kind: Kind, clock: @escaping () -> Double = { CACurrentMediaTime() }) {
+    /// settings: the app-wide settings; the default keeps them in memory, the editor passes the shared store.
+    public init(core: any EG13Core, kind: Kind, settings: EG13SettingsStore = EG13SettingsStore(url: nil),
+                clock: @escaping () -> Double = { CACurrentMediaTime() }) {
         self.core = core
+        self.settings = settings
         self.kind = kind
         self.clock = clock
         lastTick = clock()
@@ -76,6 +112,13 @@ public final class EG13Synth {
         paramByID = Dictionary(params.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         rebuildSlots()
         activeVoices = frame.activeVoices
+        for param in params {
+            let destination = core.destination(forParam: param.id)
+            guard destination != 0, let part = EG13ParamID.partIndex(of: param.id) else { continue }
+            destinationByID[param.id] = destination
+            paramByDestination[part][destination] = param
+        }
+        reloadRoutes()
     }
 
     // MARK: Values
@@ -163,16 +206,6 @@ public final class EG13Synth {
 
     public var mode: EG13Mode { EG13Mode(rawValue: Int(masterParam(.mode)?.value ?? 0)) ?? .single }
 
-    public var keyMap: EG13KeyMap {
-        let ranges = (0..<EG13ParamID.parts).map { part -> ClosedRange<Int> in
-            let low = Int(partParam(part, .keyLow)?.value ?? 0)
-            let high = Int(partParam(part, .keyHigh)?.value ?? 127)
-            return min(low, high)...max(low, high)
-        }
-        return EG13KeyMap(mode: mode, splitNote: Int(masterParam(.splitNote)?.value ?? 60),
-                          keyRanges: ranges, selectedPart: selectedPart)
-    }
-
     // MARK: Display rate
 
     /// One display frame: reads the snapshot, rebuilds descriptors only if the engine
@@ -186,6 +219,7 @@ public final class EG13Synth {
         if regenerated {
             engineGeneration = frame.engineGeneration
             reloadDescriptors()
+            reloadRoutes()
         }
         // Only a parameter whose value changed is written, so only its controls are invalidated.
         for index in 0..<min(paramByIndex.count, frame.values.count) {
@@ -193,6 +227,17 @@ public final class EG13Synth {
         }
         if regenerated { for param in params { param.refreshText() } }
         expirePending()
+        tickCount += 1
+        if showsModulation {
+            let modulationTick = regenerated || tickCount % 2 == 1
+            if modulationTick {
+                modulationRefreshCount += 1
+                updateModulation()
+            }
+            updateTraces(frame, push: modulationTick)
+        } else {
+            clearModulation()
+        }
         if frame.activeVoices != activeVoices { activeVoices = frame.activeVoices }
         updateMeters(frame.partPeaks, dt: dt)
     }
@@ -258,9 +303,171 @@ public final class EG13Synth {
         slots = built
     }
 
+    /// The core's version text for the About tab, "0.6.0 (abc1234)".
+    public func versionText() -> String { core.version() }
+
     /// Asks the host for an editor window of zoom times the base size.
     public func requestZoom(_ zoom: Double) {
         core.requestResize(width: UInt32((EG13Layout.baseSize.width * zoom).rounded()),
                            height: UInt32((EG13Layout.baseSize.height * zoom).rounded()))
+    }
+
+    // MARK: Matrix
+
+    /// The part's 12 routes with their amounts as the controls show them. Reads the routes and the
+    /// amount parameters, so a view that calls it follows both.
+    public func routes(part: Int) -> [EG13ModRoute] {
+        guard routeTable.indices.contains(part) else { return [] }
+        return routeTable[part].enumerated().map { index, route in
+            var live = route
+            if let amount = paramByID[EG13ParamID.routeAmount(part, index)] { live.amount = amount.value }
+            return live
+        }
+    }
+
+    /// The routes that modulate a parameter: a source and the parameter's destination, both named
+    /// by the part's current engines. Routes into a P the engine hides (and routes from a source it
+    /// hides) are left out, so no mark or Motion row shows for them.
+    public func routes(into id: UInt32, part: Int) -> [EG13ModRoute] {
+        guard let destination = destinationByID[id] else { return [] }
+        return routes(part: part).filter {
+            $0.isActive && $0.destination == destination && !$0.destinationHidden && !$0.sourceHidden
+        }
+    }
+
+    /// The first route with no source, destination or via, or nil when the matrix is full.
+    public func firstFreeRoute(part: Int) -> Int? {
+        guard routeTable.indices.contains(part) else { return nil }
+        return routeTable[part].firstIndex { $0.isFree }
+    }
+
+    /// Whether a parameter can be modulated: it has a destination code.
+    public func canModulate(_ id: UInt32) -> Bool { destinationByID[id] != nil }
+
+    /// Routes `source` into a parameter through the first free route at +25 %. False, changing
+    /// nothing, when the parameter has no destination or the matrix is full.
+    @discardableResult
+    public func modulate(id: UInt32, from source: UInt16) -> Bool {
+        guard let part = EG13ParamID.partIndex(of: id), let destination = destinationByID[id],
+              let route = firstFreeRoute(part: part),
+              setRoute(part: part, index: route, source: source, destination: destination, via: 0)
+        else { return false }
+        edit(EG13ParamID.routeAmount(part, route), Self.newRouteAmount)
+        return true
+    }
+
+    /// A route made by `modulate`.
+    public static let newRouteAmount = 0.25
+
+    /// Sets the fields given; a field left out keeps the route's code. A kept field that the part's
+    /// engines hide is sent as 0, so the core accepts the change (it rejects a hidden code). False
+    /// when the core rejects a code. Reloads the routes either way.
+    @discardableResult
+    public func setRoute(part: Int, index: Int, source: UInt16? = nil, destination: UInt16? = nil,
+                         via: UInt16? = nil) -> Bool {
+        guard routeTable.indices.contains(part), routeTable[part].indices.contains(index) else { return false }
+        let current = routeTable[part][index]
+        let ok = core.setRoute(part: part, index: index,
+                               source: source ?? (current.sourceHidden ? 0 : current.source),
+                               destination: destination ?? (current.destinationHidden ? 0 : current.destination),
+                               via: via ?? (current.viaHidden ? 0 : current.via))
+        reloadRoutes()
+        return ok
+    }
+
+    /// Frees the route and sets its amount to 0.
+    public func removeRoute(part: Int, index: Int) {
+        guard setRoute(part: part, index: index, source: 0, destination: 0, via: 0) else { return }
+        if let amount = paramByID[EG13ParamID.routeAmount(part, index)], amount.value != 0 {
+            edit(amount.id, 0)
+        }
+    }
+
+    /// The sources the part's engines name, for the matrix pickers (code order).
+    public func sources(part: Int) -> [(code: UInt16, name: String)] {
+        sourceCodes.indices.contains(part) ? sourceCodes[part].map { (code: $0.code, name: $0.name) } : []
+    }
+
+    public func destinations(part: Int) -> [(code: UInt16, name: String)] {
+        destinationCodes.indices.contains(part) ? destinationCodes[part].map { (code: $0.code, name: $0.name) } : []
+    }
+
+    /// The last 30 modulation frames (2 s at 15 Hz) of a mod slot's outputs (slot 0...3).
+    public func modTrace(part: Int, slot: Int) -> EG13ModTrace {
+        guard traces.indices.contains(part), traces[part].indices.contains(slot) else { return EG13ModTrace() }
+        return traces[part][slot]
+    }
+
+    /// Re-reads the routes and the pickers' lists. Writes only what changed.
+    private func reloadRoutes() {
+        var table = routeTable
+        var sourceList = sourceCodes, destinationList = destinationCodes
+        for part in 0..<EG13ParamID.parts {
+            table[part] = (0..<EG13ParamID.routeCount).map { core.route(part: part, index: $0) }
+            sourceList[part] = (1..<Int(EG13_NUM_SOURCES)).compactMap { code in
+                core.sourceName(part: part, code: UInt16(code)).map { EG13MatrixCode(code: UInt16(code), name: $0) }
+            }
+            destinationList[part] = (1..<Int(EG13_NUM_DESTINATIONS)).compactMap { code in
+                core.destinationName(part: part, code: UInt16(code)).map { EG13MatrixCode(code: UInt16(code), name: $0) }
+            }
+        }
+        if table != routeTable { routeTable = table }
+        if sourceList != sourceCodes { sourceCodes = sourceList }
+        if destinationList != destinationCodes { destinationCodes = destinationList }
+    }
+
+    /// The display is off: drops the marks once, and the pending trace ranges, so switching it on
+    /// starts clean.
+    private func clearModulation() {
+        if !modulatedIDs.isEmpty {
+            for id in modulatedIDs { paramByID[id]?.setRouted(false) }
+            modulatedIDs = []
+        }
+        if !pendingMin.isEmpty { pendingMin = []; pendingMax = [] }
+        for part in traces { for trace in part { trace.reset() } }
+    }
+
+    /// Each modulation tick: marks the parameters a visible route targets, and clears the ones that
+    /// stopped being targets. Each is written only when it changes.
+    private func updateModulation() {
+        var targets = Set<UInt32>()
+        for part in 0..<EG13ParamID.parts {
+            for route in routeTable[part] where route.isActive && !route.destinationHidden && !route.sourceHidden {
+                if let param = paramByDestination[part][route.destination] { targets.insert(param.id) }
+            }
+        }
+        for id in targets { paramByID[id]?.setRouted(true) }
+        for id in modulatedIDs.subtracting(targets) { paramByID[id]?.setRouted(false) }
+        modulatedIDs = targets
+    }
+
+    /// Folds this tick's trace ranges into the pending ones and, on a modulation tick, pushes them as
+    /// one trace frame.
+    private func updateTraces(_ frame: EG13DisplayFrame, push: Bool) {
+        let slots = Int(EG13_NUM_MOD_SLOTS), outputs = EG13ModTrace.outputCount
+        if pendingMin.isEmpty { resetPending() }
+        for part in 0..<EG13ParamID.parts {
+            for slot in 0..<slots {
+                for output in 0..<outputs {
+                    if frame.modOutMin.indices.contains(part), frame.modOutMin[part].indices.contains(slot),
+                       frame.modOutMin[part][slot].indices.contains(output) {
+                        pendingMin[part][slot][output] = min(pendingMin[part][slot][output], frame.modOutMin[part][slot][output])
+                    }
+                    if frame.modOutMax.indices.contains(part), frame.modOutMax[part].indices.contains(slot),
+                       frame.modOutMax[part][slot].indices.contains(output) {
+                        pendingMax[part][slot][output] = max(pendingMax[part][slot][output], frame.modOutMax[part][slot][output])
+                    }
+                }
+                if push { traces[part][slot].push(min: pendingMin[part][slot], max: pendingMax[part][slot]) }
+            }
+        }
+        if push { resetPending() }
+    }
+
+    private func resetPending() {
+        let slots = Int(EG13_NUM_MOD_SLOTS), outputs = EG13ModTrace.outputCount
+        let low = [Float](repeating: .infinity, count: outputs), high = [Float](repeating: -.infinity, count: outputs)
+        pendingMin = Array(repeating: Array(repeating: low, count: slots), count: EG13ParamID.parts)
+        pendingMax = Array(repeating: Array(repeating: high, count: slots), count: EG13ParamID.parts)
     }
 }

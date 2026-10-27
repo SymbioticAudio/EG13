@@ -10,6 +10,7 @@ struct EG13LayoutTests {
     let synth: EG13Synth
 
     init() { synth = EG13Synth(core: core, kind: .instrument) }
+    init(settings: EG13SettingsStore) { synth = EG13Synth(core: core, kind: .instrument, settings: settings) }
 
     static let slotKinds: [EG13SlotKind] = [
         EG13_SLOT_KIND_SOURCE, EG13_SLOT_KIND_FILTER, EG13_SLOT_KIND_SHAPER, EG13_SLOT_KIND_MOD1,
@@ -37,6 +38,29 @@ struct EG13LayoutTests {
         #expect(controls.count == Set(controls).count, "a control appears twice \(note)")
         #expect(Set(controls) == expected,
                 "missing \(expected.subtracting(controls).sorted()) extra \(Set(controls).subtracting(expected).sorted()) \(note)")
+        // The matrix: each route's amount is a control and its source, via and destination are menus.
+        let menus = synth.routeMenus(part: part)
+        #expect(menus.count == 3 * EG13ParamID.routeCount && Set(menus.map(\.id)).count == menus.count, "route menus \(note)")
+        let amounts = (0..<EG13ParamID.routeCount).map { EG13ParamID.routeAmount(part, $0) }
+        #expect(amounts.allSatisfy { id in controls.filter { $0 == id }.count == 1 }, "route amounts once \(note)")
+    }
+
+    @Test("Every parameter is reachable exactly once with the modulation display off, too")
+    func reachableWithModulationOff() {
+        let store = EG13SettingsStore(url: nil)
+        store.update { $0.modulationDisplay = false }
+        let off = EG13LayoutTests(settings: store)
+        for part in 0..<EG13ParamID.parts {
+            for kind in Self.slotKinds {
+                let count = off.core.slotEngines[Int(kind.rawValue)]!.count
+                for engine in 0..<count {
+                    off.core.select(kind, engine: engine, part: part)
+                    off.synth.tick()
+                    off.assertReachable(part: part, "display off, slot \(kind.rawValue) engine \(engine)")
+                }
+                off.core.select(kind, engine: 0, part: part)
+            }
+        }
     }
 
     @Test("The fake exposes all 158 per-part and 7 master parameters")

@@ -62,11 +62,60 @@ public final class EG13CoreAPIClient: EG13Core {
         let values = withUnsafeBytes(of: snapshot.values) { Array($0.bindMemory(to: Double.self).prefix(count)) }
         let peaks = snapshot.part_peak
         let voices = snapshot.active_voices
+        let parts = Int(EG13_NUM_PARTS), destinations = Int(EG13_NUM_DESTINATIONS)
+        let slots = Int(EG13_NUM_MOD_SLOTS), outputs = Int(EG13_MAX_MOD_OUTPUTS)
+        let modValues: [[Float]] = withUnsafeBytes(of: snapshot.mod_value) { raw in
+            let all = raw.bindMemory(to: Float.self)
+            return (0..<parts).map { Array(all[($0 * destinations)..<(($0 + 1) * destinations)]) }
+        }
+        func outputs3(_ raw: UnsafeRawBufferPointer) -> [[[Float]]] {
+            let all = raw.bindMemory(to: Float.self)
+            return (0..<parts).map { part in
+                (0..<slots).map { slot in
+                    let start = (part * slots + slot) * outputs
+                    return Array(all[start..<(start + outputs)])
+                }
+            }
+        }
+        let outMin = withUnsafeBytes(of: snapshot.mod_out_min, outputs3)
+        let outMax = withUnsafeBytes(of: snapshot.mod_out_max, outputs3)
         return EG13DisplayFrame(values: values,
                                 partPeaks: [[peaks.0.0, peaks.0.1], [peaks.1.0, peaks.1.1]],
                                 activeVoices: [Int(voices.0), Int(voices.1)],
-                                engineGeneration: snapshot.engine_generation)
+                                engineGeneration: snapshot.engine_generation,
+                                modValues: modValues, modOutMin: outMin, modOutMax: outMax)
     }
+
+    public func route(part: Int, index: Int) -> EG13ModRoute {
+        var raw = EG13CBridge.EG13Route()
+        guard part >= 0, index >= 0,
+              api.pointee.route_get(context, UInt32(part), UInt32(index), &raw) else { return EG13ModRoute() }
+        return makeRoute(part: part, source: raw.source, destination: raw.destination, via: raw.via,
+                         amount: raw.amount)
+    }
+
+    public func setRoute(part: Int, index: Int, source: UInt16, destination: UInt16, via: UInt16) -> Bool {
+        guard part >= 0, index >= 0 else { return false }
+        return api.pointee.route_set(context, UInt32(part), UInt32(index), source, destination, via)
+    }
+
+    public func sourceName(part: Int, code: UInt16) -> String? {
+        guard part >= 0 else { return nil }
+        var found = false
+        let text = string { found = api.pointee.source_name(context, UInt32(part), code, $0, $1); return found }
+        return found ? text : nil
+    }
+
+    public func destinationName(part: Int, code: UInt16) -> String? {
+        guard part >= 0 else { return nil }
+        var found = false
+        let text = string { found = api.pointee.destination_name(context, UInt32(part), code, $0, $1); return found }
+        return found ? text : nil
+    }
+
+    public func destination(forParam id: UInt32) -> UInt16 { api.pointee.destination_for_param(context, id) }
+
+    public func version() -> String { string { api.pointee.version(context, $0, $1) } }
 
     public func requestResize(width: UInt32, height: UInt32) {
         api.pointee.request_resize(context, width, height)

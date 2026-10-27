@@ -133,6 +133,82 @@ struct EG13SweepArc: Shape {
     }
 }
 
+/// The modulation mark: a generic wave, one and a half sine cycles, stroked, small, in the top or
+/// bottom third of the cap, whichever the pointer is not in, so the two never cross (owner, round 4).
+/// It moves only when the value takes the pointer across horizontal; it is never animated, shows no
+/// amount and is never the source's own shape.
+enum EG13ModMarkGeometry {
+    /// The mark's width as a part of the cap's diameter.
+    static let widthRatio: CGFloat = 0.45
+    /// Its height (peak to trough) as a part of its width.
+    static let heightRatio: CGFloat = 0.3
+    /// Sine cycles across the width.
+    static let cycles = 1.5
+    /// Its centre's distance from the cap's centre, as a part of the cap's radius.
+    static let centreOffset: CGFloat = 0.55
+    /// The least stroke width, in points, at 100 % (1.5 pt at 75 %).
+    static let minStroke: CGFloat = 2
+    /// The size of the click area, in points, at 100 %.
+    static let minHit = CGSize(width: 14, height: 10)
+
+    /// Whether the pointer is in the upper half of the cap (above horizontal), from its actual angle,
+    /// so the wave sits in the bottom third. Horizontal counts as upper.
+    static func pointerIsUp(_ normalized: Double) -> Bool {
+        cos(EG13Sweep.rotation(normalized).radians) >= -1e-9
+    }
+
+    /// The mark's size (the curve, before its stroke is added).
+    static func size(capRadius: CGFloat) -> CGSize {
+        let width = capRadius * 2 * widthRatio
+        return CGSize(width: width, height: width * heightRatio)
+    }
+
+    static func strokeWidth(capRadius: CGFloat) -> CGFloat { max(minStroke, capRadius * 0.12) }
+
+    /// The mark's centre from the knob's centre, y down: below it while the pointer is up, else above.
+    static func centre(capRadius: CGFloat, normalized: Double) -> CGPoint {
+        CGPoint(x: 0, y: capRadius * centreOffset * (pointerIsUp(normalized) ? 1 : -1))
+    }
+
+    /// The click area in a knob `d` across, from its top left.
+    static func hitRect(d: CGFloat, capRadius: CGFloat, normalized: Double) -> CGRect {
+        let width = minHit.width, height = minHit.height
+        let c = centre(capRadius: capRadius, normalized: normalized)
+        return CGRect(x: d / 2 + c.x - width / 2, y: d / 2 + c.y - height / 2, width: width, height: height)
+    }
+
+    /// The cap's radius in a knob drawn `d` across (EG13KnobShape's own arithmetic).
+    static func capRadius(d: CGFloat, style: EG13KnobStyle, size: EG13KnobSize) -> CGFloat {
+        let tickCount = style.tickCount(for: size)
+        let ticks: CGFloat = tickCount > 1 ? d * 0.08 : 0
+        let ring: CGFloat = style.arc && style.arcPlacement == .outside ? d * 0.07 : 0
+        let skirt = d - 2 * (ticks + ring)
+        return skirt * EG13KnobStyle.capRatio(for: size) / 2
+    }
+
+    /// Dark on the white cap, white on pink, teal and black.
+    static func ink(_ style: EG13KnobStyle) -> Color {
+        style.cap == .white ? Color(red: 0.2, green: 0.2, blue: 0.2) : .white
+    }
+}
+
+/// A sine across its rect, from the left edge to the right, `cycles` cycles long.
+struct EG13SineCycle: Shape {
+    var cycles = EG13ModMarkGeometry.cycles
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let steps = 32
+        for i in 0...steps {
+            let t = Double(i) / Double(steps)
+            let point = CGPoint(x: rect.minX + rect.width * CGFloat(t),
+                                y: rect.midY - rect.height / 2 * CGFloat(sin(2 * Double.pi * cycles * t)))
+            if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        return path
+    }
+}
+
 /// Tick marks around the sweep.
 struct EG13Ticks: Shape {
     var count: Int
@@ -165,10 +241,13 @@ public struct EG13KnobShape: View {
     let size: EG13KnobSize
     var isFocused = false
     var isEnabled = true
+    /// Draws the modulation mark: some route targets this knob. Static; it says nothing of amount.
+    var showsModulationMark = false
     @Environment(\.eg13ControlColors) private var colors
 
     public init(normalized: Double, origin: Double = 0, style: EG13KnobStyle, size: EG13KnobSize,
-                isFocused: Bool = false, isEnabled: Bool = true) {
+                isFocused: Bool = false, isEnabled: Bool = true, showsModulationMark: Bool = false) {
+        self.showsModulationMark = showsModulationMark
         self.normalized = normalized
         self.origin = origin
         self.style = style
@@ -210,6 +289,18 @@ public struct EG13KnobShape: View {
                         .stroke(style.accent, style: StrokeStyle(lineWidth: arcWidth, lineCap: .butt))
                 }
                 Circle().fill(capColor).frame(width: cap, height: cap)
+                if showsModulationMark {
+                    let capRadius = cap / 2
+                    let mark = EG13ModMarkGeometry.size(capRadius: capRadius)
+                    EG13SineCycle()
+                        .stroke(EG13ModMarkGeometry.ink(style),
+                                style: StrokeStyle(lineWidth: EG13ModMarkGeometry.strokeWidth(capRadius: capRadius),
+                                                   lineCap: .round, lineJoin: .round))
+                        .frame(width: mark.width, height: mark.height)
+                        .offset(y: EG13ModMarkGeometry.centre(capRadius: capRadius, normalized: n).y)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
                 Capsule()
                     .fill(style.cap == .black ? colors.indicatorOnDark : colors.indicator)
                     .frame(width: max(2, d * 0.07), height: cap * 0.42)

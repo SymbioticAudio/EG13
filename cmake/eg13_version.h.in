@@ -1,0 +1,3 @@
+#pragma once
+#define EG13_VERSION_STRING "@PROJECT_VERSION@"
+#define EG13_GIT_HASH "@EG13_GIT_HASH@"

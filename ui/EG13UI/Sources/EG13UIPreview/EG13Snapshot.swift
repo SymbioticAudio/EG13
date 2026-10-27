@@ -1,5 +1,6 @@
 import AppKit
 import EG13CBridge
+import EG13UIFixtures
 import SwiftUI
 import EG13UI
 import SymbioticTokens
@@ -36,7 +37,7 @@ enum EG13Snapshot {
 
     /// Writes `content` at its natural size on the window grey (contact sheets, whose height depends
     /// on how tall the cards are).
-    static func writeFitted<Content: View>(_ content: Content, to path: String) -> Bool {
+    static func writeFitted<Content: View>(_ content: Content, to path: String, scale: CGFloat = 1) -> Bool {
         let view = content
             .padding(16)
             .background(EG13Theme.theme.surface.window.color)
@@ -45,7 +46,7 @@ enum EG13Snapshot {
             .environment(\.eg13InteractiveControls, false)
             .environment(\.colorScheme, .light)
         let renderer = ImageRenderer(content: view)
-        renderer.scale = 1
+        renderer.scale = scale
         guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:])
         else {
@@ -76,6 +77,185 @@ enum EG13Snapshot {
             guard write(page, size: EG13ControlsPage.size, zoom: zoom, to: "\(directory)/controls-\(name).png") else { return 1 }
         }
         return 0
+    }
+
+    /// The modulation design set (gate 6a): both parts with modulation shown, Part A at 75 %, a mark
+    /// close-up at 200 %, card headers with the Motion button, and the Mods column with traces. The preview
+    /// core's animation is a function of its tick count, so the same run draws the same PNGs.
+    static func runModulation(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let core = EG13PreviewCore.modulationDemo()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        // 70 ticks: past the 30 frames a trace holds, and 0.33 s into an envelope cycle.
+        for _ in 0..<70 { synth.tick() }
+        let base = EG13Layout.baseSize
+        var ok = true
+        synth.selectedPart = 0
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-a.png") && ok
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 0.75, to: "\(directory)/editor-a-75.png") && ok
+        synth.selectedPart = 1
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-b.png") && ok
+        synth.selectedPart = 0
+        ok = writeFitted(EG13MarkSheet(synth: synth), to: "\(directory)/mark.png", scale: 2) && ok
+        ok = writeFitted(EG13MotionSheet(synth: synth), to: "\(directory)/motion-menu.png", scale: 2) && ok
+        ok = writeFitted(EG13ModCards(synth: synth, part: 0, width: EG13Layout.modCardWidth, columnHeight: 0),
+                         to: "\(directory)/traces.png", scale: 2) && ok
+        return ok ? 0 : 1
+    }
+
+    /// The matrix editor: the right column on MATRIX at 100 % (Part A, route 3 highlighted as after a
+    /// Motion row) and Part B, with the modulation demo's routes. For checking, not for the gate.
+    static func runMatrix(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let core = EG13PreviewCore.modulationDemo()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<70 { synth.tick() }
+        let base = EG13Layout.baseSize
+        var ok = true
+        for part in 0..<EG13ParamID.parts {
+            synth.selectedPart = part
+            let column = EG13RightColumnState()
+            column.open(route: 2)
+            ok = write(EG13RootView(synth: synth, column: column), size: base, zoom: 1,
+                       to: "\(directory)/matrix-\(part == 0 ? "a" : "b").png") && ok
+        }
+        return ok ? 0 : 1
+    }
+
+    /// The Part settings popover for both parts in Split mode, with ranges set so both bands and the
+    /// marker show. For checking, not for the gate.
+    static func runKeyRange(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let core = EG13PreviewCore.standard()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<4 { synth.tick() }
+        let values: [(UInt32, Double)] = [
+            (EG13ParamID.master(.mode), Double(EG13Mode.split.rawValue)),
+            (EG13ParamID.master(.splitNote), 60),
+            (EG13ParamID.part(0, .keyLow), 24), (EG13ParamID.part(0, .keyHigh), 71),
+            (EG13ParamID.part(1, .keyLow), 60), (EG13ParamID.part(1, .keyHigh), 108),
+        ]
+        for (id, value) in values {
+            synth.begin(id)
+            synth.edit(id, value)
+            synth.end(id)
+        }
+        return write(EG13PartSettingsSheet(synth: synth), size: EG13PartSettingsSheet.size, zoom: 2,
+                     to: "\(directory)/key-range.png") ? 0 : 1
+    }
+
+    /// Gate 9a, round 1 (M6b layout): the editor with MATRIX and with MODS shown, Part A at 75 %, the Part
+    /// settings popover in Split and in Layer, the Settings and About sheets, and the knob context menu.
+    static func runLayoutRound1(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let core = EG13PreviewCore.modulationDemo()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<70 { synth.tick() }
+        let base = EG13Layout.baseSize
+        var ok = true
+        func matrix() -> EG13RightColumnState { let c = EG13RightColumnState(); c.pane = .matrix; return c }
+        ok = write(EG13RootView(synth: synth, column: matrix()), size: base, zoom: 1,
+                   to: "\(directory)/editor-matrix.png") && ok
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-mods.png") && ok
+        ok = write(EG13RootView(synth: synth, column: matrix()), size: base, zoom: 0.75,
+                   to: "\(directory)/editor-matrix-75.png") && ok
+        ok = write(EG13RootView(synth: synth, settingsTab: .settings), size: base, zoom: 1,
+                   to: "\(directory)/settings.png") && ok
+        ok = write(EG13RootView(synth: synth, settingsTab: .about), size: base, zoom: 1,
+                   to: "\(directory)/about.png") && ok
+        // The Part settings popover: Split (A low, B high, a marker) and Layer (both over most of the range).
+        let split: [(UInt32, Double)] = [
+            (EG13ParamID.master(.mode), Double(EG13Mode.split.rawValue)), (EG13ParamID.master(.splitNote), 60),
+            (EG13ParamID.part(0, .keyLow), 24), (EG13ParamID.part(0, .keyHigh), 71),
+            (EG13ParamID.part(1, .keyLow), 60), (EG13ParamID.part(1, .keyHigh), 108),
+        ]
+        let layer: [(UInt32, Double)] = [
+            (EG13ParamID.master(.mode), Double(EG13Mode.layer.rawValue)),
+            (EG13ParamID.part(0, .keyLow), 21), (EG13ParamID.part(0, .keyHigh), 108),
+            (EG13ParamID.part(1, .keyLow), 48), (EG13ParamID.part(1, .keyHigh), 96),
+        ]
+        for (name, values) in [("split", split), ("layer", layer)] {
+            let partCore = EG13PreviewCore.standard()
+            let partSynth = EG13Synth(core: partCore, kind: .instrument)
+            for _ in 0..<4 { partSynth.tick() }
+            for (id, value) in values {
+                partSynth.begin(id)
+                partSynth.edit(id, value)
+                partSynth.end(id)
+            }
+            ok = write(EG13PartSettingsSheet(synth: partSynth), size: EG13PartSettingsSheet.size, zoom: 1.5,
+                       to: "\(directory)/part-settings-\(name).png") && ok
+        }
+        if let routed = synth.params.first(where: { $0.isRouted }), let menu = synth.contextMenu(for: routed.id) {
+            ok = writeFitted(EG13ContextMenuSheet(model: menu, knob: routed.name), to: "\(directory)/context-menu.png",
+                             scale: 2) && ok
+        } else {
+            FileHandle.standardError.write(Data("no routed knob for the context menu\n".utf8))
+            ok = false
+        }
+        return ok ? 0 : 1
+    }
+
+    /// Layout round 2: the left column spread over its height, the grouped "Modulate from" menu, and a busy patch.
+    static func runLayoutRound2(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        var ok = writeLayoutEditors(into: directory)
+        let core = EG13PreviewCore.modulationDemo()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<70 { synth.tick() }
+        if let routed = synth.params.first(where: { $0.isRouted }), let menu = synth.contextMenu(for: routed.id) {
+            ok = writeFitted(EG13ContextMenuSheet(model: menu, knob: routed.name), to: "\(directory)/context-menu.png",
+                             scale: 2) && ok
+        } else {
+            ok = false
+        }
+        withExtendedLifetime(core) {}
+        return ok ? 0 : 1
+    }
+
+    /// The layout round 3 set: the editor with the MATRIX view, the Mods view and a busy patch.
+    static func runLayoutRound3(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        return writeLayoutEditors(into: directory) ? 0 : 1
+    }
+
+    /// The layout round 4 set: the same three editors, the bottom bar one gap under the taller column.
+    static func runLayoutRound4(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        return writeLayoutEditors(into: directory) ? 0 : 1
+    }
+
+    /// The layout round 5 set: the same three editors, the shorter column spread to the taller one's height.
+    static func runLayoutRound5(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        return writeLayoutEditors(into: directory) ? 0 : 1
+    }
+
+    /// editor-matrix.png, editor-mods.png and editor-busy.png (Modal Synth with 16 knobs as the Source,
+    /// Granular Delay with 15, the most a Part FX has, as the Part FX, the tallest engine in every mod card).
+    private static func writeLayoutEditors(into directory: String) -> Bool {
+        let core = EG13PreviewCore.modulationDemo()  // the synth holds its core unowned: keep it alive
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<70 { synth.tick() }
+        let base = EG13Layout.baseSize
+        var ok = true
+        func matrix() -> EG13RightColumnState { let c = EG13RightColumnState(); c.pane = .matrix; return c }
+        ok = write(EG13RootView(synth: synth, column: matrix()), size: base, zoom: 1,
+                   to: "\(directory)/editor-matrix.png") && ok
+        ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-mods.png") && ok
+        // Busy: Modal Synth (16 knobs) as the source, Granular Delay (15, the most a Part FX has) as the Part FX.
+        let busyCore = EG13PreviewCore.modulationDemo()
+        busyCore.select(EG13_SLOT_KIND_SOURCE, engine: 2, part: 0)
+        busyCore.select(EG13_SLOT_KIND_PART_FX, engine: 2, part: 0)
+        // Every mod card the tallest too, so the Mods column is taller than the strip and scrolls.
+        for kind in [EG13_SLOT_KIND_MOD1, EG13_SLOT_KIND_MOD2, EG13_SLOT_KIND_MOD3, EG13_SLOT_KIND_MOD4] {
+            busyCore.select(kind, engine: 3, part: 0)
+        }
+        let busy = EG13Synth(core: busyCore, kind: .instrument)
+        for _ in 0..<70 { busy.tick() }
+        ok = write(EG13RootView(synth: busy), size: base, zoom: 1, to: "\(directory)/editor-busy.png") && ok
+        withExtendedLifetime((core, busyCore)) {}
+        return ok
     }
 
     /// The layout design set: both parts at 100%, Part A at 75%, the header close-up, a contact sheet
@@ -127,8 +307,8 @@ struct EG13WorstCaseSheet: View {
                 .font(.system(size: 16, weight: .light))
                 .foregroundStyle(theme.text.primary.color)
             HStack(alignment: .top, spacing: EG13Layout.gap) {
-                EG13SlotCards(synth: synth, part: 0, width: EG13Layout.slotCardWidth)
-                EG13ModCards(synth: synth, part: 0, width: EG13Layout.modCardWidth)
+                EG13SlotCards(synth: synth, part: 0, width: EG13Layout.slotCardWidth, columnHeight: 0)
+                EG13ModCards(synth: synth, part: 0, width: EG13Layout.modCardWidth, columnHeight: 0)
             }
             .overlay(alignment: .top) {
                 Rectangle().fill(EG13Palette.black.color).frame(height: 2).offset(y: EG13Layout.stripHeight)
@@ -150,7 +330,7 @@ struct EG13HeaderPreview: View {
 /// The Part settings popover's content for both parts, side by side on the window grey.
 struct EG13PartSettingsSheet: View {
     let synth: EG13Synth
-    static let size = CGSize(width: 1000, height: 380)
+    static let size = CGSize(width: 860, height: 520)
     @Environment(\.symbioticTheme) private var theme
 
     var body: some View {
@@ -222,5 +402,125 @@ struct EG13ContactSheet: View {
             EG13ContactSheet(fileName: "partfx-engines", title: "Part FX", kind: EG13_SLOT_KIND_PART_FX),
             EG13ContactSheet(fileName: "mods-engines", title: "Mod slot", kind: EG13_SLOT_KIND_MOD1, number: 1),
         ]
+    }
+}
+
+/// The mark close-up: the Filter card, then one knob per cap colour with the modulation mark at 75 %,
+/// 100 % and 200 %, set at both ends of the range and in the middle so the pointer's clearance shows.
+struct EG13MarkSheet: View {
+    let synth: EG13Synth
+    @Environment(\.symbioticTheme) private var theme
+
+    private let values: [(String, Double)] = [("min", 0), ("25 %", 0.25), ("mid", 0.5), ("75 %", 0.75), ("max", 1)]
+    private let caps: [(String, EG13ParamEmphasis)] = [("white", .plain), ("pink", .pink), ("teal", .teal), ("black", .black)]
+    private func row(_ zoom: CGFloat) -> some View {
+        let d = EG13Layout.knobDiameter(.large)
+        return VStack(alignment: .leading, spacing: theme.spacing.xs) {
+            Text("\(Int(zoom * 100)) %")
+                .font(theme.type.caption.font)
+                .foregroundStyle(theme.text.secondary.color)
+            ForEach(caps, id: \.0) { cap in
+                HStack(spacing: theme.spacing.m) {
+                    ForEach(values, id: \.0) { value in
+                        EG13KnobShape(normalized: value.1, style: EG13Palette.knobStyle(for: cap.1),
+                                      size: .large, showsModulationMark: true)
+                            .frame(width: d, height: d)
+                            .scaleEffect(zoom)
+                            .frame(width: d * zoom, height: d * zoom)
+                    }
+                }
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Modulation mark: white, pink, teal, black; min, 25 %, mid, 75 %, max")
+                .font(.system(size: 16, weight: .light))
+                .foregroundStyle(theme.text.primary.color)
+            EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0, width: 420)
+            row(0.75)
+            row(1)
+            row(2)
+        }
+        .frame(width: 640, alignment: .leading)
+    }
+}
+
+/// The Motion list of the Filter card on its own (a popover cannot be rendered to an image), under
+/// the card whose header holds the button.
+struct EG13MotionSheet: View {
+    let synth: EG13Synth
+    @Environment(\.symbioticTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Motion list of the Filter card, Part A (shown at 200 %)")
+                .font(.system(size: 16, weight: .light))
+                .foregroundStyle(theme.text.primary.color)
+            EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0, width: EG13Layout.slotCardWidth)
+            EG13MotionList(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.text.secondary.color.opacity(0.4), lineWidth: 1))
+        }
+    }
+}
+
+/// The knob context menu's content as a list (a real NSMenu cannot be rendered to an image): the menu
+/// with "Modulate from" and the removals, and the submenu of sources beside it.
+struct EG13ContextMenuSheet: View {
+    let model: EG13ContextMenuModel
+    let knob: String
+    @Environment(\.symbioticTheme) private var theme
+
+    private func item(_ title: String, enabled: Bool = true, arrow: Bool = false) -> some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: theme.spacing.l)
+            if arrow { Text("\u{25B8}") }
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(enabled ? Color.black : Color.black.opacity(0.35))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
+    }
+
+    private func menu<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0, content: content)
+            .padding(.vertical, 5)
+            .frame(width: 280)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color(white: 0.96)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.black.opacity(0.2), lineWidth: 1))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Context menu of the \(knob) knob (right-click or ctrl-click); the submenu opens from Modulate from")
+                .font(.system(size: 14, weight: .light))
+                .foregroundStyle(theme.text.primary.color)
+            HStack(alignment: .top, spacing: 6) {
+                menu {
+                    item(model.modulateTitle, enabled: model.modulateEnabled, arrow: model.modulateEnabled)
+                    if !model.removals.isEmpty {
+                        Divider().padding(.vertical, 4)
+                        ForEach(model.removals.indices, id: \.self) { item(model.removals[$0].title) }
+                    }
+                }
+                if model.modulateEnabled {
+                    // Modulate from > Keys / Controllers / Mods, with Controllers and Mods opened.
+                    let groups = model.groups
+                    menu { ForEach(groups.indices, id: \.self) { item(groups[$0].title, arrow: true) } }
+                    if let controllers = groups.first(where: { $0.title == EG13SourceGrouping.controllersTitle }) {
+                        menu { ForEach(controllers.items.indices, id: \.self) { item(controllers.items[$0].name) } }
+                    }
+                    if let mods = groups.first(where: { $0.title == EG13SourceGrouping.modsTitle }) {
+                        menu { ForEach(mods.children.indices, id: \.self) { item(mods.children[$0].title, arrow: true) } }
+                        if let first = mods.children.first {
+                            menu { ForEach(first.items.indices, id: \.self) { item(first.items[$0].name) } }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

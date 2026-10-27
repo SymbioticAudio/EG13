@@ -38,13 +38,20 @@ let package = Package(
                 .product(name: "SymbioticTokens", package: "symbiotic-design", moduleAliases: aliases),
                 icons,
             ]),
+        // The engine tables generated from the core (tools/ui_tables), for the preview and the
+        // tests only. It has resources, so it must never be a dependency of EG13UI: the static
+        // library the plugin links would then need its bundle (scripts/build-ui.sh checks).
+        .target(
+            name: "EG13UIFixtures",
+            resources: [.copy("core-tables.json")]),
         .executableTarget(
             name: "EG13UIPreview",
             dependencies: [
                 "EG13UI",
+                "EG13UIFixtures",
                 "EG13CBridge",
                 .product(name: "SymbioticTokens", package: "symbiotic-design", moduleAliases: aliases),
             ]),
-        .testTarget(name: "EG13UITests", dependencies: ["EG13UI"]),
+        .testTarget(name: "EG13UITests", dependencies: ["EG13UI", "EG13UIFixtures"]),
     ]
 )
