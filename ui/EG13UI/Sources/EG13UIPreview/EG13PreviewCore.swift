@@ -201,7 +201,7 @@ final class EG13PreviewCore: EG13Core {
             if [.ccA, .ccB, .ccC, .ccD].contains(where: isPart) { return "CC \(i)" }
             if isPart(.baseNote) || isPart(.keyLow) || isPart(.keyHigh) {
                 let note = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][i % 12]
-                return "\(note)\(i / 12 - 2)"
+                return "\(note)\(i / 12 - 1)"
             }
         }
         if d.isStepped { return "\(i)" }

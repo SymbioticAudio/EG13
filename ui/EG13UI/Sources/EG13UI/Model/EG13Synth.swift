@@ -197,16 +197,6 @@ public final class EG13Synth {
 
     public var mode: EG13Mode { EG13Mode(rawValue: Int(masterParam(.mode)?.value ?? 0)) ?? .single }
 
-    public var keyMap: EG13KeyMap {
-        let ranges = (0..<EG13ParamID.parts).map { part -> ClosedRange<Int> in
-            let low = Int(partParam(part, .keyLow)?.value ?? 0)
-            let high = Int(partParam(part, .keyHigh)?.value ?? 127)
-            return min(low, high)...max(low, high)
-        }
-        return EG13KeyMap(mode: mode, splitNote: Int(masterParam(.splitNote)?.value ?? 60),
-                          keyRanges: ranges, selectedPart: selectedPart)
-    }
-
     // MARK: Display rate
 
     /// One display frame: reads the snapshot, rebuilds descriptors only if the engine

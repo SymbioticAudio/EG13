@@ -79,6 +79,8 @@ public struct EG13PartSettingsView: View {
                     .font(theme.type.caption.font.weight(.bold))
                     .accessibilityAddTraits(.isHeader)
             }
+            EG13KeyRangeView(synth: synth)
+                .frame(width: 3 * (EG13Layout.stepperWidth + 56))
             EG13ControlGrid(columns: 3, specs: controls.partSettings, rowSpacing: theme.spacing.m) {
                 EG13ControlView(synth: synth, spec: $0, part: part)
             }

@@ -1,6 +1,6 @@
 # Interface
 
-EG13 opens its own window in the host. It shows one part at a time and lets you edit every control of that part and the master. The window has no on-screen keyboard yet: play the plugin from your host's MIDI. (A keyboard is planned for the next version; see [Known limitations](limitations.md).)
+EG13 opens its own window in the host. It shows one part at a time and lets you edit every control of that part and the master. EG13 has no playable keyboard: play it from your host's keyboard or MIDI input. The only keys in the window are the key-range graphic in Part settings, which shows which keys reach which part and does not make a sound.
 
 ## Window and scaling
 
@@ -81,6 +81,7 @@ A knob that a route modulates shows a **wave mark** on its cap; a card with rout
 The bottom bar holds, from the left: the shown part's **Level**, **Pan**, **Glide**, **Voice Mode** and **Voices**, a **Part settings** button, the master **Dry** and **Out** (grouped under the caption **OUTPUT**, so it is not mistaken for the header's MASTER group), and a meter for each part.
 
 - **Part settings** opens a panel with the rest of the part's settings, as steppers: Transpose, Base Note, MIDI Channel, Key Low, Key High, Trigger, Bend Range, Mono, Output, Input Source, **Part FX Input** (what the Part FX card listens to: the part mix, the input, or both), MPE and MPE Bend Range, and the four controller numbers CC A to CC D. Click anywhere else to close it.
+- The **key-range strip** at the top of Part settings is a non-playing 88-key strip, A0 to C8. Part A's key range is a teal band above the keys and Part B's a pink one, with a tint over the keys they cover. Drag the end of a band to change that part's **Key Low** or **Key High**; the stepper below shows the same value. A part's Low never goes above its High, and neither goes past the ends of the strip. In **Split** mode a vertical marker shows the **Split Note** (the first key that plays Part B); drag it to move the split, which is the same setting as Split in the MASTER group. The marker is hidden in the other modes, and Part B's band is hidden in **Single** mode, where Part B cannot sound. Each drag is one edit for the host's undo and automation. With VoiceOver, each handle is named (for example "Part A lowest key, C2") and the adjust gestures move it by one semitone.
 - **Dry** is the level of the plugin's input mixed straight into the output, delayed to stay in time with the processed sound. **Out** is the master level.
 - Each part has a **stereo meter** (left and right bars) in the part's colour, A teal and B pink, A first. The meters show each part's output after its level, pan and mute, refreshed 30 times a second. A meter rises instantly to a new peak and falls in dB, in a straight line on the meter, from the peak down to silence in 300 ms. A thin hold marker stays at the highest recent peak for 1.5 seconds, then falls the same way. A bar turns white at 0 dBFS or above.
 

@@ -122,6 +122,28 @@ enum EG13Snapshot {
         return ok ? 0 : 1
     }
 
+    /// The Part settings popover for both parts in Split mode, with ranges set so both bands and the
+    /// marker show. For checking, not for the gate.
+    static func runKeyRange(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let core = EG13PreviewCore.standard()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<4 { synth.tick() }
+        let values: [(UInt32, Double)] = [
+            (EG13ParamID.master(.mode), Double(EG13Mode.split.rawValue)),
+            (EG13ParamID.master(.splitNote), 60),
+            (EG13ParamID.part(0, .keyLow), 24), (EG13ParamID.part(0, .keyHigh), 71),
+            (EG13ParamID.part(1, .keyLow), 60), (EG13ParamID.part(1, .keyHigh), 108),
+        ]
+        for (id, value) in values {
+            synth.begin(id)
+            synth.edit(id, value)
+            synth.end(id)
+        }
+        return write(EG13PartSettingsSheet(synth: synth), size: EG13PartSettingsSheet.size, zoom: 2,
+                     to: "\(directory)/key-range.png") ? 0 : 1
+    }
+
     /// The layout design set: both parts at 100%, Part A at 75%, the header close-up, a contact sheet
     /// of every engine for each slot kind, and the worst case (the tallest engines in every slot) as
     /// the full height of both columns, with the visible strip marked.
@@ -194,7 +216,7 @@ struct EG13HeaderPreview: View {
 /// The Part settings popover's content for both parts, side by side on the window grey.
 struct EG13PartSettingsSheet: View {
     let synth: EG13Synth
-    static let size = CGSize(width: 1000, height: 380)
+    static let size = CGSize(width: 1000, height: 440)
     @Environment(\.symbioticTheme) private var theme
 
     var body: some View {
