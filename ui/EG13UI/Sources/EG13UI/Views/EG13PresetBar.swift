@@ -80,6 +80,7 @@ struct EG13PresetBar: View {
     @Bindable var synth: EG13Synth
     @State private var dialog: EG13PresetDialog?
     @State private var shownMessage: String?
+    @State private var messageTask: Task<Void, Never>?
     @Environment(\.eg13ControlColors) private var colors
     @Environment(\.eg13InteractiveControls) private var interactive
     @Environment(\.symbioticTheme) private var theme
@@ -95,7 +96,7 @@ struct EG13PresetBar: View {
                 .overlay(alignment: .bottomLeading) { messageLine.offset(y: 15) }
             arrow("\u{25B6}", label: "Next preset") { presets.step(1) }
         }
-        .frame(minWidth: 170, idealWidth: 320, maxWidth: 360)
+        .frame(minWidth: 150, idealWidth: 220, maxWidth: 320)
         .onChange(of: presets.message) { _, new in show(new) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Presets")
@@ -219,9 +220,11 @@ struct EG13PresetBar: View {
     private func show(_ text: String?) {
         guard let text else { return }
         shownMessage = text
-        Task { @MainActor in
+        messageTask?.cancel()  // a new message restarts the four seconds
+        messageTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(Self.messageSeconds))
-            if shownMessage == text { shownMessage = nil }
+            guard !Task.isCancelled else { return }
+            shownMessage = nil
             if synth.presets.message == text { synth.presets.dismissMessage() }
         }
     }

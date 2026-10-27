@@ -71,8 +71,8 @@ Bank 1 has "a few combination patches A+B as well as single-part sounds" (owner)
 - **Layout:** `◀  [ preset name ▾ ]  ▶` in the header's preset area (parent spec §8). The visual design goes to the owner as a design gate with screenshots, as in M6a and M6b.
 - **Kinds in the list:** each entry shows a small mark for its kind, Performance (A+B) or Patch (one part).
 - **Loading a Patch:** the user chooses A or B (owner).
-  - Clicking a Patch loads it into the part currently shown in the editor (the A/B tab).
-  - The entry also has a submenu, "Load into A" and "Load into B".
+  - A Patch row in the dropdown is a submenu, "Load into A" and "Load into B" (owner-approved at gate 5a, 2026-10-27: a macOS menu row cannot both load on click and open a submenu). Clicking the row itself does not load.
+  - The arrows load a Patch into the part currently shown in the editor (the A/B tab).
 - **Arrows:** step through the presets in list order and run on across bank boundaries. A Patch loads into the part currently shown. Claude's call: they wrap from the last User preset to the first Bank 1 preset.
 - **Name display:** the name shown is the last preset loaded. When a Patch is loaded into one part, the header shows the part's name too, for example "A: Glass Bells". Claude's call: the header shows "A: … / B: …" when the two parts came from different Patches.
 - **Dropdown:**

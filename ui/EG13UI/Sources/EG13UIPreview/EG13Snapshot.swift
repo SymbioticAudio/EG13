@@ -591,7 +591,7 @@ struct EG13PresetSheet<Content: View>: View {
     let synth: EG13Synth
     let content: Content
     /// Where the bar's left edge is in the header (measured from a header snapshot).
-    var barX: CGFloat { synth.kind == .effect ? 398 : 376 }
+    var barX: CGFloat { synth.kind == .effect ? 306 : 284 }
 
     var body: some View {
         ZStack(alignment: .topLeading) {

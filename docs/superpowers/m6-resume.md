@@ -350,3 +350,5 @@ Status: awaiting owner feedback.
 ## M7 preset bar log
 
 **Round 1** (screenshots in docs/superpowers/m7-design/browser-r1/): header `◀ [ name ▾ ] ▶` in the LCD style; dropdown grouped by bank with A+B / A|B kind marks, tick, Patch submenus (Load into A / B), Init, Save, Save As…, Rename…, Delete…; `*` edited mark; 4 s message line under the name; Save As / clash panels. Status: awaiting owner feedback.
+
+**Round 1 approved by the owner, 2026-10-27 ("looks good").** Patch rows are submenus (Load into A / Load into B); clicking a Patch row does not load; the arrows load Patches into the shown part. Fix after review: the MASTER group keeps its full size and the preset bar gives way (name truncates); screenshots re-shot.

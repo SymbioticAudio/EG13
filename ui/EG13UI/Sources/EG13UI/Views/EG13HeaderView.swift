@@ -18,9 +18,9 @@ struct EG13HeaderView: View {
     var body: some View {
         let part = synth.selectedPart
         let header = synth.editorControls(part: part).header
-        HStack(spacing: theme.spacing.m) {
-            wordmark
-            partTabs
+        HStack(spacing: theme.spacing.s) {
+            wordmark.fixedSize()
+            partTabs.layoutPriority(1)
             EG13PresetBar(synth: synth)
                 .environment(\.eg13ControlColors, EG13Palette.headerControls)
             Spacer(minLength: 0)
@@ -50,6 +50,13 @@ struct EG13HeaderView: View {
     }
 
     private var partTabs: some View {
+        ViewThatFits(in: .horizontal) {
+            partTabs(showsEngineName: true)
+            partTabs(showsEngineName: false)
+        }
+    }
+
+    private func partTabs(showsEngineName: Bool) -> some View {
         HStack(spacing: theme.spacing.xs) {
             ForEach(0..<EG13ParamID.parts, id: \.self) { part in
                 let selected = synth.selectedPart == part
@@ -61,7 +68,8 @@ struct EG13HeaderView: View {
                             .frame(width: 22, height: 22)
                             .background(RoundedRectangle(cornerRadius: 3)
                                 .fill(selected ? EG13Palette.white.color : EG13Palette.part(part).ink.color))
-                        if selected {
+                        if selected && showsEngineName {
+                            // The engine name goes when the header is too narrow for it and the preset bar.
                             Text(synth.slot(EG13_SLOT_KIND_SOURCE, part: part).engineName)
                                 .font(theme.type.caption.font.weight(.bold))
                                 .lineLimit(1)
@@ -102,6 +110,7 @@ struct EG13HeaderView: View {
         }
         .padding(.horizontal, theme.spacing.m)
         .padding(.vertical, 4)
+        .fixedSize()  // keeps its full size; the preset bar gives way
         .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(EG13Palette.white.color.opacity(0.08)))
         .environment(\.eg13ControlColors, EG13Palette.headerControls)
         .accessibilityElement(children: .contain)
