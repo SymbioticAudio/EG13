@@ -344,3 +344,5 @@ Decisions
 2. Round 4 rules stay: the bottom bar sits one gap under the columns, remaining blank space at the window bottom. A busy patch: H is the full strip, both columns scroll (a column shorter than the strip is still spread to it).
 
 Status: awaiting owner feedback.
+
+**M6b layout approved by the owner on 2026-10-26** (round 5): MODS/MATRIX switch and matrix rows; grouped "Modulate from" (Keys, Controllers, Mods); key-range strip in Part settings; Settings and About overlay; columns end on one line (the shorter column spreads its gaps), the bottom bar floats one gap below them and spare space sits at the window bottom; busy patches use minimum gaps and scroll.
