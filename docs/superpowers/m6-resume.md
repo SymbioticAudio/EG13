@@ -331,3 +331,16 @@ Decisions
 2. **Mod card header.** The trace shrinks to the room left (minimum 40 pt). If that is not enough next to MOTION n (Mod 1 with an Envelope engine is about 20 pt short), the MOTION button moves to a second header line instead of clipping anything.
 
 Status: awaiting owner feedback.
+
+
+## M6b layout design log, round 5 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r5 docs/superpowers/m6-design/m6b-layout-r5` writes `editor-matrix.png`, `editor-mods.png` and `editor-busy.png` (busy unchanged from round 4).
+
+Round 4 feedback: editor-busy fine; in editor-mods the Mods column was taller and the left cards stopped short, leaving dark space under Part FX.
+
+Decisions
+1. **Justify the shorter column.** H = max(left, right content height, each measured at the minimum gaps), capped at the strip height. Both columns are laid out in H; each column's gap = max(8 pt, (H - sum of its card heights) / (n - 1)) (EG13Layout.spreadGap, drawn by EG13SpreadStack, now given the taller column's height rather than the full strip). The taller column keeps minimum gaps, the shorter spreads, so both end on one line. The MATRIX pane is one block, top-aligned, rows not stretched; if it is the taller side the left cards spread to it.
+2. Round 4 rules stay: the bottom bar sits one gap under the columns, remaining blank space at the window bottom. A busy patch: H is the full strip, both columns scroll (a column shorter than the strip is still spread to it).
+
+Status: awaiting owner feedback.

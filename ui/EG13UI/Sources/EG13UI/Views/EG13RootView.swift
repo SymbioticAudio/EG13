@@ -72,7 +72,7 @@ public struct EG13RootView: View {
     private func strip(part: Int) -> some View {
         HStack(alignment: .top, spacing: EG13Layout.gap) {
             EG13Scrolling(onHeight: { leftHeight = $0 }) {
-                EG13SlotCards(synth: synth, part: part, width: EG13Layout.slotCardWidth,
+                EG13SlotCards(synth: synth, part: part, width: EG13Layout.slotCardWidth, columnHeight: stripHeight,
                               onMotionSelect: column.open(route:))
             }
             rightColumn(part: part)
@@ -90,6 +90,7 @@ public struct EG13RootView: View {
             case .mods:
                 EG13Scrolling(onHeight: { rightContentHeight = $0 }) {
                     EG13ModCards(synth: synth, part: part, width: EG13Layout.modCardWidth,
+                                 columnHeight: stripHeight - EG13Layout.paneSwitchHeight - (EG13Layout.gap - 2),
                                  onMotionSelect: column.open(route:))
                 }
             case .matrix:

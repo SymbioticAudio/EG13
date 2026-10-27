@@ -14,6 +14,7 @@ import SymbioticTokens
 //   swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r2 <dir>   write the M6b layout round 2 PNGs (matrix, mods, busy patch, grouped context menu) and exit
 //   swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r3 <dir>   write the M6b layout round 3 PNGs (matrix, mods, busy patch) and exit
 //   swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r4 <dir>   write the M6b layout round 4 PNGs (matrix, mods, busy patch) and exit
+//   swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r5 <dir>   write the M6b layout round 5 PNGs (matrix, mods, busy patch) and exit
 //   swift run --package-path ui/EG13UI EG13UIPreview --modulation [--mod-load]   modulation page (animated mods); --mod-load is the init patch with a chord, 3 modulated knobs and 3 traces (for CPU sampling)
 //   swift run --package-path ui/EG13UI EG13UIPreview --editor [--drag-load]   editor page; --drag-load sweeps Part A's Level 30 times a second (for CPU sampling)
 
@@ -159,6 +160,15 @@ MainActor.assumeIsolated {
         }
         _ = NSApplication.shared
         exit(EG13Snapshot.runLayoutRound4(into: arguments[flag + 1]))
+    }
+
+    if let flag = arguments.firstIndex(of: "--snapshot-layout-r5") {
+        guard flag + 1 < arguments.count else {
+            FileHandle.standardError.write(Data("usage: EG13UIPreview [--snapshot-layout-r5 <dir>]\n".utf8))
+            exit(2)
+        }
+        _ = NSApplication.shared
+        exit(EG13Snapshot.runLayoutRound5(into: arguments[flag + 1]))
     }
 
     let app = NSApplication.shared

@@ -98,7 +98,7 @@ enum EG13Snapshot {
         synth.selectedPart = 0
         ok = writeFitted(EG13MarkSheet(synth: synth), to: "\(directory)/mark.png", scale: 2) && ok
         ok = writeFitted(EG13MotionSheet(synth: synth), to: "\(directory)/motion-menu.png", scale: 2) && ok
-        ok = writeFitted(EG13ModCards(synth: synth, part: 0, width: EG13Layout.modCardWidth),
+        ok = writeFitted(EG13ModCards(synth: synth, part: 0, width: EG13Layout.modCardWidth, columnHeight: 0),
                          to: "\(directory)/traces.png", scale: 2) && ok
         return ok ? 0 : 1
     }
@@ -225,6 +225,12 @@ enum EG13Snapshot {
         return writeLayoutEditors(into: directory) ? 0 : 1
     }
 
+    /// The layout round 5 set: the same three editors, the shorter column spread to the taller one's height.
+    static func runLayoutRound5(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        return writeLayoutEditors(into: directory) ? 0 : 1
+    }
+
     /// editor-matrix.png, editor-mods.png and editor-busy.png (Modal Synth with 16 knobs as the Source,
     /// Granular Delay with 15, the most a Part FX has, as the Part FX, the tallest engine in every mod card).
     private static func writeLayoutEditors(into directory: String) -> Bool {
@@ -301,8 +307,8 @@ struct EG13WorstCaseSheet: View {
                 .font(.system(size: 16, weight: .light))
                 .foregroundStyle(theme.text.primary.color)
             HStack(alignment: .top, spacing: EG13Layout.gap) {
-                EG13SlotCards(synth: synth, part: 0, width: EG13Layout.slotCardWidth)
-                EG13ModCards(synth: synth, part: 0, width: EG13Layout.modCardWidth)
+                EG13SlotCards(synth: synth, part: 0, width: EG13Layout.slotCardWidth, columnHeight: 0)
+                EG13ModCards(synth: synth, part: 0, width: EG13Layout.modCardWidth, columnHeight: 0)
             }
             .overlay(alignment: .top) {
                 Rectangle().fill(EG13Palette.black.color).frame(height: 2).offset(y: EG13Layout.stripHeight)
