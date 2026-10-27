@@ -1,0 +1,102 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Sympathy Haze",
+  "note": "After the Rings manual's sympathetic strings: each pluck sets a bank of strings ringing in sympathy, drifting in position and replayed as worn-tape grains.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 13,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Resonator",
+        "params": {
+          "Model": "Sympathetic",
+          "Structure": 0.45,
+          "Brightness": 0.55,
+          "Damping": 0.65,
+          "Position": 0.35,
+          "Exciter": "Internal",
+          "Spread": 0.5,
+          "Polyphony": "4"
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.032,
+          "Resonance": 0.0,
+          "Mode": "HP"
+        }
+      },
+      "Part FX": {
+        "engine": "Granular Delay",
+        "params": {
+          "Dry/Wet": 0.35,
+          "Time": 0.4,
+          "Size": 0.7,
+          "Density": 0.65,
+          "Shape": 0.7,
+          "Feedback": 0.3,
+          "Reverb": 0.45,
+          "Quality": "Clean tape",
+          "Pitch Random": 0.6
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.72
+        }
+      },
+      "Mod 3": {
+        "engine": "Random / S&H",
+        "scope": "per part",
+        "params": {
+          "T Rate": 0.35,
+          "X Steps": 0.1,
+          "X Spread": 0.6,
+          "X Range": "Full"
+        }
+      },
+      "Mod 4": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Range": "Low",
+          "Frequency": 0.5
+        }
+      },
+      "settings": {
+        "Level": 0.47,
+        "Pan": -0.15
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Mod 3 Random / S&H X1",
+          "destination": "Source: Position",
+          "amount": 0.15
+        },
+        {
+          "source": "Mod 4 LFO Out 1",
+          "destination": "Source: Brightness",
+          "amount": 0.1
+        },
+        {
+          "source": "Mod 4 LFO Out 2",
+          "destination": "Part FX: Time",
+          "amount": 0.1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Rubber Floor",
+  "note": "A gliding mono bass: the Braids manual's CSAW into a vintage ladder low-pass with a snappy, velocity-scaled filter envelope, a low bell for weight; the mod wheel adds resonance.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 18,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Digital Oscillator",
+        "params": {
+          "Shape": "CSAW",
+          "Timbre": 0.4,
+          "Color": 0.3
+        }
+      },
+      "Filter": {
+        "engine": "Classic Filters",
+        "params": {
+          "Cutoff": 0.35,
+          "Resonance": 0.45,
+          "Model": "Vintage Ladder Lowpass Huovilainen Compensated"
+        }
+      },
+      "Shaper": {
+        "engine": "EQ",
+        "params": {
+          "Low Freq": 0.05,
+          "Low Gain": 0.0,
+          "High Freq": 0.1,
+          "High Gain": 0.83,
+          "Mid 1 Freq": 0.24,
+          "Mid 1 Gain": 0.62,
+          "Mid 1 Q": 0.2
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Decay": 0.5,
+          "Sustain": 0.85,
+          "Release": 0.3
+        }
+      },
+      "Mod 2": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Decay": 0.38,
+          "Sustain": 0.0,
+          "Release": 0.3
+        }
+      },
+      "settings": {
+        "Level": 1.0,
+        "Transpose": -12,
+        "Voice Mode": "Legato",
+        "Glide": 0.1
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Mod 2 Envelope",
+          "via": "Velocity",
+          "destination": "Filter: Cutoff",
+          "amount": 0.35
+        },
+        {
+          "source": "Mod Wheel",
+          "destination": "Filter: Resonance",
+          "amount": 0.3
+        }
+      ]
+    }
+  }
+}

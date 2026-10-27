@@ -1,0 +1,75 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Teak Mallets",
+  "note": "After the Elements manual's strike exciter: a soft mallet on a wooden modal bar; play harder for a brighter, harder mallet.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 12,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Modal Synth",
+        "params": {
+          "Model": "Modal",
+          "Bow": 0.0,
+          "Blow": 0.0,
+          "Strike": 0.85,
+          "Mallet": 0.3,
+          "Strike Timbre": 0.15,
+          "Geometry": 0.22,
+          "Brightness": 0.42,
+          "Damping": 0.9,
+          "Position": 0.3,
+          "Space": 0.3
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.032,
+          "Resonance": 0.0,
+          "Mode": "HP"
+        }
+      },
+      "Part FX": {
+        "engine": "Reverb",
+        "params": {
+          "Amount": 0.25,
+          "Time": 0.6,
+          "Brightness": 0.5
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.62
+        }
+      },
+      "settings": {
+        "Level": 0.1
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Velocity",
+          "destination": "Source: Strike Timbre",
+          "amount": 0.25
+        },
+        {
+          "source": "Velocity",
+          "destination": "Source: Brightness",
+          "amount": 0.15
+        }
+      ]
+    }
+  }
+}

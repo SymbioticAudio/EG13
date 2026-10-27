@@ -1,0 +1,87 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Dusty Kalimba",
+  "note": "After the Braids manual's plucked model and its bit-reduction settings: a lo-fi thumb-piano pluck that leaves glittering grains behind on a vintage-digital granular delay.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 17,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Digital Oscillator",
+        "params": {
+          "Shape": "Plucked",
+          "Timbre": 0.75,
+          "Color": 0.6,
+          "Bit Depth": "8 bit",
+          "Sample Rate": "24 kHz"
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.032,
+          "Resonance": 0.0,
+          "Mode": "HP"
+        }
+      },
+      "Part FX": {
+        "engine": "Granular Delay",
+        "params": {
+          "Dry/Wet": 0.35,
+          "Time": 0.3,
+          "Size": 0.5,
+          "Pitch": 0.5,
+          "Density": 0.7,
+          "Shape": 0.6,
+          "Feedback": 0.35,
+          "Reverb": 0.4,
+          "Quality": "Vintage digital",
+          "Pitch Random": 0.2
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 0.0,
+          "Release": 0.6,
+          "Decay": 0.75
+        }
+      },
+      "settings": {
+        "Level": 1.0
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Velocity",
+          "destination": "Source: Color",
+          "amount": 0.25
+        },
+        {
+          "source": "Random",
+          "destination": "Source: Timbre",
+          "amount": 0.15
+        }
+      ],
+      "Shaper": {
+        "engine": "EQ",
+        "params": {
+          "Mid 1 Freq": 0.45,
+          "Mid 1 Gain": 0.8,
+          "Mid 1 Q": 0.1,
+          "High Freq": 0.75,
+          "High Gain": 0.35
+        }
+      }
+    }
+  }
+}

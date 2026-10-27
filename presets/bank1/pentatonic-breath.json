@@ -1,0 +1,183 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "Pentatonic Breath",
+  "note": "Part A is a blown modal pipe that wanders its own pentatonic tune from the held note, after the Marbles manual's quantised random melodies; part B holds the chord as a soft pad with an octave-up shimmer.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 15,
+  "master": {
+    "Mode": "Layer"
+  },
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Modal Synth",
+        "params": {
+          "Model": "Modal",
+          "Contour": 0.7,
+          "Bow": 0.0,
+          "Blow": 0.8,
+          "Strike": 0.0,
+          "Flow": 0.3,
+          "Blow Timbre": 0.5,
+          "Geometry": 0.2,
+          "Brightness": 0.4,
+          "Damping": 0.5,
+          "Position": 0.2,
+          "Space": 0.4
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.032,
+          "Resonance": 0.0,
+          "Mode": "HP"
+        }
+      },
+      "Part FX": {
+        "engine": "Granular Delay",
+        "params": {
+          "Dry/Wet": 0.35,
+          "Time": 0.3,
+          "Size": 0.65,
+          "Density": 0.65,
+          "Shape": 0.7,
+          "Feedback": 0.4,
+          "Reverb": 0.5
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.35,
+          "Sustain": 1.0,
+          "Release": 0.65
+        }
+      },
+      "Mod 3": {
+        "engine": "Random / S&H",
+        "scope": "per part",
+        "params": {
+          "T Rate": 0.55,
+          "T Jitter": 0.2,
+          "X Range": "Narrow",
+          "X Steps": 0.9,
+          "X Scale": "Pentatonic",
+          "X Spread": 0.5
+        }
+      },
+      "Mod 4": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Range": "Low",
+          "Frequency": 0.55
+        }
+      },
+      "settings": {
+        "Level": 0.37,
+        "Pan": -0.15,
+        "Transpose": -12,
+        "Voice Mode": "Legato"
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Mod 3 Random / S&H X1",
+          "destination": "Pitch",
+          "amount": 1.0
+        },
+        {
+          "source": "Mod 4 LFO Out 1",
+          "destination": "Source: Blow Timbre",
+          "amount": 0.2
+        },
+        {
+          "source": "Mod 4 LFO Out 2",
+          "destination": "Source: Flow",
+          "amount": 0.15
+        }
+      ]
+    },
+    "B": {
+      "Source": {
+        "engine": "Digital Oscillator",
+        "params": {
+          "Shape": "Triple Saw",
+          "Timbre": 0.3,
+          "Color": 0.4
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.58,
+          "Resonance": 0.0
+        }
+      },
+      "Part FX": {
+        "engine": "Granular",
+        "params": {
+          "Mode": "Stretch",
+          "Blend": 0.4,
+          "Position": 0.3,
+          "Size": 0.6,
+          "Pitch": 0.75,
+          "Density": 0.6,
+          "Texture": 0.4,
+          "Feedback": 0.3,
+          "Reverb": 0.6,
+          "In Gain": 0.85
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.65,
+          "Sustain": 1.0,
+          "Release": 0.75
+        }
+      },
+      "Mod 3": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Range": "Low",
+          "Frequency": 0.4,
+          "Smoothness": 0.4
+        }
+      },
+      "settings": {
+        "Level": 1.0,
+        "Pan": 0.15
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Mod 3 LFO Out 1",
+          "destination": "Source: Timbre",
+          "amount": 0.2
+        },
+        {
+          "source": "Mod 3 LFO Out 2",
+          "destination": "Filter: Cutoff",
+          "amount": 0.08
+        }
+      ]
+    }
+  }
+}
