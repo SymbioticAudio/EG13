@@ -52,13 +52,9 @@ public func eg13UIDefaultZoom() -> Double {
     }
 }
 
-@_cdecl("eg13_ui_honors_path_overrides")
-public func eg13UIHonorsPathOverrides() -> Bool {
-    #if DEBUG
-    return true
-    #else
-    return false
-    #endif
+@_cdecl("eg13_ui_set_settings_url_for_testing")
+public func eg13UISetSettingsURLForTesting(_ path: UnsafePointer<CChar>?) {
+    EG13SettingsLocation.testingURL = path.map { URL(fileURLWithPath: String(cString: $0)) }
 }
 
 @_cdecl("eg13_ui_destroy")

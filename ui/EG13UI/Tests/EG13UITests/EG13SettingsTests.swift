@@ -99,6 +99,14 @@ struct EG13SettingsTests {
         #expect(store.saveError == nil)
     }
 
+    @Test("The settings file can be set from code, in any build")
+    func settingsURLSeam() {
+        let url = directory.appendingPathComponent("seam.json")
+        EG13SettingsLocation.testingURL = url
+        defer { EG13SettingsLocation.testingURL = nil }
+        #expect(EG13SettingsStore.defaultURL == url)
+    }
+
     @Test("The path overrides exist in debug builds only")
     func overridesAreDebugOnly() {
         setenv("EG13_SETTINGS_PATH", "/nonexistent/eg13-test/override.json", 1)

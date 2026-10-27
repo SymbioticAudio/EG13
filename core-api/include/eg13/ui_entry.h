@@ -13,9 +13,9 @@ extern "C" {
 /* The default window zoom for new editors from the app-wide settings (0.75 ... 2.0, 1.0 when
  * unset). The plugin sizes its window from it before the editor exists. */
 double eg13_ui_default_zoom(void);
-/* True in debug builds of the editor, which read EG13_SETTINGS_PATH and EG13_PRESETS_PATH; release
- * builds ignore both. The tests use it to skip checks that need the overrides. */
-bool eg13_ui_honors_path_overrides(void);
+/* Tests only: makes the app-wide settings file `path` (nullptr restores the default). Release
+ * editors read no environment override, so tests use this. */
+void eg13_ui_set_settings_url_for_testing(const char* path);
 /* kind: 0 = EG13 (instrument), 1 = EG13 FX. api must outlive the editor. Returns a handle.
  * zoom: the window scale at creation; 0 means "use the default from the settings". */
 void* eg13_ui_create(const EG13CoreAPI* api, int32_t kind, double zoom);

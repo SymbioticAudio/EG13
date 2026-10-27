@@ -62,6 +62,12 @@ enum EG13DebugOverride {
     }
 }
 
+/// A settings file set from code, not from the environment, so a release plugin can be tested
+/// without reading the developer's real file. Set only through `eg13_ui_set_settings_url_for_testing`.
+enum EG13SettingsLocation {
+    nonisolated(unsafe) static var testingURL: URL?
+}
+
 /// Reads and writes the settings file. A missing, corrupt or newer file loads as defaults. The
 /// file is written only when the user changes a setting, by writing a temp file and renaming it
 /// over the old one, so a crash never leaves half a file.
@@ -81,6 +87,7 @@ public final class EG13SettingsStore {
     /// The file the plugin uses: `$EG13_SETTINGS_PATH` if set (debug builds only: tests), else
     /// ~/Library/Application Support/SymbioticAudio/EG13/settings.json.
     public static var defaultURL: URL {
+        if let url = EG13SettingsLocation.testingURL { return url }
         if let path = EG13DebugOverride.path("EG13_SETTINGS_PATH") { return URL(fileURLWithPath: path) }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
