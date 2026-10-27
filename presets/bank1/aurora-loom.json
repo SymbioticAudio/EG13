@@ -1,0 +1,42 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "Aurora Loom",
+  "note": "In the spirit of the first-load patch: part A is a wave-map pad, after the Braids manual, each voice drifting through its own smooth Marbles-style random timbres; part B takes part A as its input and scatters it into octave-up Clouds grains that wander the buffer on a slow random. Push the mod wheel past halfway to freeze the cloud.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 40,
+  "master": {"Mode": "Layer"},
+  "parts": {
+    "A": {
+      "Source": {"engine": "Digital Oscillator", "params": {"Shape": "Wave Map", "Timbre": 0.45, "Color": 0.5}},
+      "Filter": {"engine": "State Variable Filter", "params": {"Cutoff": 0.66, "Resonance": 0.15, "Mode": "LP"}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.5, "Sustain": 1.0, "Release": 0.7}},
+      "Mod 3": {"engine": "Random / S&H", "scope": "per voice", "params": {"T Rate": 0.3, "X Steps": 0.15, "X Spread": 0.7, "X Range": "Full"}},
+      "Mod 4": {"engine": "LFO", "scope": "per part", "params": {"Range": "Low", "Frequency": 0.45}},
+      "settings": {"Level": 0.55, "Pan": -0.2},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0},
+        {"source": "Mod 3 Random / S&H X1", "destination": "Source: Timbre", "amount": 0.25},
+        {"source": "Mod 3 Random / S&H X2", "destination": "Source: Color", "amount": 0.25},
+        {"source": "Mod 4 LFO Out 1", "destination": "Filter: Cutoff", "amount": 0.08},
+        {"source": "Mod 4 LFO Out 2", "destination": "Pan", "amount": 0.15}
+      ]
+    },
+    "B": {
+      "Source": {"engine": "Audio Input", "params": {"Gain": 1.0}},
+      "Filter": {"engine": "Off"},
+      "Part FX": {"engine": "Granular", "params": {"Mode": "Granular", "Blend": 0.85, "Position": 0.4, "Size": 0.7, "Pitch": 0.75, "Density": 0.85, "Texture": 0.85, "Feedback": 0.2, "Reverb": 0.6, "Spread": 0.8}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.6, "Sustain": 1.0, "Release": 0.75}},
+      "Mod 3": {"engine": "Function Generator", "scope": "per part", "params": {"Mode": "Random", "Rate": 0.12, "Smoothness": 0.9}},
+      "Mod 4": {"engine": "LFO", "scope": "per part", "params": {"Range": "Low", "Frequency": 0.35}},
+      "settings": {"Level": 0.85, "Pan": 0.2, "Input Source": "Other part"},
+      "routes": [
+        {"source": "Mod 1 Envelope", "destination": "Amp", "amount": 1.0},
+        {"source": "Mod 3 Function Generator", "destination": "Part FX: Position", "amount": 0.25},
+        {"source": "Mod 4 LFO Out 1", "destination": "Part FX: Size", "amount": 0.15},
+        {"source": "Mod Wheel", "destination": "Part FX: Freeze", "amount": 1.0}
+      ]
+    }
+  }
+}

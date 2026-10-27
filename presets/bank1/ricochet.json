@@ -1,0 +1,26 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Ricochet",
+  "note": "Every note bounces like a dropped ball, after the Stages manual's looping segments: a looping attack-decay plays the bounces, and a second, one-shot envelope lowers them and shortens the loop, so they come faster and quieter until they stop. Velocity brightens the filter.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 35,
+  "parts": {
+    "A": {
+      "Source": {"engine": "Macro Oscillator", "params": {"Model": "Filtered waveforms", "Harmonics": 0.5, "Timbre": 0.5, "Morph": 0.4}},
+      "Filter": {"engine": "State Variable Filter", "params": {"Cutoff": 0.55, "Resonance": 0.3, "Mode": "LP"}},
+      "Part FX": {"engine": "Reverb", "params": {"Amount": 0.25, "Time": 0.6, "Brightness": 0.5}},
+      "Mod 2": {"engine": "Envelope", "scope": "per voice", "params": {"Mode": "Looping", "Attack": 0.05, "Attack Shape": 0.2, "Decay": 0.3, "Decay Shape": 0.8}},
+      "Mod 3": {"engine": "Envelope", "scope": "per voice", "params": {"Mode": "AD", "Attack": 0.0, "Decay": 0.75, "Decay Shape": 0.5}},
+      "settings": {"Level": 0.75},
+      "routes": [
+        {"source": "Mod 2 Envelope", "via": "Mod 3 Envelope", "destination": "Amp", "amount": 1.0},
+        {"source": "Mod 3 Envelope", "destination": "Mod 2: Decay", "amount": 0.25},
+        {"source": "Mod 3 Envelope", "destination": "Mod 2: Attack", "amount": 0.1},
+        {"source": "Mod 2 Envelope", "destination": "Filter: Cutoff", "amount": 0.2},
+        {"source": "Velocity", "destination": "Filter: Cutoff", "amount": 0.1}
+      ]
+    }
+  }
+}

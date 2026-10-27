@@ -1,0 +1,31 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Howl Lead",
+  "note": "A gliding solo voice after the Plaits manual's granular formant model, with a long echo. Slide (CC74) or the mod wheel sweeps the formants; aftertouch or MPE pressure widens them, opens the filter and adds vibrato.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 32,
+  "parts": {
+    "A": {
+      "Source": {"engine": "Macro Oscillator", "params": {"Model": "Granular formant", "Harmonics": 0.4, "Timbre": 0.4, "Morph": 0.5}},
+      "Filter": {"engine": "Analog Filter", "params": {"Frequency": 0.78, "Resonance": 0.2, "Mode": "LP2"}},
+      "Part FX": {"engine": "Granular Delay", "params": {"Dry/Wet": 0.25, "Time": 0.35, "Size": 1.0, "Density": 0.5, "Feedback": 0.35, "Reverb": 0.3}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.08, "Sustain": 1.0, "Release": 0.5}},
+      "Mod 3": {"engine": "LFO", "scope": "per voice", "params": {"Frequency": 0.58}},
+      "settings": {"Level": 0.97, "Voice Mode": "Legato", "Glide": 0.12},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0},
+        {"source": "Slide", "destination": "Source: Timbre", "amount": 0.4},
+        {"source": "Pressure", "destination": "Source: Morph", "amount": 0.35},
+        {"source": "Channel Pressure", "destination": "Source: Morph", "amount": 0.35},
+        {"source": "Pressure", "destination": "Filter: Frequency", "amount": 0.15},
+        {"source": "Channel Pressure", "destination": "Filter: Frequency", "amount": 0.15},
+        {"source": "Mod 3 LFO Out 1", "via": "Pressure", "destination": "Pitch", "amount": 0.01},
+        {"source": "Mod 3 LFO Out 1", "via": "Channel Pressure", "destination": "Pitch", "amount": 0.01},
+        {"source": "Mod 3 LFO Out 1", "via": "Mod Wheel", "destination": "Pitch", "amount": 0.01},
+        {"source": "Mod Wheel", "destination": "Source: Timbre", "amount": 0.4}
+      ]
+    }
+  }
+}

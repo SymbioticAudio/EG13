@@ -2,7 +2,7 @@
   "kind": "performance",
   "plugin": "instrument",
   "name": "Spiral Stair",
-  "note": "Part A's plucked chord echoes back a fifth higher, and higher again, through a pitch-shifting looping delay, after the Clouds manual's looping-delay mode; part B is a breathy flute pad from the Braids manual's physical models, in a long hall.",
+  "note": "Part A's plucked chord echoes back a fifth higher through a pitch-shifting looping delay, after the Clouds manual's looping-delay mode; part B is a breathy flute pad from the Braids manual's physical models, in a long hall.",
   "credit": "EG13 factory",
   "licence": "GPL-3.0-or-later",
   "order": 30,

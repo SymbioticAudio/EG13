@@ -1,0 +1,23 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Workhorse Bass",
+  "note": "A plain mono bass to build on, after the Braids manual's saw-with-sub-oscillator shape: a warm four-pole low-pass with a short filter pluck that velocity scales, and the mod wheel to open it up.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 34,
+  "parts": {
+    "A": {
+      "Source": {"engine": "Digital Oscillator", "params": {"Shape": "Saw Sub", "Timbre": 0.4, "Color": 0.5}},
+      "Filter": {"engine": "Analog Filter", "params": {"Frequency": 0.42, "Resonance": 0.3, "Mode": "LP4"}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.0, "Decay": 0.5, "Sustain": 1.0, "Release": 0.3}},
+      "Mod 2": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.0, "Decay": 0.42, "Sustain": 0.25, "Release": 0.3}},
+      "settings": {"Level": 0.97, "Transpose": -12, "Voice Mode": "Mono"},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0},
+        {"source": "Mod 2 Envelope", "via": "Velocity", "destination": "Filter: Frequency", "amount": 0.35},
+        {"source": "Mod Wheel", "destination": "Filter: Frequency", "amount": 0.25}
+      ]
+    }
+  }
+}

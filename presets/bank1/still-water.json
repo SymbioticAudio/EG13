@@ -1,0 +1,36 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "Still Water",
+  "note": "A split at C4, after the Elements manual's reverb freeze: below, a bowed string pad in a long hall; push the mod wheel past halfway to freeze the hall, let go of the keys and the chord hangs there while you play six-operator FM keys above, after the Plaits manual's FM models.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 39,
+  "master": {"Mode": "Split", "Split Note": "C4"},
+  "parts": {
+    "A": {
+      "Source": {"engine": "Modal Synth", "params": {"Model": "Strings", "Contour": 0.75, "Bow": 0.6, "Strike": 0.0, "Bow Timbre": 0.45, "Geometry": 0.3, "Brightness": 0.4, "Damping": 0.5, "Position": 0.35, "Space": 0.2}},
+      "Filter": {"engine": "State Variable Filter", "params": {"Cutoff": 0.032, "Resonance": 0.0, "Mode": "HP"}},
+      "Part FX": {"engine": "Reverb", "params": {"Amount": 0.5, "Time": 0.85, "Diffusion": 0.7, "Brightness": 0.45}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.3, "Sustain": 1.0, "Release": 0.6}},
+      "Mod 3": {"engine": "LFO", "scope": "per part", "params": {"Range": "Low", "Frequency": 0.5}},
+      "settings": {"Level": 0.603, "Pan": -0.1},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0},
+        {"source": "Mod Wheel", "destination": "Part FX: Freeze", "amount": 1.0},
+        {"source": "Mod 3 LFO Out 1", "destination": "Source: Bow Timbre", "amount": 0.1}
+      ]
+    },
+    "B": {
+      "Source": {"engine": "Macro Oscillator", "params": {"Model": "6-op FM 1", "Harmonics": 0.25, "Timbre": 0.4, "Morph": 0.6}},
+      "Filter": {"engine": "State Variable Filter", "params": {"Cutoff": 0.75, "Resonance": 0.0}},
+      "Part FX": {"engine": "Reverb", "params": {"Amount": 0.2, "Time": 0.45, "Brightness": 0.55}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.0, "Sustain": 1.0, "Release": 0.55}},
+      "settings": {"Level": 0.64, "Pan": 0.1},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0},
+        {"source": "Velocity", "destination": "Source: Timbre", "amount": 0.15}
+      ]
+    }
+  }
+}

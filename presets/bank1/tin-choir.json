@@ -1,0 +1,25 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Tin Choir",
+  "note": "After the Warps manual's vocoder played the classic way: the voice (Plaits' formant speech, drifting through vowels on a slow LFO) is the modulator and Warps' own oscillator, an octave down, the carrier, so the chord sings in robot vowels. The mod wheel swaps the carrier's pulse for noise, a whisper.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 38,
+  "parts": {
+    "A": {
+      "Source": {"engine": "Macro Oscillator", "params": {"Model": "Speech", "Harmonics": 0.2, "Timbre": 0.5, "Morph": 0.3, "Decay": 1.0}},
+      "Filter": {"engine": "Off"},
+      "Shaper": {"engine": "Ring Mod / Vocoder", "params": {"Algorithm": "Vocoder", "Timbre": 0.5, "Carrier": "Internal Osc", "Modulator": "Voice", "Osc Shape": "Triangle / Pulse", "Osc Pitch": 0.25, "Mod Level": 0.8}},
+      "Part FX": {"engine": "Reverb", "params": {"Amount": 0.3, "Time": 0.7, "Brightness": 0.45}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.2, "Sustain": 1.0, "Release": 0.6}},
+      "Mod 3": {"engine": "LFO", "scope": "per part", "params": {"Range": "Low", "Frequency": 0.75, "Slope": 0.95}},
+      "settings": {"Level": 0.53},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0},
+        {"source": "Mod 3 LFO Out 1", "destination": "Source: Morph", "amount": 0.3},
+        {"source": "Mod Wheel", "destination": "Shaper: Osc Shape", "amount": 0.4}
+      ]
+    }
+  }
+}

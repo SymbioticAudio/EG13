@@ -1,0 +1,36 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "Glass Zither",
+  "note": "Two plucked string voices after the Rings manual's string models: part A strums quantised sympathetic strings, whose chord changes at random with each note; part B adds an inharmonic string an octave up, its pluck point drifting slowly. The mod wheel makes B's string more inharmonic.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 37,
+  "master": {"Mode": "Layer"},
+  "parts": {
+    "A": {
+      "Source": {"engine": "Resonator", "params": {"Model": "Sympathetic Q", "Structure": 0.5, "Brightness": 0.55, "Damping": 0.6, "Position": 0.4, "Polyphony": "2", "Spread": 0.7}},
+      "Filter": {"engine": "State Variable Filter", "params": {"Cutoff": 0.032, "Resonance": 0.0, "Mode": "HP"}},
+      "Part FX": {"engine": "Reverb", "params": {"Amount": 0.25, "Time": 0.6, "Brightness": 0.5}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.0, "Sustain": 1.0, "Release": 0.7}},
+      "settings": {"Level": 0.654, "Pan": -0.25},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0},
+        {"source": "Random", "destination": "Source: Structure", "amount": 0.4},
+        {"source": "Velocity", "destination": "Source: Brightness", "amount": 0.15}
+      ]
+    },
+    "B": {
+      "Source": {"engine": "Resonator", "params": {"Model": "String", "Structure": 0.7, "Brightness": 0.45, "Damping": 0.9, "Position": 0.3, "Polyphony": "2", "Spread": 1.0}},
+      "Filter": {"engine": "State Variable Filter", "params": {"Cutoff": 0.032, "Resonance": 0.0, "Mode": "HP"}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.0, "Sustain": 1.0, "Release": 0.7}},
+      "Mod 3": {"engine": "LFO", "scope": "per part", "params": {"Range": "Low", "Frequency": 0.55}},
+      "settings": {"Level": 0.433, "Pan": 0.25, "Transpose": 12},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0},
+        {"source": "Mod 3 LFO Out 1", "destination": "Source: Position", "amount": 0.15},
+        {"source": "Mod Wheel", "destination": "Source: Structure", "amount": 0.2}
+      ]
+    }
+  }
+}

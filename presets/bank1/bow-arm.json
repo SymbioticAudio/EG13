@@ -1,0 +1,29 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Bow Arm",
+  "note": "After the Elements manual's bow exciter: a bowed modal string for solo lines. A soft mallet catches each note before the bow takes over; aftertouch or MPE pressure (or the mod wheel) bows harder and deepens the vibrato, and slide changes the bow's timbre.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 31,
+  "parts": {
+    "A": {
+      "Source": {"engine": "Modal Synth", "params": {"Model": "Modal", "Contour": 0.7, "Bow": 0.75, "Strike": 0.25, "Bow Timbre": 0.4, "Geometry": 0.5, "Brightness": 0.45, "Damping": 0.6, "Position": 0.3, "Space": 0.25, "Mallet": 0.2}},
+      "Filter": {"engine": "State Variable Filter", "params": {"Cutoff": 0.032, "Resonance": 0.0, "Mode": "HP"}},
+      "Part FX": {"engine": "Reverb", "params": {"Amount": 0.25, "Time": 0.55, "Brightness": 0.45}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.05, "Sustain": 1.0, "Release": 0.55}},
+      "Mod 3": {"engine": "LFO", "scope": "per voice", "params": {"Frequency": 0.55}},
+      "settings": {"Level": 0.62, "Voice Mode": "Legato", "Glide": 0.08},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0},
+        {"source": "Pressure", "destination": "Source: Bow", "amount": 0.4},
+        {"source": "Channel Pressure", "destination": "Source: Bow", "amount": 0.4},
+        {"source": "Mod Wheel", "destination": "Source: Bow", "amount": 0.4},
+        {"source": "Slide", "destination": "Source: Bow Timbre", "amount": 0.35},
+        {"source": "Mod 3 LFO Out 1", "via": "Pressure", "destination": "Pitch", "amount": 0.008},
+        {"source": "Mod 3 LFO Out 1", "via": "Channel Pressure", "destination": "Pitch", "amount": 0.008},
+        {"source": "Mod 3 LFO Out 1", "via": "Mod Wheel", "destination": "Pitch", "amount": 0.008}
+      ]
+    }
+  }
+}
