@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Signs, notarises and staples the shipped plugin bundles in place.
 #   scripts/sign-and-notarize.sh [--dry-run] <plugins-dir>
+#   scripts/sign-and-notarize.sh --self-test   (offline test of the signing helpers, run under
+#                                                /bin/bash: see signing_self_test)
 # <plugins-dir> holds EG13.component, EG13.vst3 and EG13.clap (e.g. build/mac/plugins); run it
 # after the validators and before scripts/package-release.sh, so the zip holds the signed bundles.
 # With all six secrets set (docs/release/signing-setup.md): imports the Developer ID Application
@@ -15,12 +17,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=signing-common.sh
 source "$ROOT/scripts/signing-common.sh"
 
+if [ "${1:-}" = --self-test ]; then
+  signing_self_test
+  exit
+fi
 if [ "${1:-}" = --dry-run ]; then
   DRY_RUN=1
   shift
 fi
 if [ $# -ne 1 ]; then
-  echo "usage: sign-and-notarize.sh [--dry-run] <plugins-dir>" >&2
+  echo "usage: sign-and-notarize.sh [--dry-run] <plugins-dir> | --self-test" >&2
   exit 2
 fi
 PLUGINS="$1"

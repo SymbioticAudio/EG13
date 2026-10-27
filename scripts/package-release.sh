@@ -36,22 +36,31 @@ for b in "${BUNDLES[@]}"; do
   [ "$v" = "$VERSION" ] || fail "$b has CFBundleShortVersionString '$v', not $VERSION"
 done
 
-# The SymbioticBrand artwork must not ship. nm lists every architecture slice of the universal
-# binary. Its output goes into a variable first: under pipefail, `nm | grep -q` can die of SIGPIPE.
+# The SymbioticBrand artwork must not ship. Every Mach-O file in each bundle is checked (the main
+# executable and any framework, dylib or helper); nm lists every architecture slice of a universal
+# binary. Output goes into a variable first: under pipefail, `nm | grep -q` can die of SIGPIPE.
 for b in "${BUNDLES[@]}"; do
   bin="$PLUGINS/$b/Contents/MacOS/EG13"
   [ -f "$bin" ] || fail "no binary at $bin"
   syms="$(nm -a "$bin")" || fail "nm failed on $bin"
   # Positive control: the editor's symbols (aliased symbiotic-design icons included) must be
-  # found, or the check below proves nothing.
+  # found in the main executable, or the checks below prove nothing.
   grep -qE "EG13UI" <<<"$syms" || fail "self-check failed: no EG13UI symbol in $bin"
   grep -qE "EG13SymbioticIcons" <<<"$syms" || fail "self-check failed: no EG13SymbioticIcons symbol in $bin"
-  if grep -qE "SymbioticBrand" <<<"$syms"; then
-    fail "$b contains SymbioticBrand symbols: the artwork is all rights reserved and must not ship. Configure with -DEG13_NO_BRAND=ON (or EG13_NO_BRAND=1) and rebuild."
-  fi
-  if grep -aq "SymbioticBrand" "$bin"; then
-    fail "$b contains the string SymbioticBrand: the artwork is all rights reserved and must not ship."
-  fi
+  machos=0
+  while IFS= read -r -d '' f; do
+    kind="$(file -b "$f")"
+    case "$kind" in *Mach-O*) ;; *) continue ;; esac
+    machos=$((machos + 1))
+    syms="$(nm -a "$f" 2>&1)" || fail "nm failed on $f"
+    if grep -qE "SymbioticBrand" <<<"$syms"; then
+      fail "$f contains SymbioticBrand symbols: the artwork is all rights reserved and must not ship. Configure with -DEG13_NO_BRAND=ON (or EG13_NO_BRAND=1) and rebuild."
+    fi
+    if grep -aq "SymbioticBrand" "$f"; then
+      fail "$f contains the string SymbioticBrand: the artwork is all rights reserved and must not ship."
+    fi
+  done < <(find "$PLUGINS/$b" -type f -print0)
+  [ "$machos" -ge 1 ] || fail "self-check failed: no Mach-O file found in $b"
 done
 echo "ok: no SymbioticBrand symbols in ${BUNDLES[*]}"
 

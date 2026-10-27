@@ -72,14 +72,14 @@ gh secret set APPLE_APP_PASSWORD --repo SymbioticAudio/EG13
 
 On a `v*` tag the workflow then, after the build, tests and validators:
 
-1. imports the Developer ID Application certificate into a temporary keychain, signs `EG13.component`, `EG13.vst3` and `EG13.clap` with the hardened runtime and a secure timestamp, sends them to Apple's notary service and waits (usually a few minutes), and staples the tickets to the bundles (`scripts/sign-and-notarize.sh`);
-2. zips the signed bundles (`scripts/package-release.sh`);
+1. imports the Developer ID Application certificate into a temporary keychain (with the notarytool credentials, stored there as a keychain profile), signs `EG13.component`, `EG13.vst3` and `EG13.clap` with the hardened runtime and a secure timestamp, sends them to Apple's notary service and waits (usually a few minutes), and staples the tickets to the bundles (`scripts/sign-and-notarize.sh`);
+2. runs the plugin validators again on the signed bundles, then zips them (`scripts/package-release.sh`);
 3. builds `EG13-<version>-macOS.pkg`, which installs to `/Library/Audio/Plug-Ins/{Components,VST3,CLAP}`, signs it with the Developer ID Installer certificate, notarises and staples it (`scripts/build-pkg.sh`);
-4. attaches the zip and the `.pkg` to the draft release.
+4. hands the zip and the `.pkg` to a separate job, the only one allowed to write to the repository, which attaches them to the draft release.
 
 The temporary keychain is deleted at the end of each step. If notarisation is rejected, the step fails and prints Apple's log; nothing is attached. Once signing works, say so in the release notes and in `docs/manual/install.md` (the quarantine step is then not needed).
 
-To check the commands without signing anything, run the script with fake values:
+To check the signing helpers offline (with `security` and `xcrun` stubbed out), run `/bin/bash scripts/sign-and-notarize.sh --self-test`. To see the commands without signing anything, run the script with fake values:
 
 ```
 MACOS_DEVELOPER_ID_APP_P12=x MACOS_DEVELOPER_ID_INSTALLER_P12=x MACOS_CERT_PASSWORD=x \

@@ -50,7 +50,9 @@ for expected in "aumu EG13 Symb" "aumf EGfx Symb"; do
 done
 
 echo "== auval: $COMPONENT"
-codesign --force --deep --sign - "$COMPONENT"
+# Bundles without a valid signature get an ad-hoc one; a valid one (a Developer ID signature in the
+# release workflow, which validates the signed bundles again) is kept.
+codesign --verify --strict "$COMPONENT" 2>/dev/null || codesign --force --deep --sign - "$COMPONENT"
 DEST="$HOME/Library/Audio/Plug-Ins/Components"
 mkdir -p "$DEST"
 rm -rf "${DEST:?}/$(basename "${COMPONENT:?}")"
@@ -63,7 +65,7 @@ auval -v aumu EG13 Symb
 auval -v aumf EGfx Symb
 
 echo "== pluginval: $VST3"
-codesign --force --deep --sign - "$VST3"
+codesign --verify --strict "$VST3" 2>/dev/null || codesign --force --deep --sign - "$VST3"
 "$PLUGINVAL" --strictness-level 5 --validate-in-process --validate "$VST3"
 
 echo "All validators passed."
