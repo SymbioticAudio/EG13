@@ -150,7 +150,8 @@ class Part {
     // the gate drives it). NaN: None, the reserved codes and a P of an Off mod slot.
     float value[kNumDestinations];
     // Min and max of every mod output since clearModOutRange(), sampled at each control tick
-    // (the last-started voice's instance for a per-voice slot). +inf / -inf: nothing sampled.
+    // (the last-started voice's instance for a per-voice slot, only while that voice sounds;
+    // only the outputs the slot's engine has). +inf / -inf: nothing sampled.
     float outMin[kNumModSlots][kMaxModOutputs];
     float outMax[kNumModSlots][kMaxModOutputs];
     ModDisplay() {

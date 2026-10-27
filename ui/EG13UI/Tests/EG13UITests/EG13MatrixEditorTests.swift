@@ -106,6 +106,17 @@ struct EG13MatrixEditorTests {
         #expect(core.routes[1][4] == .init(), "the other part is untouched")
     }
 
+    @Test("Re-picking the chosen item changes nothing and sends nothing")
+    func repickIsNoOp() {
+        #expect(synth.chooseRoute(part: 0, route: 4, field: .source, code: Self.modWheel))
+        core.setRouteCalls = []
+        #expect(synth.chooseRoute(part: 0, route: 4, field: .source, code: Self.modWheel))
+        #expect(synth.chooseRoute(part: 0, route: 4, field: .via, code: 0))
+        #expect(core.setRouteCalls.isEmpty, "no route_set, so the project is not marked modified")
+        #expect(synth.chooseRoute(part: 0, route: 4, field: .via, code: Self.velocity))
+        #expect(core.setRouteCalls.count == 1, "a real change is still sent")
+    }
+
     // MARK: Clear
 
     @Test("Clearing sets source, destination, via and amount to none, the amount in one gesture")

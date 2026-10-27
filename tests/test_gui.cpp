@@ -179,6 +179,19 @@ TEST_CASE("A new editor opens at the settings' default size", "[gui]") {
     std::fputs("{\"schemaVersion\":1,\"defaultWindowPercent\":150,\"modulationDisplay\":true}", file);
     std::fclose(file);
   }
+  // Its own settings path for the test, and the previous one put back after, so the other [gui]
+  // tests in the same process are unaffected.
+  const char* previous = ::getenv("EG13_SETTINGS_PATH");
+  const std::string saved = previous ? previous : "";
+  const bool hadPrevious = previous != nullptr;
+  struct Restore {
+    const std::string& saved;
+    bool had;
+    ~Restore() {
+      if (had) setenv("EG13_SETTINGS_PATH", saved.c_str(), 1);
+      else unsetenv("EG13_SETTINGS_PATH");
+    }
+  } restore{saved, hadPrevious};
   setenv("EG13_SETTINGS_PATH", path.c_str(), 1);
   CHECK(eg13_ui_default_zoom() == 1.5);
   Fixture f;

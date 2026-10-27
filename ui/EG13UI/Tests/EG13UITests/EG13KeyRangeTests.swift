@@ -58,14 +58,16 @@ struct EG13KeyRangeTests {
         editor.begin(low)
         editor.move(low, toKey: 90)  // past High: stops at High
         #expect(editor.key(low) == 72)
-        editor.move(low, toKey: 5)  // before the strip: A0
-        #expect(editor.key(low) == EG13KeyMap.lowestKey)
+        editor.move(low, toKey: 30)
+        #expect(editor.key(low) == 30)
+        editor.move(low, toKey: 5)  // the left end: open, MIDI 0
+        #expect(editor.key(low) == 0)
         editor.end(low)
         editor.begin(high)
-        editor.move(high, toKey: 10)  // below Low: stops at Low
+        editor.move(high, toKey: 10)  // below the strip, and Low is 0: the lowest key of the strip
         #expect(editor.key(high) == EG13KeyMap.lowestKey)
-        editor.move(high, toKey: 120)  // past the strip: C8
-        #expect(editor.key(high) == EG13KeyMap.highestKey)
+        editor.move(high, toKey: 120)  // the right end: open, MIDI 127
+        #expect(editor.key(high) == 127)
         editor.end(high)
         editor.begin(.split)
         editor.move(.split, toKey: 200)
@@ -73,6 +75,57 @@ struct EG13KeyRangeTests {
         editor.end(.split)
         #expect(EG13KeyMap.dragged(.low(part: 1), to: 60, low: 30, high: 50) == 50)
         #expect(EG13KeyMap.dragged(.high(part: 1), to: 20, low: 30, high: 50) == 30)
+    }
+
+    @Test("dragging to the strip end sets 0 or 127")
+    func dragToEndOpensTheRange() {
+        set(EG13ParamID.part(0, .keyLow), 40)
+        set(EG13ParamID.part(0, .keyHigh), 72)
+        let width = 360.0, key = width / 88
+        let low = EG13KeyMap.Handle.low(part: 0), high = EG13KeyMap.Handle.high(part: 0)
+        var lowDrag = EG13KeyRangeDrag(handle: low, startX: EG13KeyMap.x(forKey: 40, width: width), editor: editor)
+        lowDrag.update(x: -30, width: width, editor: editor)  // past the left end
+        #expect(editor.key(low) == 0, "the left end is MIDI 0, not A0")
+        lowDrag.update(x: 0.5 * key, width: width, editor: editor)  // on the leftmost key
+        #expect(editor.key(low) == 0)
+        lowDrag.end(editor: editor)
+        var highDrag = EG13KeyRangeDrag(handle: high, startX: EG13KeyMap.x(forKey: 72, width: width), editor: editor)
+        highDrag.update(x: width + 30, width: width, editor: editor)
+        #expect(editor.key(high) == 127, "the right end is MIDI 127, not C8")
+        highDrag.update(x: width - 0.5 * key, width: width, editor: editor)  // on the rightmost key
+        #expect(editor.key(high) == 127)
+        highDrag.end(editor: editor)
+        #expect(editor.range(part: 0) == EG13KeyMap.lowestKey...EG13KeyMap.highestKey, "drawn pinned to the strip")
+    }
+
+    @Test("a default 0–127 range survives a small drag of the other end")
+    func defaultRangeSurvivesSmallDrags() {
+        let width = 360.0, key = width / 88
+        let low = EG13KeyMap.Handle.low(part: 0), high = EG13KeyMap.Handle.high(part: 0)
+        #expect(editor.key(low) == 0 && editor.key(high) == 127)
+        // Low: one key right, then back fully left. High is never touched.
+        var lowDrag = EG13KeyRangeDrag(handle: low, startX: 0, editor: editor)
+        lowDrag.update(x: key, width: width, editor: editor)
+        #expect(editor.key(low) == EG13KeyMap.lowestKey + 1)
+        #expect(editor.key(high) == 127)
+        lowDrag.update(x: 0, width: width, editor: editor)
+        lowDrag.end(editor: editor)
+        #expect(editor.key(low) == 0)
+        // High: a jiggle that comes back to the end leaves it at 127; a small move left is a key.
+        var highDrag = EG13KeyRangeDrag(handle: high, startX: width, editor: editor)
+        highDrag.update(x: width - key, width: width, editor: editor)
+        #expect(editor.key(high) == EG13KeyMap.highestKey - 1)
+        highDrag.update(x: width, width: width, editor: editor)
+        highDrag.end(editor: editor)
+        #expect(editor.key(high) == 127)
+        #expect(editor.key(low) == 0)
+        // A press on an end handle that does not move sends nothing.
+        core.calls = []
+        var still = EG13KeyRangeDrag(handle: low, startX: 0, editor: editor)
+        still.update(x: 0.4 * key, width: width, editor: editor)
+        still.update(x: -20, width: width, editor: editor)
+        still.end(editor: editor)
+        #expect(core.calls.isEmpty)
     }
 
     @Test("Split marker shows only in Split")

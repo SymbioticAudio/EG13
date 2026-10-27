@@ -227,6 +227,34 @@ struct EG13ModRouteModelTests {
         #expect(Array(frames.suffix(3)) == [EG13ModTraceFrame(min: 0.1, max: 0.3), nil, EG13ModTraceFrame(min: 0.2, max: 0.2)])
     }
 
+    @Test("a static patch's traces stop invalidating")
+    func staticTraceIsQuiet() {
+        // A parked per-part output (a gate-off envelope, a stopped LFO) reports the same value
+        // every frame: once the whole window holds it, a push changes nothing a card can show.
+        core.modOutMin[0][0][0] = 0.4
+        core.modOutMax[0][0][0] = 0.4
+        for _ in 0..<(2 * EG13ModTrace.capacity + 4) { synth.tickModulation() }
+        let trace = synth.modTrace(part: 0, slot: 0)
+        let touched = Flag()
+        func track() {
+            touched.fired = false
+            withObservationTracking { _ = trace.frames } onChange: { touched.fired = true }
+        }
+        track()
+        synth.tickModulation()
+        synth.tickModulation()
+        #expect(!touched.fired, "a uniform window of the same value does not invalidate")
+        core.modOutMin[0][0][0] = 0.5  // positive control: a new value does
+        core.modOutMax[0][0][0] = 0.5
+        track()
+        synth.tickModulation()
+        #expect(touched.fired, "a changed value invalidates")
+        track()
+        synth.tickModulation()
+        #expect(touched.fired, "the same value again still scrolls while the window holds older frames")
+        #expect(trace.latest(output: 0) == EG13ModTraceFrame(min: 0.5, max: 0.5))
+    }
+
     @Test("A full trace of gaps does not invalidate its card")
     func idleTraceIsQuiet() {
         for _ in 0..<70 { synth.tick() }

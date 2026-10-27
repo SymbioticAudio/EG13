@@ -394,9 +394,12 @@ void Part::sampleModOutputs() {
   for (int s = 0; s < kNumModSlots; ++s) {
     if (modulation_.engine(s) == 0) continue;  // Off
     const bool perPart = modulation_.perPart(s);
-    if (!perPart && lastVoice_ < 0) continue;
+    // A per-voice slot shows the last-started voice only while it sounds: a finished voice's
+    // instance is frozen (it no longer runs), so it reports no data and the traces go quiet.
+    if (!perPart && (lastVoice_ < 0 || !voices_[size_t(lastVoice_)]->active())) continue;
     const float* out = modulation_.outputs(s, perPart ? -1 : lastVoice_);
-    for (int o = 0; o < kMaxModOutputs; ++o) {
+    const int outputs = std::min(modulation_.outputCount(s), kMaxModOutputs);  // the rest: no data
+    for (int o = 0; o < outputs; ++o) {
       display_.outMin[s][o] = std::min(display_.outMin[s][o], out[o]);
       display_.outMax[s][o] = std::max(display_.outMax[s][o], out[o]);
     }
@@ -415,7 +418,7 @@ void Part::clearModOutRange() {
 
 void Part::refreshModValues(const PartParams& params) {
   float* value = display_.value;
-  std::fill(value, value + kNumDestinations, std::nanf(""));
+  std::fill(value, value + kNumDestinations, std::numeric_limits<float>::quiet_NaN());
   const VoiceControl* c = lastVoice_ >= 0 ? &controls_[lastVoice_] : nullptr;  // none: the host values
   const SlotParams& slots = c ? c->params : params.slots;
   for (int i = 0; i < kMaxSlotParams; ++i) {

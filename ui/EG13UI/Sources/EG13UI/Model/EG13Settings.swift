@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Observation
 
 /// The app-wide settings (spec §8, M6b decision 9). They belong to the user's machine, not to a
@@ -56,7 +57,11 @@ extension EG13Settings: Codable {
 @Observable
 public final class EG13SettingsStore {
     public private(set) var settings = EG13Settings()
-    @ObservationIgnored private let url: URL?
+    @ObservationIgnored private let fixedURL: URL?
+    /// The shared store: its file is `defaultURL` as of each read or write, so a test that points
+    /// `EG13_SETTINGS_PATH` elsewhere mid-process is followed.
+    @ObservationIgnored private let followsEnvironment: Bool
+    private var url: URL? { followsEnvironment ? Self.defaultURL : fixedURL }
 
     /// The file the plugin uses: `$EG13_SETTINGS_PATH` if set (tests), else
     /// ~/Library/Application Support/SymbioticAudio/EG13/settings.json.
@@ -70,11 +75,19 @@ public final class EG13SettingsStore {
     }
 
     /// Shared by every editor in the process, so a change in one shows in the next one opened.
-    public static let shared = EG13SettingsStore(url: defaultURL)
+    public static let shared = EG13SettingsStore(followingEnvironment: ())
+    private static let log = Logger(subsystem: "com.symbioticaudio.eg13", category: "settings")
 
     /// url nil: nothing is read or written (tests and previews).
     public init(url: URL?) {
-        self.url = url
+        fixedURL = url
+        followsEnvironment = false
+        reload()
+    }
+
+    private init(followingEnvironment: Void) {
+        fixedURL = nil
+        followsEnvironment = true
         reload()
     }
 
@@ -116,6 +129,7 @@ public final class EG13SettingsStore {
             if rename(temp.path, url.path) != 0 { throw CocoaError(.fileWriteUnknown) }
         } catch {
             try? FileManager.default.removeItem(at: temp)
+            Self.log.error("could not write the settings file \(url.path, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 }

@@ -27,15 +27,16 @@ struct EG13KeyRangeEditor {
 
     var mode: EG13Mode { synth.mode }
 
-    /// The bounds a drag of `handle` is held to, from the other end's current value.
-    private func target(_ handle: EG13KeyMap.Handle, key: Int) -> Double {
+    /// The value a drag of `handle` to `key` sets: the strip's ends are MIDI 0 and 127, and the
+    /// other end's own value (not clamped to the strip) bounds it.
+    func target(_ handle: EG13KeyMap.Handle, key: Int) -> Int {
         let part: Int
         switch handle {
         case .low(let p), .high(let p): part = p
         case .split: part = 0
         }
-        let bounds = range(part: part)
-        return Double(EG13KeyMap.dragged(handle, to: key, low: bounds.lowerBound, high: bounds.upperBound))
+        let low = self.key(.low(part: part)), high = self.key(.high(part: part))
+        return EG13KeyMap.dragged(handle, to: key, low: min(low, high), high: max(low, high))
     }
 
     func begin(_ handle: EG13KeyMap.Handle) {
@@ -49,7 +50,7 @@ struct EG13KeyRangeEditor {
 
     func move(_ handle: EG13KeyMap.Handle, toKey key: Int) {
         guard let param = param(handle) else { return }
-        param.setValue(target(handle, key: key))
+        param.setValue(Double(target(handle, key: key)))
     }
 
     func end(_ handle: EG13KeyMap.Handle) { param(handle)?.endEdit() }
@@ -61,29 +62,44 @@ struct EG13KeyRangeEditor {
                                     mode: mode, ranges: ranges, split: EG13KeyMap.clampedKey(key(.split)))
     }
 
-    /// VoiceOver's increment and decrement: one semitone, as one gesture.
+    /// VoiceOver's increment and decrement: one semitone of the value itself (0 to 127, as the
+    /// stepper; the split note within the strip), as one gesture.
     func step(_ handle: EG13KeyMap.Handle, by delta: Int) {
-        guard param(handle) != nil else { return }
+        guard let param = param(handle) else { return }
+        let value: Int
+        switch handle {
+        case .low(let part):
+            value = min(max(key(handle) + delta, EG13KeyMap.lowestNote), key(.high(part: part)))
+        case .high(let part):
+            value = max(min(key(handle) + delta, EG13KeyMap.highestNote), key(.low(part: part)))
+        case .split:
+            value = EG13KeyMap.clampedKey(key(handle) + delta)
+        }
         begin(handle)
-        move(handle, toKey: EG13KeyMap.clampedKey(key(handle)) + delta)
+        param.setValue(Double(value))
         end(handle)
     }
 }
 
-/// One press-drag-release on a handle. It sends nothing until the pointer has moved the handle to
-/// another key, so a plain click is no edit; then it is one begin, edit..., end. The handle follows
-/// the pointer by the distance moved, not to where the pointer is, so it does not jump on grab.
+/// One press-drag-release on a handle. It sends nothing until the pointer has moved by a key and
+/// that move changes the value (the parameter's own, which may lie off the strip: 0 to 127), so a
+/// plain click is no edit; then it is one begin, edit..., end. The handle follows the pointer by the
+/// distance moved from where it is drawn, not to where the pointer is, so it does not jump on grab.
 struct EG13KeyRangeDrag {
     let handle: EG13KeyMap.Handle
     private let startX: Double
+    /// Where the handle is drawn (on the strip): the drag moves from here.
     private let startKey: Int
+    /// The parameter's value at the press, unclamped: a drag that would leave it there is no edit.
+    private let startValue: Int
     private(set) var began = false
 
     @MainActor
     init(handle: EG13KeyMap.Handle, startX: Double, editor: EG13KeyRangeEditor) {
         self.handle = handle
         self.startX = startX
-        startKey = EG13KeyMap.clampedKey(editor.key(handle))
+        startValue = editor.key(handle)
+        startKey = EG13KeyMap.clampedKey(startValue)
     }
 
     @MainActor
@@ -92,7 +108,7 @@ struct EG13KeyRangeDrag {
         let moved = Int(((x - startX) / width * Double(EG13KeyMap.keyCount)).rounded())
         let key = startKey + moved
         if !began {
-            guard EG13KeyMap.clampedKey(key) != startKey else { return }
+            guard moved != 0, editor.target(handle, key: key) != startValue else { return }
             began = true
             editor.begin(handle)
         }
@@ -122,6 +138,9 @@ struct EG13KeyRangeView: View {
     @State private var drag: EG13KeyRangeDrag?
     /// A press that grabbed nothing: its moves are ignored.
     @State private var ignoring = false
+    /// Where the current press started. SwiftUI does not call onEnded for a cancelled gesture, so a
+    /// press from anywhere else is a new one: the old drag is ended first.
+    @State private var pressStart: CGPoint?
 
     static let laneHeight: CGFloat = 12
     static let keyHeight: CGFloat = 26
@@ -164,6 +183,7 @@ struct EG13KeyRangeView: View {
         if var open = drag { open.end(editor: editor) }
         drag = nil
         ignoring = false
+        pressStart = nil
     }
 
     private func keys(width: CGFloat) -> some View {
@@ -216,7 +236,7 @@ struct EG13KeyRangeView: View {
 
     private func handle(_ handle: EG13KeyMap.Handle, at x: CGFloat, y: CGFloat, color: Color,
                         editor: EG13KeyRangeEditor) -> some View {
-        let key = EG13KeyMap.clampedKey(editor.key(handle))
+        let key = editor.key(handle)  // VoiceOver names the value itself, off the strip too
         return RoundedRectangle(cornerRadius: 2).fill(color)
             .frame(width: Self.handleWidth, height: Self.laneHeight)
             .overlay(RoundedRectangle(cornerRadius: 2).stroke(EG13Palette.white.color, lineWidth: 1))
@@ -243,6 +263,8 @@ struct EG13KeyRangeView: View {
     private func dragGesture(width: Double, editor: EG13KeyRangeEditor) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
             .onChanged { value in
+                if let start = pressStart, start != value.startLocation { finish() }  // the last one was cancelled
+                pressStart = value.startLocation
                 if drag == nil && !ignoring {
                     let start = value.startLocation
                     if let grabbed = editor.hitTarget(x: Double(start.x), y: Double(start.y), width: width,

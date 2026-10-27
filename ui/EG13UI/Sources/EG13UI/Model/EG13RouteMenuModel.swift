@@ -153,6 +153,16 @@ extension EG13Synth {
     /// Sets one field of a route from its menu; a hidden field of the same route is sent as 0.
     @discardableResult
     public func chooseRoute(part: Int, route: Int, field: EG13RouteField, code: UInt16) -> Bool {
+        if routeTable.indices.contains(part), routeTable[part].indices.contains(route) {
+            let current = routeTable[part][route]
+            let (now, hidden): (UInt16, Bool)
+            switch field {
+            case .source: (now, hidden) = (current.source, current.sourceHidden)
+            case .via: (now, hidden) = (current.via, current.viaHidden)
+            case .destination: (now, hidden) = (current.destination, current.destinationHidden)
+            }
+            if now == code && !hidden { return true }  // the item already chosen: no edit, nothing dirtied
+        }
         switch field {
         case .source: return setRoute(part: part, index: route, source: code)
         case .via: return setRoute(part: part, index: route, via: code)

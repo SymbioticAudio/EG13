@@ -17,6 +17,7 @@ import SymbioticTokens
 //   swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r5 <dir>   write the M6b layout round 5 PNGs (matrix, mods, busy patch) and exit
 //   swift run --package-path ui/EG13UI EG13UIPreview --modulation [--mod-load]   modulation page (animated mods); --mod-load is the init patch with a chord, 3 modulated knobs and 3 traces (for CPU sampling)
 //   swift run --package-path ui/EG13UI EG13UIPreview --editor [--drag-load]   editor page; --drag-load sweeps Part A's Level 30 times a second (for CPU sampling)
+//   swift run --package-path ui/EG13UI EG13UIPreview --editor-static   editor page over a static patch with no notes held: the mods produce nothing, as the plugin idles (for CPU sampling)
 
 private struct EG13PreviewRoot: View {
     enum Page: String, CaseIterable { case controls = "Controls", editor = "Editor", modulation = "Modulation" }
@@ -174,10 +175,13 @@ MainActor.assumeIsolated {
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
     let modLoad = arguments.contains("--mod-load")
+    let staticIdle = arguments.contains("--editor-static")
     let page: EG13PreviewRoot.Page = modLoad || arguments.contains("--modulation") ? .modulation
-        : arguments.contains("--editor") ? .editor : .controls
+        : arguments.contains("--editor") || staticIdle ? .editor : .controls
     let modulationCore: EG13PreviewCore = modLoad ? .modulationLoad() : .modulationDemo()
-    let host = NSHostingView(rootView: EG13PreviewRoot(core: .standard(), modulationCore: modulationCore, page: page,
+    let core = EG13PreviewCore.standard()
+    core.staticIdle = staticIdle
+    let host = NSHostingView(rootView: EG13PreviewRoot(core: core, modulationCore: modulationCore, page: page,
                                                        dragLoad: arguments.contains("--drag-load")))
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 900),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],

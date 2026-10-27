@@ -72,6 +72,8 @@ class PartModulation {
   void configure(int slot, int engine, bool perPart);
   int engine(int slot) const { return engine_[slot]; }
   bool perPart(int slot) const { return perPart_[slot]; }
+  // How many outputs the slot's engine has (the rest read 0 and mean nothing).
+  int outputCount(int slot) const { return partSlots_[size_t(slot)].info().outputCount; }
   void startVoice(int v);  // the voice starts from silence: its per-voice slots restart
 
   void processPart(const ModParams& params, const ModPartInputs& part, const ModVoiceInputs* voices, int n);

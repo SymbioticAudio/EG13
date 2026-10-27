@@ -235,6 +235,40 @@ TEST_CASE("mod output min and max are read and reset") {
   synth.setActive(false);
 }
 
+TEST_CASE("after release, mod outputs report no data") {
+  // A per-voice slot is sampled only while its voice sounds, and only the outputs its engine
+  // has: a released note leaves nothing to show, so the editor's traces go quiet.
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  UiSnapshot snap;
+  synth.noteOn(0, 60, 1.0f);
+  runBlocks(synth, 20);
+  synth.uiSnapshot(&snap);
+  REQUIRE(snap.modOutMin[0][1][0] <= snap.modOutMax[0][1][0]);  // Mod 2 (per voice) is live
+  for (int o = 1; o < kMaxModOutputs; ++o) {
+    if (o >= synth.part(0).modulation().outputCount(1)) {
+      CHECK(snap.modOutMin[0][1][o] > snap.modOutMax[0][1][o]);  // an output the engine lacks
+    }
+  }
+  synth.noteOff(0, 60);
+  for (int i = 0; i < 400 && synth.activeVoiceCount(0) > 0; ++i) runBlocks(synth, 1);
+  REQUIRE(synth.activeVoiceCount(0) == 0);
+  runBlocks(synth, 1);
+  synth.uiSnapshot(&snap);  // read and reset
+  runBlocks(synth, 10);
+  synth.uiSnapshot(&snap);
+  for (int s = 0; s < kNumModSlots; ++s) {
+    if (synth.part(0).modulation().perPart(s)) continue;  // a per-part slot runs on by design
+    for (int o = 0; o < kMaxModOutputs; ++o) {
+      INFO("slot " << s << " output " << o);
+      CHECK(std::isinf(snap.modOutMin[0][s][o]));
+      CHECK(snap.modOutMin[0][s][o] > snap.modOutMax[0][s][o]);
+    }
+  }
+  synth.setActive(false);
+}
+
 TEST_CASE("unused destinations are NaN") {
   Synth synth(PluginKind::Instrument);
   synth.prepare(kRate, kBlock);

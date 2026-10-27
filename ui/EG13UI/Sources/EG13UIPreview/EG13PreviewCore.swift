@@ -242,7 +242,7 @@ final class EG13PreviewCore: EG13Core {
                     var low = Float.infinity, high = -Float.infinity
                     for sample in 0..<4 {
                         let at = now - (3 - Double(sample)) / (4 * Self.displayRate)
-                        if let value = Self.modOutput(engine: engine, slot: slot, output: output, at: at) {
+                        if let value = self.output(engine: engine, slot: slot, output: output, at: at) {
                             low = min(low, Float(value))
                             high = max(high, Float(value))
                         }
@@ -268,6 +268,14 @@ final class EG13PreviewCore: EG13Core {
     private var frameCount = 0
     /// A chord held down: voices sounding in both parts.
     var heldChord = false
+    /// A static patch with no notes held, as the plugin idles (`--editor-static`): the mods
+    /// produce nothing unless a chord is held, so the traces hold gaps and go quiet.
+    var staticIdle = false
+
+    /// `modOutput`, or nothing on a static, idle core.
+    private func output(engine: String, slot: Int, output: Int, at time: Double) -> Double? {
+        staticIdle && !heldChord ? nil : Self.modOutput(engine: engine, slot: slot, output: output, at: time)
+    }
 
     /// A mod engine's output at time `at`, or nil when it produces nothing (an idle envelope). An
     /// envelope retriggers every 2 s (attack 40 ms, decay to a sustain of 0.45, release from 1.3 s
@@ -304,8 +312,8 @@ final class EG13PreviewCore: EG13Core {
         case 32..<64:
             let slot = Int(source - 32) / 8, output = Int(source - 32) % 8
             let engine = Self.engines(3 + slot)[current[3 + slot][part]].name
-            return Self.modOutput(engine: engine, slot: slot, output: output,
-                                  at: time + Self.partOffset * Double(part)) ?? 0
+            return self.output(engine: engine, slot: slot, output: output,
+                               at: time + Self.partOffset * Double(part)) ?? 0
         default: return 0.5
         }
     }

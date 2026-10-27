@@ -23,6 +23,9 @@ public final class EG13ModTrace {
     private var count = 0
     /// How many stored frames, over all outputs, are values (not gaps).
     private var liveFrames = 0
+    /// How many of the newest frames (all outputs) are identical: at `capacity` the window is
+    /// uniform, and pushing the same frame again changes nothing the trace can show.
+    private var steadyRun = 0
     /// Bumped whenever the trace changes; reading it (or `frames`, `frame`, `latest`) observes the trace.
     public private(set) var revision = 0
 
@@ -64,12 +67,13 @@ public final class EG13ModTrace {
     func reset() {
         guard count > 0 else { return }
         for output in 0..<Self.outputCount { for i in 0..<Self.capacity { ring[output][i] = nil } }
-        head = 0; count = 0; liveFrames = 0
+        head = 0; count = 0; liveFrames = 0; steadyRun = 0
         revision += 1
     }
 
     /// Adds one display frame in place (no copies of the storage). Writes nothing when the trace
-    /// does not change (a run of gaps on a full trace), so an idle slot never invalidates its card.
+    /// would not change (a full window of gaps, or of the same frame), so an idle slot or a parked
+    /// output never invalidates its card.
     func push(min mins: [Float], max maxs: [Float]) {
         var incoming = [EG13ModTraceFrame?](repeating: nil, count: Self.outputCount)
         var incomingLive = 0
@@ -83,6 +87,16 @@ public final class EG13ModTrace {
         }
         let full = count == Self.capacity
         if full && incomingLive == 0 && liveFrames == 0 { return }
+        var sameAsNewest = count > 0
+        if sameAsNewest {
+            let newest = (head + count - 1) % Self.capacity
+            for output in 0..<Self.outputCount where ring[output][newest] != incoming[output] {
+                sameAsNewest = false
+                break
+            }
+        }
+        steadyRun = sameAsNewest ? steadyRun + 1 : 1
+        if full && steadyRun > Self.capacity { return }  // a uniform window: nothing changes
         let slot = full ? head : (head + count) % Self.capacity
         for output in 0..<Self.outputCount {
             if full && ring[output][slot] != nil { liveFrames -= 1 }
