@@ -80,7 +80,7 @@ A missing or empty directory gives an empty bank. One file per preset, `<slug>.j
 eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]
 eg13_preset info <source.json|file>
 eg13_preset decompile <file> -o <source.json>
-eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B]
+eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress] [--no-soft-clip]
 eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]
 eg13_preset table <dir>... -o <factory_presets.cpp>
 ```
@@ -91,6 +91,11 @@ eg13_preset table <dir>... -o <factory_presets.cpp>
 - `render` writes a 16-bit 48 kHz stereo WAV for listening. It drives a synth directly, no host.
   A Patch plays in part A of an Init instance (`--part B` for B, with the Init part A muted). An
   effect preset gets a fixed 110 Hz saw and noise as its input.
+- `--stress` plays the **headroom script** instead: C2 G2 C3 E3 G3 B3 D4 G4 at velocity 127, held 6 s,
+  7 s in all. `--no-soft-clip` turns the master Soft Clip off and prints the raw peak (`peak_dbfs=`);
+  the WAV then clips at full scale. Every instrument factory preset must stay below -1 dBFS on the
+  headroom script with Soft Clip off (ctest "Every instrument factory preset keeps 1 dB of headroom
+  ..."), and the first-load preset below the soft clipper (-3 dBFS) on the note script.
 - The **note script**, fixed: C3, G3, D4 and A4 held together at velocity 100 for 8 s, then released,
   then a tail, 12 s in all.
 - `info` prints `name`, `note`, `credit`, `plugin`, `kind`, `order` as `key=value` lines (the listening

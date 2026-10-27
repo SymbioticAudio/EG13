@@ -232,9 +232,6 @@ void applyRoutes(Synth& synth, const json& routes, int part, const std::string& 
 
 // ---- render ------------------------------------------------------------------------------
 
-constexpr int kNotes[4] = {48, 55, 62, 69};  // C3 G3 D4 A4
-constexpr double kHoldSeconds = 8.0;
-constexpr float kVelocity = 100.0f / 127.0f;
 
 double dbOf(double meanSquare) { return meanSquare > 1e-12 ? 10.0 * std::log10(meanSquare) : -120.0; }
 
@@ -498,8 +495,17 @@ bool decompile(const std::string& presetJson, std::string& sourceText, std::stri
   return false;
 }
 
+NoteScript noteScript(double seconds) { return {{48, 55, 62, 69}, 100.0f / 127.0f, 8.0, seconds}; }
+
+NoteScript stressScript() { return {{36, 43, 48, 52, 55, 59, 62, 67}, 1.0f, 6.0, 7.0}; }
+
 bool render(const std::string& presetJson, int part, double seconds, Audio& out, std::string& error,
-            float (*partPeaks)[kNumParts]) {
+            RenderOptions* options) {
+  return renderScript(presetJson, part, noteScript(seconds), out, error, options);
+}
+
+bool renderScript(const std::string& presetJson, int part, const NoteScript& script, Audio& out, std::string& error,
+                  RenderOptions* options) {
   const auto meta = preset::readMeta(presetJson);
   if (!meta) {
     error = "not a preset this version can read";
@@ -522,10 +528,13 @@ bool render(const std::string& presetJson, int part, double seconds, Audio& out,
     synth.setParam(paramSpec(masterParamIndex(MasterParam::Mode)).id, double(PartMode::Layer));
     synth.setParam(paramSpec(partParamIndex(0, PartParam::Level)).id, 0.0);
   }
+  if (options != nullptr && !options->softClip) {
+    synth.setParam(paramSpec(masterParamIndex(MasterParam::SoftClip)).id, 0.0);
+  }
   synth.prepare(kSampleRate, kBlock);
 
-  const size_t total = size_t(seconds * kSampleRate);
-  const size_t hold = size_t(kHoldSeconds * kSampleRate);
+  const size_t total = size_t(script.seconds * kSampleRate);
+  const size_t hold = size_t(script.holdSeconds * kSampleRate);
   out.left.assign(total, 0.0f);
   out.right.assign(total, 0.0f);
   // An effect has nothing to process without an input: a 110 Hz saw and a little noise (a fixed
@@ -546,11 +555,11 @@ bool render(const std::string& presetJson, int part, double seconds, Audio& out,
       inR[i] = 0.25f * saw + 0.1f * noise();
     }
   }
-  for (const int note : kNotes) synth.noteOn(0, note, kVelocity);
+  for (const int note : script.notes) synth.noteOn(0, note, script.velocity);
   bool released = false;
   for (size_t at = 0; at < total;) {
     if (!released && at >= hold) {
-      for (const int note : kNotes) synth.noteOff(0, note);
+      for (const int note : script.notes) synth.noteOff(0, note);
       released = true;
     }
     size_t n = std::min<size_t>(size_t(kBlock), total - at);
@@ -560,10 +569,10 @@ bool render(const std::string& presetJson, int part, double seconds, Audio& out,
     synth.process(effect ? in : nullptr, o, nullptr, int(n));
     at += n;
   }
-  if (partPeaks != nullptr) {
+  if (options != nullptr) {
     UiSnapshot snap;
     synth.uiSnapshot(&snap);  // peaks held since the synth was made: the whole render
-    for (int p = 0; p < kNumParts; ++p) (*partPeaks)[p] = std::max(snap.partPeak[p][0], snap.partPeak[p][1]);
+    for (int p = 0; p < kNumParts; ++p) options->partPeaks[p] = std::max(snap.partPeak[p][0], snap.partPeak[p][1]);
   }
   return true;
 }

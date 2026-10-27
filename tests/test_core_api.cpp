@@ -658,6 +658,20 @@ TEST_CASE("preset_init resets shapes, stashes and scopes and keeps setup fields"
   requireInitState(f, eg13::PluginKind::Instrument, midi);
 }
 
+TEST_CASE("Init is the instrument's declared host defaults, apart from setup fields") {
+  // A new instrument opens on the first-load preset, so clap-validator's param-default-values is
+  // skipped for it (scripts/validate.sh); this keeps the declared defaults tied to Init instead.
+  Fixture f;
+  dirtyEverything(f);
+  REQUIRE(f.api.preset_init(f.api.context, nullptr, 0) == EG13_PRESET_OK);
+  for (size_t i = 0; i < eg13::kParamCount; ++i) {
+    const uint32_t id = eg13::paramSpec(i).id;
+    if (eg13::preset::isSetupParam(id)) continue;
+    INFO("param " << eg13::paramSpec(i).name);
+    REQUIRE(f.synth.param(id) == double(eg13::paramDefault(i, eg13::PluginKind::Instrument)));
+  }
+}
+
 TEST_CASE("EG13 FX preset_init restores the FX init patch") {
   Fixture f(eg13::PluginKind::Effect);
   const uint32_t midi = dirtyEverything(f);

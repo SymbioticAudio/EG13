@@ -2,7 +2,7 @@
   "kind": "patch",
   "plugin": "instrument",
   "name": "Wind Organ",
-  "note": "After the Ripples manual: noise into a resonant low-pass that tracks the keyboard, close to self-oscillation, so the chord whistles like wind.",
+  "note": "After the Ripples manual: noise into a resonant band-pass that tracks the keyboard, close to self-oscillation, so the chord whistles like wind.",
   "credit": "EG13 factory",
   "licence": "GPL-3.0-or-later",
   "order": 9,
@@ -15,7 +15,7 @@
       "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.62, "Sustain": 1.0, "Release": 0.75 } },
       "Mod 3": { "engine": "Function Generator", "scope": "per voice", "params": { "Mode": "Random", "Rate": 0.2, "Smoothness": 0.85 } },
       "Mod 4": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.55 } },
-      "settings": { "Level": 0.85, "Transpose": 12 },
+      "settings": { "Level": 0.63, "Transpose": 12 },
       "routes": [
         { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
         { "source": "Note", "destination": "Filter: Frequency", "amount": 1.0 },

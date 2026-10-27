@@ -15,7 +15,7 @@
       "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.6, "Sustain": 1.0, "Release": 0.72 } },
       "Mod 2": { "engine": "Random / S&H", "scope": "per voice", "params": { "T Rate": 0.4, "X Steps": 0.2, "X Spread": 0.65, "X Range": "Full" } },
       "Mod 3": { "engine": "LFO", "scope": "per voice", "params": { "Frequency": 0.55, "Shape": 0.5 } },
-      "settings": { "Level": 0.85 },
+      "settings": { "Level": 0.462 },
       "routes": [
         { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
         { "source": "Mod 2 Random / S&H X1", "destination": "Source: Timbre", "amount": 0.4 },

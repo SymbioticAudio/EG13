@@ -3,9 +3,11 @@
 //   eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]
 //   eg13_preset info <source.json|file>
 //   eg13_preset decompile <file> -o <source.json>
-//   eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B]
+//   eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress] [--no-soft-clip]
 //   eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]
 //   eg13_preset table <dir>... -o <factory_presets.cpp>
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -27,7 +29,7 @@ int usage() {
                "  eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]\n"
                "  eg13_preset info <source.json|file>\n"
                "  eg13_preset decompile <file> -o <source.json>\n"
-               "  eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B]\n"
+               "  eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress] [--no-soft-clip]\n"
                "  eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]\n"
                "  eg13_preset table <dir>... -o <factory_presets.cpp>\n";
   return 2;
@@ -61,6 +63,8 @@ struct Args {
   std::string output, bank, name, presets = EG13_PRESETS_DIR, file = EG13_GOLDEN_FILE, part = "A";
   double seconds = kDefaultSeconds;
   bool writeGolden = false;
+  bool stress = false;      // render: the headroom script (stressScript) instead of the note script
+  bool noSoftClip = false;  // render: master Soft Clip off, and print the raw peak
   bool ok = true;
 };
 
@@ -87,6 +91,8 @@ Args parse(int argc, char** argv) {
       a.seconds = std::atof(s.c_str());
       if (!(a.seconds > 0.0 && a.seconds <= 600.0)) a.ok = false;
     } else if (arg == "--write") a.writeGolden = true;
+    else if (arg == "--stress") a.stress = true;
+    else if (arg == "--no-soft-clip") a.noSoftClip = true;
     else if (!arg.empty() && arg[0] == '-') a.ok = false;
     else a.positional.push_back(arg);
   }
@@ -144,7 +150,15 @@ int renderCommand(const Args& a) {
     presetJson = compiled.json;
   }
   Audio audio;
-  if (!render(presetJson, a.part == "B" ? 1 : 0, a.seconds, audio, error)) return fail(error);
+  RenderOptions options;
+  options.softClip = !a.noSoftClip;
+  const NoteScript script = a.stress ? stressScript() : noteScript(a.seconds);
+  if (!renderScript(presetJson, a.part == "B" ? 1 : 0, script, audio, error, &options)) return fail(error);
+  if (a.noSoftClip) {  // the WAV is 16-bit and clips; the raw peak is printed
+    float peak = 0.0f;
+    for (size_t i = 0; i < audio.left.size(); ++i) peak = std::max({peak, std::abs(audio.left[i]), std::abs(audio.right[i])});
+    std::printf("peak_dbfs=%.2f\n", 20.0 * std::log10(double(peak) + 1e-12));
+  }
   if (!writeWav(a.output, audio, error)) return fail(error);
   return 0;
 }

@@ -13,7 +13,7 @@
       "Part FX": { "engine": "Reverb", "params": { "Amount": 0.35, "Time": 0.75, "Brightness": 0.5 } },
       "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.45, "Sustain": 1.0, "Release": 0.75 } },
       "Mod 3": { "engine": "Random / S&H", "scope": "per part", "params": { "T Rate": 0.3, "X Steps": 0.1, "X Spread": 0.6, "X Range": "Full" } },
-      "settings": { "Level": 0.25 },
+      "settings": { "Level": 0.149 },
       "routes": [
         { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
         { "source": "Mod 3 Random / S&H X1", "destination": "Source: Flow", "amount": 0.1 },

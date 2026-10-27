@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <fstream>
@@ -17,6 +18,7 @@
 #include "mod/mod_routes.h"
 #include "synth/param_table.h"
 #include "synth/synth.h"
+#include "util/soft_clip.h"
 
 using namespace eg13;
 using namespace eg13::presettool;
@@ -43,6 +45,14 @@ Compiled compileFixture(const char* name) {
   return compiled;
 }
 
+float peakOf(const Audio& audio) {
+  float peak = 0.0f;
+  for (size_t i = 0; i < audio.left.size(); ++i) peak = std::max({peak, std::abs(audio.left[i]), std::abs(audio.right[i])});
+  return peak;
+}
+
+constexpr double kPi = 3.14159265358979323846;
+
 std::string engineName(const Synth& synth, SlotKind kind, int part) {
   return slotEngineInfo(kind, synth.engine(kind, part)).displayName;
 }
@@ -53,7 +63,7 @@ double spectralCentroid(const Audio& audio, size_t from, size_t n) {
   while (size < n) size <<= 1;
   std::vector<std::complex<double>> x(size);
   for (size_t i = 0; i < n; ++i) {
-    const double w = 0.5 - 0.5 * std::cos(2.0 * M_PI * double(i) / double(n - 1));
+    const double w = 0.5 - 0.5 * std::cos(2.0 * kPi * double(i) / double(n - 1));
     x[i] = w * 0.5 * (double(audio.left[from + i]) + double(audio.right[from + i]));
   }
   for (size_t i = 1, j = 0; i < size; ++i) {  // iterative radix-2 FFT
@@ -63,7 +73,7 @@ double spectralCentroid(const Audio& audio, size_t from, size_t n) {
     if (i < j) std::swap(x[i], x[j]);
   }
   for (size_t len = 2; len <= size; len <<= 1) {
-    const std::complex<double> step = std::polar(1.0, -2.0 * M_PI / double(len));
+    const std::complex<double> step = std::polar(1.0, -2.0 * kPi / double(len));
     for (size_t i = 0; i < size; i += len) {
       std::complex<double> w = 1.0;
       for (size_t k = 0; k < len / 2; ++k, w *= step) {
@@ -174,16 +184,16 @@ TEST_CASE("The first-load patch is a two-part ring-mod and granular Performance 
   // Sound: both parts are heard, nothing clips, and the colour moves under the held chord.
   Audio audio;
   std::string error;
-  float partPeaks[kNumParts] = {};
-  REQUIRE(render(first->json, 0, kDefaultSeconds, audio, error, &partPeaks));
+  RenderOptions options;
+  options.softClip = false;  // the raw mix: with Soft Clip on, the output can hardly reach full scale
+  REQUIRE(render(first->json, 0, kDefaultSeconds, audio, error, &options));
   for (int part = 0; part < kNumParts; ++part) {
-    INFO("part " << part << " peak " << 20.0 * std::log10(partPeaks[part] + 1e-12) << " dBFS");
-    CHECK(partPeaks[part] > std::pow(10.0f, -40.0f / 20.0f));
+    INFO("part " << part << " peak " << 20.0 * std::log10(options.partPeaks[part] + 1e-12) << " dBFS");
+    CHECK(options.partPeaks[part] > std::pow(10.0f, -40.0f / 20.0f));
   }
-  float peak = 0.0f;
-  for (size_t i = 0; i < audio.left.size(); ++i) peak = std::max({peak, std::abs(audio.left[i]), std::abs(audio.right[i])});
+  const float peak = peakOf(audio);
   INFO("output peak " << 20.0 * std::log10(peak + 1e-12) << " dBFS");
-  CHECK(peak < 1.0f);
+  CHECK(peak < kSoftClipThreshold);  // the note script never reaches the soft clipper
   const size_t frame = size_t(kSampleRate / 2);
   std::vector<double> centroids;
   for (size_t from = 2 * size_t(kSampleRate); from + frame <= 8 * size_t(kSampleRate); from += frame) {
@@ -196,6 +206,24 @@ TEST_CASE("The first-load patch is a two-part ring-mod and granular Performance 
   const double cv = std::sqrt(variance) / mean;
   INFO("centroid mean " << mean << " Hz, coefficient of variation " << cv);
   CHECK(cv >= 0.05);
+}
+
+TEST_CASE("Every instrument factory preset keeps 1 dB of headroom at eight notes, velocity 127") {
+  // Played hard and wide (stressScript), with Soft Clip off, the raw mix stays below -1 dBFS.
+  size_t count = 0;
+  const preset::FactoryPreset* table = preset::factoryPresets(count);
+  for (size_t i = 0; i < count; ++i) {
+    if (table[i].plugin != PluginKind::Instrument) continue;
+    INFO(label(table[i]));
+    Audio audio;
+    std::string error;
+    RenderOptions options;
+    options.softClip = false;
+    REQUIRE(renderScript(table[i].json, 0, stressScript(), audio, error, &options));
+    const float peak = peakOf(audio);
+    INFO("peak " << 20.0 * std::log10(peak + 1e-12) << " dBFS");
+    CHECK(peak < std::pow(10.0f, -1.0f / 20.0f));
+  }
 }
 
 TEST_CASE("Each factory preset matches its golden level envelope") {
