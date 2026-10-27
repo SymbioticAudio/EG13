@@ -219,8 +219,14 @@ enum EG13Snapshot {
         return writeLayoutEditors(into: directory) ? 0 : 1
     }
 
+    /// The layout round 4 set: the same three editors, the bottom bar one gap under the taller column.
+    static func runLayoutRound4(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        return writeLayoutEditors(into: directory) ? 0 : 1
+    }
+
     /// editor-matrix.png, editor-mods.png and editor-busy.png (Modal Synth with 16 knobs as the Source,
-    /// Granular Delay with 15, the most a Part FX has, as the Part FX).
+    /// Granular Delay with 15, the most a Part FX has, as the Part FX, the tallest engine in every mod card).
     private static func writeLayoutEditors(into directory: String) -> Bool {
         let core = EG13PreviewCore.modulationDemo()  // the synth holds its core unowned: keep it alive
         let synth = EG13Synth(core: core, kind: .instrument)
@@ -235,6 +241,10 @@ enum EG13Snapshot {
         let busyCore = EG13PreviewCore.modulationDemo()
         busyCore.select(EG13_SLOT_KIND_SOURCE, engine: 2, part: 0)
         busyCore.select(EG13_SLOT_KIND_PART_FX, engine: 2, part: 0)
+        // Every mod card the tallest too, so the Mods column is taller than the strip and scrolls.
+        for kind in [EG13_SLOT_KIND_MOD1, EG13_SLOT_KIND_MOD2, EG13_SLOT_KIND_MOD3, EG13_SLOT_KIND_MOD4] {
+            busyCore.select(kind, engine: 3, part: 0)
+        }
         let busy = EG13Synth(core: busyCore, kind: .instrument)
         for _ in 0..<70 { busy.tick() }
         ok = write(EG13RootView(synth: busy), size: base, zoom: 1, to: "\(directory)/editor-busy.png") && ok

@@ -12,6 +12,10 @@ public struct EG13RootView: View {
     @State private var column = EG13RightColumnState()
     /// The Settings and About panel, or nil when closed. It is drawn inside the editor (see EG13SettingsPanel).
     @State private var overlay = EG13SettingsOverlayState()
+    /// The natural heights of the left cards and of the right pane's content (the cards, or the matrix rows);
+    /// they start at the full strip and settle on the first layout pass.
+    @State private var leftHeight = EG13Layout.stripHeight
+    @State private var rightContentHeight = EG13Layout.stripHeight
 
     /// - Parameter column: the right-hand column's state; the previews start it on MATRIX.
     /// - Parameter settingsTab: the panel's tab if it starts open (the previews).
@@ -29,7 +33,7 @@ public struct EG13RootView: View {
             EG13HeaderView(synth: synth) { overlay.open() }
             VStack(spacing: EG13Layout.gap) {
                 strip(part: part)
-                    .frame(width: EG13Layout.stripWidth, height: EG13Layout.stripHeight, alignment: .topLeading)
+                    .frame(width: EG13Layout.stripWidth, height: stripHeight, alignment: .topLeading)
                     .clipped()
             }
             .padding(.horizontal, EG13Layout.outerPadding)
@@ -57,9 +61,17 @@ public struct EG13RootView: View {
         .id(part)
     }
 
+    /// The strip is as tall as the taller column, up to the full strip height: the bottom bar sits one gap
+    /// under the content, and the blank space collects below it. A busy patch fills the strip (the columns
+    /// scroll) and the bar is at the bottom.
+    private var stripHeight: CGFloat {
+        let right: CGFloat = EG13Layout.paneSwitchHeight + (EG13Layout.gap - 2) + rightContentHeight
+        return min(EG13Layout.stripHeight, max(leftHeight, right))
+    }
+
     private func strip(part: Int) -> some View {
         HStack(alignment: .top, spacing: EG13Layout.gap) {
-            EG13Scrolling {
+            EG13Scrolling(onHeight: { leftHeight = $0 }) {
                 EG13SlotCards(synth: synth, part: part, width: EG13Layout.slotCardWidth,
                               onMotionSelect: column.open(route:))
             }
@@ -76,12 +88,15 @@ public struct EG13RootView: View {
                 .frame(height: EG13Layout.paneSwitchHeight)
             switch column.pane {
             case .mods:
-                EG13Scrolling {
+                EG13Scrolling(onHeight: { rightContentHeight = $0 }) {
                     EG13ModCards(synth: synth, part: part, width: EG13Layout.modCardWidth,
                                  onMotionSelect: column.open(route:))
                 }
             case .matrix:
-                EG13MatrixEditor(synth: synth, part: part, state: column, width: EG13Layout.modCardWidth)
+                EG13MatrixEditor(synth: synth, part: part, state: column, width: EG13Layout.modCardWidth,
+                                 onHeight: { rightContentHeight = $0 })
+                    .frame(height: min(rightContentHeight, stripHeight - EG13Layout.paneSwitchHeight - (EG13Layout.gap - 2)),
+                           alignment: .top)
             }
         }
         .frame(width: EG13Layout.modCardWidth, alignment: .topLeading)
@@ -93,17 +108,27 @@ public struct EG13RootView: View {
 /// cannot draw a scroll view, so they show the content clipped.
 struct EG13Scrolling<Content: View>: View {
     @Environment(\.eg13InteractiveControls) private var interactive
+    /// Called with the content's natural height whenever it changes.
+    var onHeight: ((CGFloat) -> Void)?
     @ViewBuilder let content: Content
 
     var body: some View {
+        let measured = content.background(
+            GeometryReader { Color.clear.preference(key: EG13ContentHeightKey.self, value: $0.size.height) })
+            .onPreferenceChange(EG13ContentHeightKey.self) { height in onHeight?(height) }
         if interactive {
-            ScrollView(.vertical) { content }
+            ScrollView(.vertical) { measured }
                 .scrollBounceBehavior(.basedOnSize)
                 .scrollIndicators(.automatic)
         } else {
-            content
+            measured
         }
     }
+}
+
+private struct EG13ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 /// The root view scaled to the editor's zoom (75-200%). scaleEffect keeps hit testing correct.

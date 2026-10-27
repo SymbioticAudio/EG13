@@ -11,13 +11,15 @@ struct EG13MatrixEditor: View {
     let part: Int
     let state: EG13RightColumnState
     let width: CGFloat
+    /// Called with the rows' natural height (with their padding).
+    var onHeight: ((CGFloat) -> Void)?
     @Environment(\.symbioticTheme) private var theme
 
     var body: some View {
         let controls = synth.editorControls(part: part)
         let menus = synth.routeMenus(part: part)
         ScrollViewReader { proxy in
-            EG13Scrolling {
+            EG13Scrolling(onHeight: onHeight) {
                 VStack(spacing: EG13Layout.rowGap) {
                     ForEach(controls.matrix.indices, id: \.self) { index in
                         EG13MatrixRow(synth: synth, part: part, index: index, amount: controls.matrix[index],

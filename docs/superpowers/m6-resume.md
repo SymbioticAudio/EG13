@@ -318,3 +318,16 @@ Owner decision (2026-10-26), reversing round 2's spread layout:
 2. Round 2's grouped "Modulate from" menus stay.
 
 Status: awaiting owner feedback.
+
+
+## M6b layout design log, round 4 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r4 docs/superpowers/m6-design/m6b-layout-r4` writes `editor-matrix.png`, `editor-mods.png` and `editor-busy.png` (the busy patch now also has the tallest engine in every mod card, so the Mods column really overflows).
+
+Round 3 feedback: "that didn't work": the bottom bar was still pinned to the window bottom.
+
+Decisions
+1. **The bottom bar floats up.** It sits one EG13Layout.gap under the taller of the two columns (left cards, or the right Mods or Matrix content). Every vertical gap is that gap (header to columns, between cards, columns to bar); the blank space collects below the bar. Bar top = min(header + gap + max(left, right) + gap, the pinned position): a busy patch fills the strip, the columns scroll and the bar is at the bottom as before. Window size and the 1200x760 canvas are unchanged; the content heights are measured (EG13Scrolling's onHeight).
+2. **Mod card header.** The trace shrinks to the room left (minimum 40 pt). If that is not enough next to MOTION n (Mod 1 with an Envelope engine is about 20 pt short), the MOTION button moves to a second header line instead of clipping anything.
+
+Status: awaiting owner feedback.

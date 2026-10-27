@@ -31,6 +31,8 @@ public struct EG13ModuleCard: View {
 
     /// The trace of a mod card's first output, on the right of the header strip.
     static let traceSize = CGSize(width: 64, height: 20)
+    /// The least the trace shrinks to before the Motion button moves.
+    static let traceMinWidth: CGFloat = 40
 
     static func category(_ kind: EG13SlotKind) -> EG13Category {
         switch kind {
@@ -63,38 +65,60 @@ public struct EG13ModuleCard: View {
         }
     }
 
+    /// One line of the card header: number or icon and title, the engine and scope controls, the Motion
+    /// button (`motion`) and, at the end, a mod card's trace.
+    private func headerRow(kind: EG13SlotKind, controls: EG13SlotControls, number: Int?, showsTrace: Bool,
+                           motion: Bool) -> some View {
+        HStack(spacing: theme.spacing.s) {
+            if let number {
+                Text("\(number)")
+                    .font(theme.type.caption.font.weight(.bold))
+                    .foregroundStyle(theme.text.inverse.color)
+                    .frame(width: 18, height: 18)
+                    .background(RoundedRectangle(cornerRadius: 2).fill(EG13Palette.groupChip.color))
+                    .accessibilityHidden(true)
+            } else {
+                Icon(Self.icon(kind), size: 18).foregroundStyle(theme.text.secondary.color)
+                Text(Self.category(kind).title)
+                    .font(theme.type.caption.font.weight(.bold))
+                    .foregroundStyle(theme.text.secondary.color)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            if let engine = controls.engine { EG13ControlView(synth: synth, spec: engine, part: part) }
+            if let scope = controls.scope { EG13ControlView(synth: synth, spec: scope, part: part) }
+            // The Motion button shows with at least one route into the card; a mod card's trace sits at the end.
+            if motion { EG13MotionButton(synth: synth, kind: kind, part: part, onSelect: onMotionSelect) }
+            Spacer(minLength: 0)
+            if let number, showsTrace {
+                EG13ModTraceView(trace: synth.modTrace(part: part, slot: number - 1))
+                    .frame(minWidth: Self.traceMinWidth, maxWidth: Self.traceSize.width)
+                    .frame(height: Self.traceSize.height)
+            }
+        }
+        .padding(.horizontal, EG13Layout.cardPadding)
+        .frame(height: EG13Layout.cardHeaderHeight)
+    }
+
     public var body: some View {
         let slot = synth.slot(kind, part: part)
         let controls = synth.slotControls(kind, part: part)
         let isMod = number != nil
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: theme.spacing.s) {
-                if let number {
-                    Text("\(number)")
-                        .font(theme.type.caption.font.weight(.bold))
-                        .foregroundStyle(theme.text.inverse.color)
-                        .frame(width: 18, height: 18)
-                        .background(RoundedRectangle(cornerRadius: 2).fill(EG13Palette.groupChip.color))
-                        .accessibilityHidden(true)
-                } else {
-                    Icon(Self.icon(kind), size: 18).foregroundStyle(theme.text.secondary.color)
-                    Text(Self.category(kind).title)
-                        .font(theme.type.caption.font.weight(.bold))
-                        .foregroundStyle(theme.text.secondary.color)
-                        .accessibilityAddTraits(.isHeader)
-                }
-                if let engine = controls.engine { EG13ControlView(synth: synth, spec: engine, part: part) }
-                if let scope = controls.scope { EG13ControlView(synth: synth, spec: scope, part: part) }
-                // The Motion button shows with at least one route into the card; a mod card's trace sits at the end.
-                EG13MotionButton(synth: synth, kind: kind, part: part, onSelect: onMotionSelect)
-                Spacer(minLength: 0)
-                if let number, !controls.params.isEmpty, synth.showsModulation {
-                    EG13ModTraceView(trace: synth.modTrace(part: part, slot: number - 1))
-                        .frame(width: Self.traceSize.width, height: Self.traceSize.height)
+            // The header row; a mod card's trace takes the space left (40 pt at least). If even that does not
+            // fit next to the Motion button, the button moves to a second line: nothing is clipped.
+            let showsTrace = isMod && !controls.params.isEmpty && synth.showsModulation
+            ViewThatFits(in: .horizontal) {
+                headerRow(kind: kind, controls: controls, number: number, showsTrace: showsTrace, motion: true)
+                VStack(alignment: .leading, spacing: 0) {
+                    headerRow(kind: kind, controls: controls, number: number, showsTrace: showsTrace, motion: false)
+                    HStack(spacing: 0) {
+                        EG13MotionButton(synth: synth, kind: kind, part: part, onSelect: onMotionSelect)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, EG13Layout.cardPadding)
+                    .frame(height: EG13Layout.cardHeaderHeight)
                 }
             }
-            .padding(.horizontal, EG13Layout.cardPadding)
-            .frame(height: EG13Layout.cardHeaderHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(theme.surface.raised.color)
             if !controls.params.isEmpty {
