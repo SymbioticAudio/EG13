@@ -199,6 +199,29 @@ enum EG13Snapshot {
     /// Layout round 2: the left column spread over its height, the grouped "Modulate from" menu, and a busy patch.
     static func runLayoutRound2(into directory: String) -> Int32 {
         guard makeDirectory(directory) else { return 1 }
+        var ok = writeLayoutEditors(into: directory)
+        let core = EG13PreviewCore.modulationDemo()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<70 { synth.tick() }
+        if let routed = synth.params.first(where: { $0.isRouted }), let menu = synth.contextMenu(for: routed.id) {
+            ok = writeFitted(EG13ContextMenuSheet(model: menu, knob: routed.name), to: "\(directory)/context-menu.png",
+                             scale: 2) && ok
+        } else {
+            ok = false
+        }
+        withExtendedLifetime(core) {}
+        return ok ? 0 : 1
+    }
+
+    /// The layout round 3 set: the editor with the MATRIX view, the Mods view and a busy patch.
+    static func runLayoutRound3(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        return writeLayoutEditors(into: directory) ? 0 : 1
+    }
+
+    /// editor-matrix.png, editor-mods.png and editor-busy.png (Modal Synth with 16 knobs as the Source,
+    /// Granular Delay with 15, the most a Part FX has, as the Part FX).
+    private static func writeLayoutEditors(into directory: String) -> Bool {
         let core = EG13PreviewCore.modulationDemo()  // the synth holds its core unowned: keep it alive
         let synth = EG13Synth(core: core, kind: .instrument)
         for _ in 0..<70 { synth.tick() }
@@ -215,14 +238,8 @@ enum EG13Snapshot {
         let busy = EG13Synth(core: busyCore, kind: .instrument)
         for _ in 0..<70 { busy.tick() }
         ok = write(EG13RootView(synth: busy), size: base, zoom: 1, to: "\(directory)/editor-busy.png") && ok
-        if let routed = synth.params.first(where: { $0.isRouted }), let menu = synth.contextMenu(for: routed.id) {
-            ok = writeFitted(EG13ContextMenuSheet(model: menu, knob: routed.name), to: "\(directory)/context-menu.png",
-                             scale: 2) && ok
-        } else {
-            ok = false
-        }
         withExtendedLifetime((core, busyCore)) {}
-        return ok ? 0 : 1
+        return ok
     }
 
     /// The layout design set: both parts at 100%, Part A at 75%, the header close-up, a contact sheet

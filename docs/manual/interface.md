@@ -44,7 +44,7 @@ The top of the right-hand column has a two-part LCD switch, **MODS** and **MATRI
 - The **amount** knob is the route's amount parameter, with the usual gestures (drag, scroll, double-click to reset, arrow keys) and automation.
 - **Clear** sets source, via and destination to None and the amount to 0 (the amount as one edit, so a host records it). It is dimmed on a route that is already empty.
 - Choosing a **Motion** row (or a row in a knob's mark popover) switches to MATRIX, scrolls to that row and outlines it for a couple of seconds.
-- With the bottom matrix row gone, the cards keep their own heights and the free height of the column is shared equally between them: the gaps grow when the cards are short and never go below the 8 pt minimum. When the cards are taller than the column, the gaps stay at the minimum and the column scrolls. The Mods column spreads its four cards the same way.
+- The cards in both columns (Source, Filter, Shaper and Part FX on the left, the four Mods mini-cards on the right) stack from the top, one under another with an 8 pt gap, each at its own height. Any spare height collects at the bottom of the column. When the cards are taller than the column, the gaps stay the same and the column scrolls.
 
 ## Modulate from
 

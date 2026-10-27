@@ -307,3 +307,14 @@ Decisions
 2. **Group "Modulate from".** Keys (codes 1-8), Controllers (9-16), Mods (32 and up, one submenu per mod slot titled with the slot's name, e.g. "Mod 1 Envelope"). Derived from the codes (EG13SourceGrouping), not hand-listed; empty groups (a mod slot that is Off) are left out. The matrix row's source and via menus use the same grouping (they replace Performance / Mod 1...4). "Matrix full" is unchanged.
 
 Status: awaiting owner feedback.
+
+
+## M6b layout design log, round 3 (2026-10-26)
+
+Screenshots: `swift run --package-path ui/EG13UI EG13UIPreview --snapshot-layout-r3 docs/superpowers/m6-design/m6b-layout-r3` writes `editor-matrix.png`, `editor-mods.png` and `editor-busy.png` (same patches as round 2).
+
+Owner decision (2026-10-26), reversing round 2's spread layout:
+1. **Stack from the top.** The cards in both columns, the left module cards and the right Mods mini-cards, stack from the top with the normal gap (EG13Layout.gap, 8 pt). Spare height collects at the bottom of the column. A busy patch behaves as before: minimum gaps, and the column scrolls. EG13SpreadStack, EG13Layout.spreadGap and its tests are deleted.
+2. Round 2's grouped "Modulate from" menus stay.
+
+Status: awaiting owner feedback.

@@ -47,18 +47,4 @@ struct EG13SourceGroupingTests {
         #expect(EG13SourceGrouping.groups(some).map(\.title) == ["Controllers", "Mods"])
         #expect(EG13SourceGrouping.groups(allSources().filter { $0.code < 9 }).map(\.title) == ["Keys"])
     }
-
-    @Test("Cards spread over the column: equal gaps, never below the minimum")
-    func spreadGap() {
-        let gap = EG13Layout.gap
-        #expect(EG13Layout.spreadGap(heights: [100, 100, 100, 100], columnHeight: 700) == 100)  // (700-400)/3
-        #expect(EG13Layout.spreadGap(heights: [100, 100, 100, 100], columnHeight: 424) == gap)  // exactly the minimum
-        #expect(EG13Layout.spreadGap(heights: [200, 200, 200, 200], columnHeight: 700) == gap, "too tall: minimum, scrolls")
-        #expect(EG13Layout.spreadGap(heights: [100], columnHeight: 700) == 0)
-        #expect(EG13Layout.spreadGap(heights: [], columnHeight: 700) == 0)
-        // The cards plus gaps fill the column exactly when there is room.
-        let h: [CGFloat] = [120, 90, 150, 60]
-        let g = EG13Layout.spreadGap(heights: h, columnHeight: EG13Layout.stripHeight)
-        #expect(abs(h.reduce(0, +) + 3 * g - EG13Layout.stripHeight) < 0.001)
-    }
 }

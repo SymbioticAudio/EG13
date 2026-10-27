@@ -131,7 +131,7 @@ public struct EG13ModCards: View {
                                         EG13_SLOT_KIND_MOD4]
 
     public var body: some View {
-        EG13SpreadStack(columnHeight: EG13Layout.rightColumnCardsHeight) {
+        VStack(alignment: .leading, spacing: EG13Layout.gap) {
             ForEach(Self.kinds.indices, id: \.self) { index in
                 EG13ModuleCard(synth: synth, kind: Self.kinds[index], part: part, number: index + 1, width: width,
                                 onMotionSelect: onMotionSelect)
@@ -139,36 +139,6 @@ public struct EG13ModCards: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Modulation")
-    }
-}
-
-/// Cards one under another, spread over at least `columnHeight`: the free space is shared equally
-/// between the cards (EG13Layout.spreadGap), never below the minimum gap. The cards keep their own
-/// heights. Taller than the column, it is the minimum gap all the way and the column scrolls.
-struct EG13SpreadStack: Layout {
-    var columnHeight: CGFloat
-
-    private func heights(_ subviews: Subviews, width: CGFloat?) -> [CGFloat] {
-        subviews.map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)).height }
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
-        let h = heights(subviews, width: width)
-        let gap = EG13Layout.spreadGap(heights: h, columnHeight: columnHeight)
-        let total: CGFloat = h.reduce(0, +) + gap * CGFloat(max(0, h.count - 1))
-        return CGSize(width: width, height: total)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let h = heights(subviews, width: bounds.width)
-        let gap = EG13Layout.spreadGap(heights: h, columnHeight: columnHeight)
-        var y = bounds.minY
-        for (index, subview) in subviews.enumerated() {
-            subview.place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
-                          proposal: ProposedViewSize(width: bounds.width, height: h[index]))
-            y += h[index] + gap
-        }
     }
 }
 
@@ -190,7 +160,7 @@ public struct EG13SlotCards: View {
                                         EG13_SLOT_KIND_PART_FX]
 
     public var body: some View {
-        EG13SpreadStack(columnHeight: EG13Layout.stripHeight) {
+        VStack(alignment: .leading, spacing: EG13Layout.gap) {
             ForEach(Self.kinds.indices, id: \.self) { index in
                 EG13ModuleCard(synth: synth, kind: Self.kinds[index], part: part, width: width,
                                 onMotionSelect: onMotionSelect)
