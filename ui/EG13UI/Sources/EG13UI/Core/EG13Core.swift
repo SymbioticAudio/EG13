@@ -90,6 +90,8 @@ public protocol EG13Core: AnyObject {
     func applyPreset(json: String, target: EG13PresetTarget) -> EG13PresetApplyResult
     /// The current sound as a preset file: a Patch of `part`, or a Performance when nil. Empty if
     /// it could not be made.
+    /// Loads the plugin's Init sound into both parts, keeping the setup fields.
+    func applyInit() -> EG13PresetApplyResult
     func savePreset(part: Int?, name: String) -> String
     /// The browser string the project saved ("" for none).
     func browserState() -> String

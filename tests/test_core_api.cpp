@@ -1,4 +1,5 @@
 #include <array>
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
@@ -608,21 +609,64 @@ TEST_CASE("applying presets while notes play allocates nothing on the audio thre
   f.synth.setActive(false);
 }
 
-// The editor's Init (EG13PresetLibrary.initPreset in ui/EG13UI) carries these route codes as
-// numbers; this fails if the core's init routes change without it.
-TEST_CASE("the init routes the editor's Init preset loads match the core's") {
-  using eg13::PluginKind;
-  const auto code = [](PluginKind kind, int part, int route) {
-    const eg13::Route r = eg13::initPatchRoute(kind, part, route);
-    return std::array<int, 3>{int(r.source), int(r.destination), int(r.via)};
-  };
-  for (int part = 0; part < 2; ++part) {
-    REQUIRE(code(PluginKind::Instrument, part, 0) == std::array<int, 3>{32, 2, 1});
-    REQUIRE(code(PluginKind::Instrument, part, 1) == std::array<int, 3>{40, 32, 0});
-    REQUIRE(code(PluginKind::Instrument, part, 2) == std::array<int, 3>{48, 1, 9});
-    REQUIRE(code(PluginKind::Instrument, part, 3) == std::array<int, 3>{0, 0, 0});
+namespace {
+
+// Dirties everything an Init must reset: params, a route, an envelope shape, an engine setting
+// (stash and mod scope live in the engine sections), and a setup field that must survive.
+uint32_t dirtyEverything(Fixture& f) {
+  const uint32_t midi = eg13::params::id(0, eg13::params::Slot::Part, uint32_t(eg13::PartParam::MidiChannel));
+  auto j = nlohmann::json::parse(f.store.save(f.synth));
+  j["params"][std::to_string(midi)] = 7;
+  j["params"][std::to_string(kEngineA)] = 4;
+  j["envelopeShapes"]["0"][0] = {{"count", 2}, {"types", {1, 1, 0, 0, 0, 0}}, {"loops", {0, 0, 0, 0, 0, 0}}};
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    if (it.key() == "params" || it.key() == "routes" || it.key() == "envelopeShapes" || !it.value().is_object()) continue;
+    it.value()["0"]["0"][0] = 0.123;
   }
-  REQUIRE(code(PluginKind::Effect, 0, 0) == std::array<int, 3>{32, 32, 0});
-  REQUIRE(code(PluginKind::Effect, 0, 1) == std::array<int, 3>{0, 0, 0});
-  REQUIRE(code(PluginKind::Effect, 1, 0) == std::array<int, 3>{0, 0, 0});
+  REQUIRE(f.ctx.loadState(j.dump()) != int(eg13::state::LoadResult::Invalid));
+  REQUIRE(f.api.route_set(f.api.context, 0, 5, 1, 2, 0));
+  f.dirty = 0;
+  return midi;
+}
+
+// After preset_init the saved state equals a fresh synth's, except the setup fields.
+void requireInitState(Fixture& f, eg13::PluginKind kind, uint32_t midi) {
+  auto now = nlohmann::json::parse(f.store.save(f.synth));
+  auto fresh = nlohmann::json::parse(eg13::state::StateStore().save(eg13::Synth(kind)));
+  REQUIRE(now["params"][std::to_string(midi)] == 7);  // setup kept
+  for (auto it = fresh["params"].begin(); it != fresh["params"].end(); ++it) {
+    uint32_t id = uint32_t(std::stoul(it.key()));
+    if (eg13::preset::isSetupParam(id)) continue;
+    INFO("param " << it.key());
+    REQUIRE(now["params"][it.key()] == it.value());
+  }
+  for (auto it = fresh.begin(); it != fresh.end(); ++it) {
+    if (it.key() == "params") continue;
+    INFO("section " << it.key());
+    REQUIRE(now[it.key()] == it.value());
+  }
+}
+
+}  // namespace
+
+TEST_CASE("preset_init resets shapes, stashes and scopes and keeps setup fields") {
+  Fixture f;
+  const uint32_t midi = dirtyEverything(f);
+  char message[128];
+  REQUIRE(f.api.preset_init(f.api.context, message, sizeof message) == EG13_PRESET_OK);
+  REQUIRE(f.dirty == 1);
+  requireInitState(f, eg13::PluginKind::Instrument, midi);
+}
+
+TEST_CASE("EG13 FX preset_init restores the FX init patch") {
+  Fixture f(eg13::PluginKind::Effect);
+  const uint32_t midi = dirtyEverything(f);
+  REQUIRE(f.api.preset_init(f.api.context, nullptr, 0) == EG13_PRESET_OK);
+  requireInitState(f, eg13::PluginKind::Effect, midi);
+  // The FX init differs from the instrument's: another source engine, route 0 at 20 %.
+  REQUIRE(f.synth.param(kEngineA) != eg13::Synth(eg13::PluginKind::Instrument).param(kEngineA));
+  EG13Route r{};
+  REQUIRE(f.api.route_get(f.api.context, 0, 0, &r));
+  REQUIRE(r.destination == 32);
+  REQUIRE(r.amount == Catch::Approx(0.2f));
 }

@@ -452,6 +452,7 @@ final class EG13PreviewCore: EG13Core {
     func applyPreset(json: String, target: EG13PresetTarget) -> EG13PresetApplyResult {
         EG13PresetApplyResult(status: .ok)
     }
+    func applyInit() -> EG13PresetApplyResult { EG13PresetApplyResult(status: .ok) }
     func savePreset(part: Int?, name: String) -> String { "" }
     func browserState() -> String { browser }
     func setBrowserState(_ state: String) { browser = state }

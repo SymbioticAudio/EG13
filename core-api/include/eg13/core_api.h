@@ -162,6 +162,11 @@ typedef struct EG13CoreAPI {
    * written) if it does not fit in size with its NUL. */
   bool (*browser_state_get)(void* context, char* buffer, uint32_t size);
   void (*browser_state_set)(void* context, const char* json);
+  /* Loads the Init sound of this plugin kind (what a fresh instance holds, not the first-load
+   * preset) into both parts: every parameter, engine setting, route, envelope shape and mod scope
+   * back to its default. The setup fields are kept. Marks the project dirty. Returns an
+   * EG13_PRESET_ result; message as in preset_apply. */
+  int32_t (*preset_init)(void* context, char* message, uint32_t size);
 } EG13CoreAPI;
 
 #ifdef __cplusplus

@@ -170,6 +170,19 @@ struct EG13PresetLibrary: Sendable {
 
     func delete(_ url: URL) throws { try FileManager.default.removeItem(at: url) }
 
+    /// Renames a file whose new name may differ only in case: through a temporary name, so it works
+    /// on case-insensitive and case-sensitive file systems alike.
+    func move(_ url: URL, to target: URL) throws {
+        let temp = url.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).tmp")
+        try FileManager.default.moveItem(at: url, to: temp)
+        do {
+            try FileManager.default.moveItem(at: temp, to: target)
+        } catch {
+            try? FileManager.default.moveItem(at: temp, to: url)
+            throw error
+        }
+    }
+
     /// The file's text with its `name` field changed.
     func renamedText(of url: URL, to name: String) -> String? {
         guard let data = try? Data(contentsOf: url),
@@ -179,28 +192,5 @@ struct EG13PresetLibrary: Sendable {
             return nil
         }
         return String(decoding: out, as: UTF8.self)
-    }
-
-    /// The Init sound as a Performance: every parameter at its default and the plugin's init routes
-    /// (core/synth/param_table.cpp, initPatchRoute; route codes: Mod n output 1 is 32 + 8 (n-1),
-    /// Pitch 1, Amp 2, Filter P1 32, Velocity 1, Mod Wheel 9). The setup fields are kept by the
-    /// core when it applies a Performance. Envelope shapes are not reset.
-    static func initPreset(defaults: [(id: UInt32, value: Double)], effect: Bool) -> String {
-        var params: [String: Double] = [:]
-        for (id, value) in defaults { params[String(id)] = value }
-        let free = [0, 0, 0]
-        let instrument = [[32, 2, 1], [40, 32, 0], [48, 1, 9]]
-        var routes: [String: [[Int]]] = [:]
-        for part in 0..<2 {
-            let head = effect ? (part == 0 ? [[32, 32, 0]] : []) : instrument
-            routes[String(part)] = head + Array(repeating: free, count: 12 - head.count)
-        }
-        let root: [String: Any] = [
-            "eg13Preset": formatVersion, "kind": "performance", "plugin": effect ? "effect" : "instrument",
-            "name": "Init", "bank": "", "note": "", "credit": "", "licence": "",
-            "state": ["schemaVersion": 6, "params": params, "routes": routes] as [String: Any],
-        ]
-        let data = (try? JSONSerialization.data(withJSONObject: root)) ?? Data()
-        return String(decoding: data, as: UTF8.self)
     }
 }

@@ -250,6 +250,11 @@ final class EG13FakeCore: EG13Core {
         applied.append((json, target))
         return applyResult
     }
+    var initCalls = 0
+    func applyInit() -> EG13PresetApplyResult {
+        initCalls += 1
+        return applyResult
+    }
     /// A small valid preset file naming the part and the name.
     func savePreset(part: Int?, name: String) -> String {
         let root: [String: Any] = [

@@ -53,6 +53,7 @@ uint32_t eg13_test_c_walk(const EG13CoreAPI* api) {
     sum += (uint32_t)(api->preset_apply(api->context, "{}", -1, message, EG13_TEXT_SIZE) == EG13_PRESET_INVALID);
     sum += api->preset_save(api->context, -1, "x", file, 0) > 0;
     api->browser_state_set(api->context, "{}");
+    sum += api->preset_init != 0;
     if (api->browser_state_get(api->context, message, EG13_TEXT_SIZE)) ++sum;
     sum += (uint32_t)(EG13_PRESET_OK + EG13_PRESET_WARNINGS);
   }

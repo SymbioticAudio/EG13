@@ -155,14 +155,9 @@ public final class EG13PresetBrowser {
         return entries.firstIndex { $0.bank == info.bank && $0.name == info.name && $0.kind == info.kind }
     }
 
-    /// Loads the Init sound into both parts and shows "Init".
+    /// Loads the Init sound into both parts (the plugin builds it) and shows "Init".
     public func loadInit() {
-        var defaults: [(id: UInt32, value: Double)] = []
-        for index in 0..<core.paramCount() {
-            if let descriptor = core.paramDescriptor(at: index) { defaults.append((descriptor.id, descriptor.defaultValue)) }
-        }
-        let json = EG13PresetLibrary.initPreset(defaults: defaults, effect: kind == .effect)
-        let result = core.applyPreset(json: json, target: .whole)
+        let result = core.applyInit()
         guard result.status != .invalid else {
             message = result.message.isEmpty ? "Init could not be loaded." : result.message
             return
@@ -256,8 +251,15 @@ public final class EG13PresetBrowser {
         if !replace, !samePlace, library.exists(target) { return .clash }
         guard let text = library.renamedText(of: url, to: trimmed) else { return refuse("Could not read \(entry.name).") }
         do {
-            try library.write(text, to: target)
-            if target.path != url.path { try library.delete(url) }
+            if samePlace {
+                // Only the case differs: on a case-insensitive file system the two names are one
+                // file, so write it in place and move it to the new name (never delete it).
+                try library.write(text, to: url)
+                if target.lastPathComponent != url.lastPathComponent { try library.move(url, to: target) }
+            } else {
+                try library.write(text, to: target)
+                try library.delete(url)
+            }
         } catch {
             return refuse("Could not rename \(entry.name): \(error.localizedDescription)")
         }

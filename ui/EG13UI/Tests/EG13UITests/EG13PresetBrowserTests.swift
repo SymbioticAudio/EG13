@@ -315,25 +315,36 @@ struct EG13PresetBrowserTests {
         #expect(again.displayName == "Mine")
     }
 
-    @Test("Init applies every default and the init routes, and shows Init")
-    func initPreset() throws {
+    @Test("loadInit asks the plugin, clears the edited mark and shows Init")
+    func initPreset() {
         let folder = Self.tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let (core, browser) = Self.make(factory: [Self.factory("Bank 1", "One", .performance, 0)], folder: folder)
         browser.load(browser.entries[0])
         browser.markEdited()
         browser.loadInit()
+        #expect(core.initCalls == 1)
         #expect(browser.displayName == "Init")
         #expect(!browser.isEdited)
-        let json = try #require(core.applied.last)
-        #expect(json.target == .whole)
-        let root = try #require(JSONSerialization.jsonObject(with: Data(json.json.utf8)) as? [String: Any])
-        #expect(root["eg13Preset"] as? Int == 1 && root["plugin"] as? String == "instrument")
-        let state = try #require(root["state"] as? [String: Any])
-        let params = try #require(state["params"] as? [String: Double])
-        #expect(params.count == core.descriptors.count)
-        let routes = try #require(state["routes"] as? [String: [[Int]]])
-        #expect(routes["0"]?.prefix(3) == [[32, 2, 1], [40, 32, 0], [48, 1, 9]])
-        #expect(routes["1"]?.count == 12)
+        #expect(core.browser.contains("\"loaded\":[]") && core.browser.contains("\"edited\":false"))
+        // A refused Init changes nothing.
+        browser.load(browser.entries[0])
+        core.applyResult = EG13PresetApplyResult(status: .invalid, message: "no")
+        browser.loadInit()
+        #expect(browser.displayName == "One")
+        #expect(browser.message == "no")
+    }
+
+    @Test("a case-only rename keeps the preset")
+    func caseOnlyRename() {
+        let folder = Self.tempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (_, browser) = Self.make(folder: folder)
+        browser.saveAs(name: "Glass", scope: .whole)
+        #expect(browser.rename(browser.entries[0], to: "glass") == .saved)
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        #expect(files == ["glass.eg13perf"])
+        #expect(browser.entries.map(\.name) == ["glass"])
+        #expect(browser.displayName == "glass")
     }
 }

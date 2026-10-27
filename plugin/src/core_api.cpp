@@ -311,6 +311,31 @@ int32_t presetApply(void* context, const char* json, int32_t targetPart, char* m
   return result;
 }
 
+int32_t presetInit(void* context, char* message, uint32_t size) noexcept {
+  CoreApiContext& c = ctx(context);
+  std::string text;
+  int32_t result = EG13_PRESET_INVALID;
+  try {
+    if (!c.loadState || !c.saveState) {
+      text = "Presets are not available here.";
+    } else {
+      // A fresh Synth of this kind holds the init state; saved as a Performance it resets everything
+      // a preset carries, and the merge keeps the setup fields.
+      Synth fresh(c.synth.kind());
+      preset::Meta meta;
+      meta.name = "Init";
+      const std::string file = preset::save(fresh, state::StateStore(), meta, -1);
+      result = applyPreset(c.synth.kind(), c.saveState, c.loadState, file, -1, text);
+      if (result != EG13_PRESET_INVALID && c.markDirty) c.markDirty();
+    }
+  } catch (...) {
+    result = EG13_PRESET_INVALID;
+    text = "Init could not be loaded.";
+  }
+  copyText(text.c_str(), message, size);
+  return result;
+}
+
 uint32_t presetSave(void* context, int32_t part, const char* name, char* buffer, uint32_t size) noexcept {
   try {
     preset::Meta meta;
@@ -386,6 +411,7 @@ EG13CoreAPI makeCoreApi(CoreApiContext& context) {
   api.factory_preset = noFactoryPreset;
   api.preset_apply = presetApply;
   api.preset_save = presetSave;
+  api.preset_init = presetInit;
   api.browser_state_get = browserStateGet;
   api.browser_state_set = browserStateSet;
   return api;

@@ -138,17 +138,23 @@ public final class EG13CoreAPIClient: EG13Core {
         }
     }
 
-    public func applyPreset(json: String, target: EG13PresetTarget) -> EG13PresetApplyResult {
+    private func result(_ call: (UnsafeMutablePointer<CChar>, UInt32) -> Int32) -> EG13PresetApplyResult {
         var buffer = [CChar](repeating: 0, count: Int(EG13_TEXT_SIZE) * 2)
-        let status = buffer.withUnsafeMutableBufferPointer {
-            api.pointee.preset_apply(context, json, target.cPart, $0.baseAddress!, UInt32($0.count))
-        }
+        let status = buffer.withUnsafeMutableBufferPointer { call($0.baseAddress!, UInt32($0.count)) }
         let message = String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
         switch status {
         case Int32(EG13_PRESET_OK): return EG13PresetApplyResult(status: .ok, message: message)
         case Int32(EG13_PRESET_WARNINGS): return EG13PresetApplyResult(status: .warnings, message: message)
         default: return EG13PresetApplyResult(status: .invalid, message: message)
         }
+    }
+
+    public func applyPreset(json: String, target: EG13PresetTarget) -> EG13PresetApplyResult {
+        result { api.pointee.preset_apply(context, json, target.cPart, $0, $1) }
+    }
+
+    public func applyInit() -> EG13PresetApplyResult {
+        result { api.pointee.preset_init(context, $0, $1) }
     }
 
     public func savePreset(part: Int?, name: String) -> String {
