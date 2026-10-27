@@ -55,8 +55,9 @@ Plugin* self(const clap_plugin_t* p) { return static_cast<Plugin*>(p->plugin_dat
 // plugin (deactivate, activate). request_restart is thread-safe (clap/host.h). CLAP and VST3
 // hosts restart at once (the VST3 wrapper turns the request into
 // restartComponent(kIoChanged | kLatencyChanged): third_party/clap-wrapper wrapasvst3.cpp:1352-1355
-// and :1509-1515); clap-wrapper's AU restartPlugin() is empty, so an AU host applies it
-// when it next initialises the plugin (docs/manual/latency.md).
+// and :1509-1515); clap-wrapper's AU restartPlugin() flags a restart that its idle tick
+// performs, cycling the CLAP deactivate/activate under the initialised AU
+// (docs/manual/latency.md).
 void requestRestartIfModeChanged(Plugin* plugin) {
   if (!plugin->active.load(std::memory_order_acquire)) return;  // the next activate prepares it
   if (plugin->synth.requestedQuality() == plugin->synth.preparedQuality()) return;
