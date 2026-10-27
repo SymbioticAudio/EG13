@@ -49,6 +49,26 @@ target_include_directories(eg13_core_api PRIVATE ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(eg13_core_api PUBLIC eg13_ui_bridge eg13_core)
 target_compile_options(eg13_core_api PRIVATE -Wall -Wextra)
 
+# The preset tool, and the factory preset table it generates from presets/ at build time (an empty
+# table while a directory is missing or empty). The table is linked into the plugin and the tests.
+add_subdirectory(tools/preset_tool)
+set(EG13_FACTORY_PRESETS_CPP ${CMAKE_BINARY_DIR}/generated/factory_presets.cpp)
+# A target rather than an OUTPUT rule: a preset deleted from presets/ must regenerate the table too,
+# and a dependency list cannot see a file that is gone. The tool rewrites the file only when its
+# content changes, so an unchanged table recompiles nothing.
+add_custom_target(eg13_factory_table
+  COMMAND eg13_preset table
+    ${CMAKE_SOURCE_DIR}/presets/bank1 ${CMAKE_SOURCE_DIR}/presets/bank2-catnap ${CMAKE_SOURCE_DIR}/presets/fx
+    -o ${EG13_FACTORY_PRESETS_CPP}
+  BYPRODUCTS ${EG13_FACTORY_PRESETS_CPP}
+  DEPENDS eg13_preset
+  COMMENT "Compiling the factory presets"
+  VERBATIM)
+add_library(eg13_preset_factory STATIC core/preset/factory.cpp ${EG13_FACTORY_PRESETS_CPP})
+add_dependencies(eg13_preset_factory eg13_factory_table)
+target_link_libraries(eg13_preset_factory PUBLIC eg13_core)
+target_compile_options(eg13_preset_factory PRIVATE -Wall -Wextra -Werror)
+
 # The SwiftUI editor (macOS only): the eg13_ui target and the eg13_ui_swift link interface.
 if(EG13_BUILD_UI)
   if(NOT APPLE)

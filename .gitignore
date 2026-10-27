@@ -3,3 +3,4 @@
 .DS_Store
 *.swp
 /ui/EG13UI/.build/
+/presets/reference/

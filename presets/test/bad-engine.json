@@ -1,0 +1,14 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Bad Engine",
+  "note": "Names an engine that does not exist: compile must fail and say so.",
+  "credit": "EG13 tests",
+  "licence": "GPL-3.0-or-later",
+  "order": 30,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Warp Drive", "params": { "Harmonics": 0.5 } }
+    }
+  }
+}

@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "common/engine_names.h"
 #include "synth/param_table.h"
 
 namespace {
@@ -29,7 +30,6 @@ using eg13::SlotKind;
 constexpr size_t kMaxListed = 40;
 constexpr size_t kMaxTemplates = 12;
 constexpr size_t kLongest = 3;
-constexpr int kSweepSteps = 1000;
 
 std::string escape(const std::string& text) {
   std::string out;
@@ -60,14 +60,7 @@ std::string shapeOf(const std::string& text) {
 }
 
 std::vector<std::string> valueStrings(const eg13::EngineParamInfo& param) {
-  std::vector<std::string> ordered;  // first appearance along the sweep
-  std::set<std::string> seen;
-  for (int i = 0; i <= kSweepSteps; ++i) {
-    char buffer[64] = {};
-    if (param.format) param.format(float(i) / float(kSweepSteps), buffer, sizeof buffer);
-    buffer[sizeof buffer - 1] = '\0';
-    if (seen.insert(buffer).second) ordered.emplace_back(buffer);
-  }
+  const std::vector<std::string> ordered = eg13::tools::sweepStrings(param);  // first appearance
   if (ordered.size() <= kMaxListed) return ordered;
   std::vector<std::pair<std::string, std::string>> byShape;  // (shape, first string of that shape)
   std::set<std::string> shapes;

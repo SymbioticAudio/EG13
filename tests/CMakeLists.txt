@@ -5,8 +5,9 @@ if(NOT EG13_HAS_UI)
 endif()
 add_executable(eg13_tests ${EG13_TEST_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/alloc_counter.cpp)
 find_package(Threads REQUIRED)
-target_link_libraries(eg13_tests PRIVATE eg13_core_api eg13_ui_bridge eg13_core eg13_eurorack eg13_r8brain eg13_vcv eg13_sst Catch2::Catch2WithMain Threads::Threads eg13_nlohmann)
-target_compile_definitions(eg13_tests PRIVATE EG13_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+target_link_libraries(eg13_tests PRIVATE eg13_core_api eg13_ui_bridge eg13_core eg13_eurorack eg13_r8brain eg13_vcv eg13_sst eg13_preset_lib eg13_preset_factory Catch2::Catch2WithMain Threads::Threads eg13_nlohmann)
+target_compile_definitions(eg13_tests PRIVATE EG13_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
+  EG13_PRESETS_DIR="${CMAKE_SOURCE_DIR}/presets")
 target_include_directories(eg13_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # The public C headers must stay pure C: this TU is compiled as C11, pedantic, warnings as errors.
 add_library(eg13_core_api_c_check OBJECT core_api_c_check.c)
