@@ -1,0 +1,80 @@
+name: Release
+
+# Pushing a tag vX.Y.Z builds, tests and validates the plugins like CI, then drafts a GitHub
+# Release with the zip (and, when the Developer ID secrets are set, the signed .pkg). CI never
+# publishes: the owner reviews the draft and publishes it. See docs/release/signing-setup.md.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      # Release builds leave out the all-rights-reserved SymbioticBrand artwork.
+      EG13_NO_BRAND: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Check the tag and the release notes
+        id: version
+        run: |
+          version="$(sed -nE 's/^project\(EG13 VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt)"
+          if [ -z "$version" ]; then
+            echo "::error::Could not read the project version from CMakeLists.txt"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME does not match the project version: expected v$version (CMakeLists.txt project())"
+            exit 1
+          fi
+          notes="docs/release/notes-v$version.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::The release notes $notes are missing: write them before tagging"
+            exit 1
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "notes=$notes" >>"$GITHUB_OUTPUT"
+      - name: Build, test and validate
+        uses: ./.github/actions/mac-build
+      - name: Sign and notarise
+        id: sign
+        env:
+          MACOS_DEVELOPER_ID_APP_P12: ${{ secrets.MACOS_DEVELOPER_ID_APP_P12 }}
+          MACOS_DEVELOPER_ID_INSTALLER_P12: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: scripts/sign-and-notarize.sh build/mac/plugins
+      - name: Package the zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/package-release.sh build/mac "$VERSION" build/release-out
+      - name: Build the installer
+        if: steps.sign.outputs.signed == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          MACOS_DEVELOPER_ID_APP_P12: ${{ secrets.MACOS_DEVELOPER_ID_APP_P12 }}
+          MACOS_DEVELOPER_ID_INSTALLER_P12: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: scripts/build-pkg.sh build/mac/plugins "$VERSION" build/release-out
+      - name: Draft the GitHub Release
+        # v3.0.3 (2026-08-30), pinned to its commit.
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: EG13 ${{ steps.version.outputs.version }}
+          body_path: ${{ steps.version.outputs.notes }}
+          draft: true
+          files: build/release-out/EG13-${{ steps.version.outputs.version }}-macOS.*
+          fail_on_unmatched_files: true

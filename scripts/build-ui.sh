@@ -6,6 +6,9 @@
 # ("arm64;x86_64" or "arm64 x86_64"); empty means the host architecture.
 # The static library carries its package dependencies (symbiotic-design), so one file is all
 # the plugin links.
+# With EG13_NO_BRAND set (release builds), the library leaves out the all-rights-reserved
+# SymbioticBrand artwork; it then builds in its own SwiftPM directory, so it never shares a cache
+# with the branded build, and fails if any SymbioticBrand symbol is left.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PKG="$ROOT/ui/EG13UI"
@@ -30,10 +33,15 @@ mkdir -p "$OUT"
 TMP="$(mktemp -d "$OUT/lipo.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
+SWIFT_ARGS=(--package-path "$PKG" -c "$CONFIG")
+if [ -n "${EG13_NO_BRAND+set}" ]; then
+  SWIFT_ARGS+=(--scratch-path "$OUT/swiftpm-nobrand")
+fi
+
 PARTS=()
 for arch in $ARCHS; do
-  swift build --package-path "$PKG" -c "$CONFIG" --arch "$arch"
-  bin="$(swift build --package-path "$PKG" -c "$CONFIG" --arch "$arch" --show-bin-path)"
+  swift build "${SWIFT_ARGS[@]}" --arch "$arch"
+  bin="$(swift build "${SWIFT_ARGS[@]}" --arch "$arch" --show-bin-path)"
   # SwiftPM reuses one products directory for every --arch, so copy each result out at once.
   cp "$bin/libEG13UI.a" "$TMP/libEG13UI-$arch.a"
   # The preview's and the tests' engine tables (EG13UIFixtures) come with a resource bundle; they
@@ -48,6 +56,10 @@ for arch in $ARCHS; do
   fi
   if grep -qE "EG13UIFixtures|resource_bundle_accessor" <<<"$syms"; then
     echo "build-ui.sh: libEG13UI.a contains EG13UIFixtures or a Swift resource bundle accessor" >&2
+    exit 1
+  fi
+  if [ -n "${EG13_NO_BRAND+set}" ] && grep -qE "SymbioticBrand" <<<"$syms"; then
+    echo "build-ui.sh: EG13_NO_BRAND is set but libEG13UI-$arch.a contains SymbioticBrand symbols" >&2
     exit 1
   fi
   # The test-only path overrides (EG13_SETTINGS_PATH, EG13_PRESETS_PATH) are compiled out of release

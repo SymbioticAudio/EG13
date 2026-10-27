@@ -1,0 +1,38 @@
+name: Build, test and validate EG13 (macOS)
+description: >
+  The macOS build shared by ci.yml and release.yml: configures the mac preset without the
+  SymbioticBrand artwork (what ships), builds EG13_all and the tests, runs the C++ and Swift tests,
+  the Objective-C prefix check and the plugin validators. Needs the repository checked out with
+  submodules. Leaves the plugins in build/mac/plugins.
+
+runs:
+  using: composite
+  steps:
+    - name: Select Xcode
+      shell: bash
+      run: |
+        sudo xcode-select -s /Applications/Xcode_26.3.app
+        swift --version
+    - name: Install tools
+      shell: bash
+      run: brew install ninja
+    - name: Configure
+      shell: bash
+      # The shipped plugins never contain the all-rights-reserved SymbioticBrand artwork.
+      run: cmake --preset mac -DEG13_NO_BRAND=ON
+    - name: Build
+      shell: bash
+      run: cmake --build --preset mac --target EG13_all eg13_tests
+    - name: Test
+      shell: bash
+      run: ctest --preset mac
+    - name: Test the Swift UI
+      shell: bash
+      # With the brand unless the job sets EG13_NO_BRAND, so the branded editor keeps compiling too.
+      run: swift test --package-path ui/EG13UI
+    - name: Check Objective-C class prefixes
+      shell: bash
+      run: scripts/check-objc-prefix.sh build/mac/plugins/EG13.clap
+    - name: Validate plugins
+      shell: bash
+      run: scripts/validate.sh build/mac

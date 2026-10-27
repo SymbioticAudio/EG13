@@ -28,30 +28,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Select Xcode
+      - name: Build, test and validate
+        uses: ./.github/actions/mac-build
+      - name: Package (dry run of the release zip)
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.3.app
-          swift --version
-      - name: Install tools
-        run: brew install ninja
-      - name: Configure
-        run: cmake --preset mac
-      - name: Build
-        run: cmake --build --preset mac --target EG13_all eg13_tests
-      - name: Test
-        run: ctest --preset mac
-      - name: Test the Swift UI
-        run: swift test --package-path ui/EG13UI
-      - name: Check Objective-C class prefixes
-        run: scripts/check-objc-prefix.sh build/mac/plugins/EG13.clap
-      - name: Validate plugins
-        run: scripts/validate.sh build/mac
-      - name: Zip bundles
-        run: |
-          cd build/mac/plugins
-          for b in *.clap *.component *.vst3 *.app; do ditto -c -k --keepParent "$b" "$b.zip"; done
-      - name: Upload plugins
+          version="$(sed -n 's/^CMAKE_PROJECT_VERSION:STATIC=//p' build/mac/CMakeCache.txt)"
+          scripts/package-release.sh build/mac "$version" build/release-zip
+      - name: Upload the release zip
         uses: actions/upload-artifact@v4
         with:
           name: EG13-macos
-          path: build/mac/plugins/*.zip
+          path: build/release-zip/*.zip
