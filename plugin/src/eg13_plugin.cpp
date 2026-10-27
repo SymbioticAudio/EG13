@@ -642,7 +642,8 @@ const clap_plugin_t* createPlugin(const clap_host_t* host, PluginKind kind,
   // A new instrument opens on the first-load preset. The host's stateLoad, if it has a state,
   // comes later and replaces it.
   applyFirstLoadPreset(kind, [plugin] { return plugin->store.save(plugin->synth); },
-                       [plugin](const std::string& json) { return int(loadStateJson(plugin, json)); });
+                       [plugin](const std::string& json) { return int(loadStateJson(plugin, json)); },
+                       [plugin](const std::string& value) { plugin->store.setBrowser(value); });
   return &plugin->clap;
 }
 

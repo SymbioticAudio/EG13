@@ -41,7 +41,9 @@ void releaseView(void* view) {
 }
 
 struct Fixture {
-  Fixture() : bridge(synth, {}), ctx{synth, bridge, {}}, api(eg13::makeCoreApi(ctx)) {}
+  Fixture() : bridge(synth, {}), ctx{synth, bridge, {}}, api(eg13::makeCoreApi(ctx)) {
+    eg13::attachFactoryPresets(api);  // as the plugin does
+  }
   eg13::Synth synth{eg13::PluginKind::Instrument};
   eg13::UiBridge bridge;
   eg13::CoreApiContext ctx;

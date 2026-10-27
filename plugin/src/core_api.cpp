@@ -342,7 +342,10 @@ void browserStateSet(void* context, const char* json) noexcept {
   CoreApiContext& c = ctx(context);
   try {
     if (!c.setBrowser) return;
-    c.setBrowser(json ? json : "");
+    const std::string value = json ? json : "";
+    // The editor writes its state on every open; an unchanged value must not dirty the project.
+    if (c.getBrowser && c.getBrowser() == value) return;
+    c.setBrowser(value);
     if (c.markDirty) c.markDirty();
   } catch (...) {
   }

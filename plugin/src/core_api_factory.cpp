@@ -1,6 +1,7 @@
 #include "core_api.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -66,8 +67,27 @@ void attachFactoryPresets(EG13CoreAPI& api) {
   api.factory_preset = factoryPreset;
 }
 
+// A JSON string literal for text (names are free text).
+static std::string jsonQuote(const std::string& text) {
+  std::string out = "\"";
+  for (const char c : text) {
+    if (c == '"' || c == '\\') {
+      out += '\\';
+      out += c;
+    } else if (static_cast<unsigned char>(c) < 0x20) {
+      char buf[8];
+      std::snprintf(buf, sizeof buf, "\\u%04x", unsigned(static_cast<unsigned char>(c)));
+      out += buf;
+    } else {
+      out += c;
+    }
+  }
+  return out + "\"";
+}
+
 bool applyFirstLoadPreset(PluginKind kind, const std::function<std::string()>& save,
-                          const std::function<int(const std::string&)>& load) {
+                          const std::function<int(const std::string&)>& load,
+                          const std::function<void(const std::string&)>& setBrowser) {
   if (kind != PluginKind::Instrument) return false;
   try {
     size_t count = 0;
@@ -76,7 +96,15 @@ bool applyFirstLoadPreset(PluginKind kind, const std::function<std::string()>& s
       if (table[i].plugin != kind || !table[i].firstLoad) continue;
       std::string message;
       const int32_t result = applyPresetJson(kind, save, load, table[i].json, -1, message);
-      return result != EG13_PRESET_INVALID;
+      if (result == EG13_PRESET_INVALID) return false;
+      // The editor's browser string (its format is the UI's, EG13PresetBrowser.swift): the header
+      // shows this preset's name from the first open.
+      if (setBrowser) {
+        setBrowser("{\"version\":1,\"loaded\":[{\"part\":-1,\"bank\":" + jsonQuote(table[i].bank ? table[i].bank : "") +
+                   ",\"name\":" + jsonQuote(table[i].name ? table[i].name : "") +
+                   ",\"kind\":\"performance\"}],\"edited\":false}");
+      }
+      return true;
     }
   } catch (...) {
   }

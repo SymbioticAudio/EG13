@@ -441,4 +441,18 @@ final class EG13PreviewCore: EG13Core {
     }
 
     func version() -> String { "preview" }
+
+    // MARK: Presets (a few made-up ones, nothing is written)
+
+    private var browser = ""
+    func factoryPresets() -> [EG13PresetEntry] {
+        [EG13PresetEntry(bank: "Bank 1", name: "Preview Pad", kind: .performance, source: .factory(0)),
+         EG13PresetEntry(bank: "Bank 1", name: "Preview Pluck", kind: .patch, source: .factory(1))]
+    }
+    func applyPreset(json: String, target: EG13PresetTarget) -> EG13PresetApplyResult {
+        EG13PresetApplyResult(status: .ok)
+    }
+    func savePreset(part: Int?, name: String) -> String { "" }
+    func browserState() -> String { browser }
+    func setBrowserState(_ state: String) { browser = state }
 }

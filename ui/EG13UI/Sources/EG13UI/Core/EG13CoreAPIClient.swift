@@ -120,4 +120,61 @@ public final class EG13CoreAPIClient: EG13Core {
     public func requestResize(width: UInt32, height: UInt32) {
         api.pointee.request_resize(context, width, height)
     }
+
+    // MARK: Presets
+
+    private func text(_ pointer: UnsafePointer<CChar>?) -> String {
+        pointer.map { String(cString: $0) } ?? ""
+    }
+
+    public func factoryPresets() -> [EG13PresetEntry] {
+        (0..<Int(api.pointee.factory_preset_count(context))).compactMap { index in
+            var raw = EG13FactoryPreset()
+            guard api.pointee.factory_preset(context, UInt32(index), &raw) else { return nil }
+            return EG13PresetEntry(bank: text(raw.bank), name: text(raw.name),
+                                   kind: raw.kind == 0 ? .performance : .patch,
+                                   note: text(raw.note), credit: text(raw.credit),
+                                   source: .factory(index), json: text(raw.json))
+        }
+    }
+
+    public func applyPreset(json: String, target: EG13PresetTarget) -> EG13PresetApplyResult {
+        var buffer = [CChar](repeating: 0, count: Int(EG13_TEXT_SIZE) * 2)
+        let status = buffer.withUnsafeMutableBufferPointer {
+            api.pointee.preset_apply(context, json, target.cPart, $0.baseAddress!, UInt32($0.count))
+        }
+        let message = String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        switch status {
+        case Int32(EG13_PRESET_OK): return EG13PresetApplyResult(status: .ok, message: message)
+        case Int32(EG13_PRESET_WARNINGS): return EG13PresetApplyResult(status: .warnings, message: message)
+        default: return EG13PresetApplyResult(status: .invalid, message: message)
+        }
+    }
+
+    public func savePreset(part: Int?, name: String) -> String {
+        let cPart = Int32(part ?? -1)
+        let needed = Int(api.pointee.preset_save(context, cPart, name, nil, 0))
+        guard needed > 0 else { return "" }
+        var buffer = [CChar](repeating: 0, count: needed)
+        let written = buffer.withUnsafeMutableBufferPointer {
+            api.pointee.preset_save(context, cPart, name, $0.baseAddress!, UInt32($0.count))
+        }
+        guard Int(written) == needed else { return "" }
+        return String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+
+    public func browserState() -> String {
+        var size = 1024
+        while size <= 1 << 22 {
+            var buffer = [CChar](repeating: 0, count: size)
+            let ok = buffer.withUnsafeMutableBufferPointer {
+                api.pointee.browser_state_get(context, $0.baseAddress!, UInt32($0.count))
+            }
+            if ok { return String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self) }
+            size *= 4
+        }
+        return ""
+    }
+
+    public func setBrowserState(_ state: String) { api.pointee.browser_state_set(context, state) }
 }

@@ -1,3 +1,4 @@
+import Foundation
 import EG13CBridge
 import EG13UIFixtures
 @testable import EG13UI
@@ -232,4 +233,34 @@ final class EG13FakeCore: EG13Core {
         return frame
     }
     func requestResize(width: UInt32, height: UInt32) { calls.append(.resize(width, height)) }
+
+    // MARK: Presets
+
+    /// The factory list the fake reports.
+    var factory: [EG13PresetEntry] = []
+    /// What `applyPreset` returns, and every call it received.
+    var applyResult = EG13PresetApplyResult(status: .ok)
+    var applied: [(json: String, target: EG13PresetTarget)] = []
+    /// The browser string the project holds, and every string set (in order).
+    var browser = ""
+    var browserWrites: [String] = []
+    var pluginKind = "instrument"
+    func factoryPresets() -> [EG13PresetEntry] { factory }
+    func applyPreset(json: String, target: EG13PresetTarget) -> EG13PresetApplyResult {
+        applied.append((json, target))
+        return applyResult
+    }
+    /// A small valid preset file naming the part and the name.
+    func savePreset(part: Int?, name: String) -> String {
+        let root: [String: Any] = [
+            "eg13Preset": 1, "kind": part == nil ? "performance" : "patch", "plugin": pluginKind,
+            "name": name, "bank": "User", "state": ["schemaVersion": 6, "params": [String: Double]()],
+        ]
+        return String(decoding: (try? JSONSerialization.data(withJSONObject: root)) ?? Data(), as: UTF8.self)
+    }
+    func browserState() -> String { browser }
+    func setBrowserState(_ state: String) {
+        browser = state
+        browserWrites.append(state)
+    }
 }

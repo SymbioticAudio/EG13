@@ -44,7 +44,9 @@ int32_t applyPresetJson(PluginKind kind, const std::function<std::string()>& sav
 // New instrument instances open on the factory preset marked firstLoad, applied like preset_apply
 // (merge into save(), then load); EG13 FX, and an instrument with no such preset, keep the init
 // state. True if a preset was applied.
+// setBrowser (may be empty) receives the UI's browser string naming that preset.
 bool applyFirstLoadPreset(PluginKind kind, const std::function<std::string()>& save,
-                          const std::function<int(const std::string&)>& load);
+                          const std::function<int(const std::string&)>& load,
+                          const std::function<void(const std::string&)>& setBrowser = {});
 
 }  // namespace eg13

@@ -1,3 +1,4 @@
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
@@ -456,6 +457,8 @@ TEST_CASE("browser state round-trips through StateStore, and a pre-M7 state give
   const std::string browser = R"({"loaded":"Glass","edited":true})";
   f.api.browser_state_set(f.api.context, browser.c_str());
   REQUIRE(f.dirty == 1);
+  f.api.browser_state_set(f.api.context, browser.c_str());  // the same value: not a change
+  REQUIRE(f.dirty == 1);
   REQUIRE(f.api.browser_state_get(f.api.context, buffer, sizeof buffer));
   REQUIRE(browser == buffer);
   REQUIRE_FALSE(f.api.browser_state_get(f.api.context, buffer, uint32_t(browser.size())));  // no room for the NUL
@@ -521,10 +524,19 @@ TEST_CASE("a new instrument instance starts on the firstLoad preset, and a new F
   };
   FactoryTable guard(table, 3);
   const auto apply = [](Fixture& f) {
-    return eg13::applyFirstLoadPreset(f.synth.kind(), f.ctx.saveState, f.ctx.loadState);
+    return eg13::applyFirstLoadPreset(f.synth.kind(), f.ctx.saveState, f.ctx.loadState, f.ctx.setBrowser);
   };
   Fixture instrument;
   REQUIRE(apply(instrument));
+  // The browser string names the preset, so the header shows it, not Init.
+  const auto browser = nlohmann::json::parse(instrument.store.browser());
+  REQUIRE(browser["version"] == 1);
+  REQUIRE(browser["loaded"].size() == 1);
+  REQUIRE(browser["loaded"][0]["part"] == -1);
+  REQUIRE(browser["loaded"][0]["bank"] == "Bank 1");
+  REQUIRE(browser["loaded"][0]["name"] == "Opener");
+  REQUIRE(browser["loaded"][0]["kind"] == "performance");
+  REQUIRE(browser["edited"] == false);
   REQUIRE(instrument.synth.param(kEngineA) == 3);
   REQUIRE(instrument.synth.param(kEngineB) == 5);
   Fixture effect(eg13::PluginKind::Effect);
@@ -594,4 +606,23 @@ TEST_CASE("applying presets while notes play allocates nothing on the audio thre
   REQUIRE(allocations.load() == 0);
   REQUIRE(snap.activeVoices[0] + snap.activeVoices[1] == 0);  // nothing stuck
   f.synth.setActive(false);
+}
+
+// The editor's Init (EG13PresetLibrary.initPreset in ui/EG13UI) carries these route codes as
+// numbers; this fails if the core's init routes change without it.
+TEST_CASE("the init routes the editor's Init preset loads match the core's") {
+  using eg13::PluginKind;
+  const auto code = [](PluginKind kind, int part, int route) {
+    const eg13::Route r = eg13::initPatchRoute(kind, part, route);
+    return std::array<int, 3>{int(r.source), int(r.destination), int(r.via)};
+  };
+  for (int part = 0; part < 2; ++part) {
+    REQUIRE(code(PluginKind::Instrument, part, 0) == std::array<int, 3>{32, 2, 1});
+    REQUIRE(code(PluginKind::Instrument, part, 1) == std::array<int, 3>{40, 32, 0});
+    REQUIRE(code(PluginKind::Instrument, part, 2) == std::array<int, 3>{48, 1, 9});
+    REQUIRE(code(PluginKind::Instrument, part, 3) == std::array<int, 3>{0, 0, 0});
+  }
+  REQUIRE(code(PluginKind::Effect, 0, 0) == std::array<int, 3>{32, 32, 0});
+  REQUIRE(code(PluginKind::Effect, 0, 1) == std::array<int, 3>{0, 0, 0});
+  REQUIRE(code(PluginKind::Effect, 1, 0) == std::array<int, 3>{0, 0, 0});
 }
