@@ -442,18 +442,35 @@ final class EG13PreviewCore: EG13Core {
 
     func version() -> String { "preview" }
 
-    // MARK: Presets (a few made-up ones, nothing is written)
+    // MARK: Presets (made-up names for the screenshots; nothing is loaded)
 
-    private var browser = ""
+    var browser = ""
+    /// The list EG13 FX shows (an FX bank) instead of the instrument's two banks.
+    var fxList = false
     func factoryPresets() -> [EG13PresetEntry] {
-        [EG13PresetEntry(bank: "Bank 1", name: "Preview Pad", kind: .performance, source: .factory(0)),
-         EG13PresetEntry(bank: "Bank 1", name: "Preview Pluck", kind: .patch, source: .factory(1))]
+        let list: [(String, String, EG13PresetEntry.Kind)] = fxList
+            ? [("FX", "Granular Wash", .performance), ("FX", "Ring Shimmer", .performance),
+               ("FX", "Tape Smear", .patch), ("FX", "Frozen Room", .performance), ("FX", "Metal Rain", .patch)]
+            : [("Bank 1", "Glass Tide", .performance), ("Bank 1", "Slow Ring Garden", .performance),
+               ("Bank 1", "Warm Drift", .patch), ("Bank 1", "Bowed Bells", .patch),
+               ("Bank 1", "Dusk Choir", .performance), ("Bank 1", "Grain Fog", .patch),
+               ("Bank 1", "Sub Pulse", .patch), ("Bank 1", "Hollow Reed", .patch),
+               ("Bank 1", "Ring Mist", .performance),
+               ("Bank 2", "catnap \u{2014} full rebuild", .performance), ("Bank 2", "catnap \u{2014} pad side", .patch),
+               ("Bank 2", "catnap \u{2014} pluck side", .patch), ("Bank 2", "catnap \u{2014} drone", .performance)]
+        return list.enumerated().map { EG13PresetEntry(bank: $1.0, name: $1.1, kind: $1.2, source: .factory($0)) }
     }
     func applyPreset(json: String, target: EG13PresetTarget) -> EG13PresetApplyResult {
         EG13PresetApplyResult(status: .ok)
     }
     func applyInit() -> EG13PresetApplyResult { EG13PresetApplyResult(status: .ok) }
-    func savePreset(part: Int?, name: String) -> String { "" }
+    func savePreset(part: Int?, name: String) -> String {
+        let root: [String: Any] = [
+            "eg13Preset": 1, "kind": part == nil ? "performance" : "patch", "plugin": fxList ? "effect" : "instrument",
+            "name": name, "bank": "User", "state": ["schemaVersion": 6, "params": [String: Double]()],
+        ]
+        return String(decoding: (try? JSONSerialization.data(withJSONObject: root)) ?? Data(), as: UTF8.self)
+    }
     func browserState() -> String { browser }
     func setBrowserState(_ state: String) { browser = state }
 }

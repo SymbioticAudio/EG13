@@ -14,11 +14,26 @@ The editor is one window with the two parts as tabs, the Mods in a column on the
 
 ## Header
 
-The header strip holds, from the left, the EG13 name, the A and B part tabs, and on the right the **MASTER** group and the settings button.
+The header strip holds, from the left, the EG13 name, the A and B part tabs, the **preset bar**, and on the right the **MASTER** group and the settings button.
 
 - The **A and B tabs** choose which part the window shows. Part A is teal, Part B is pink. The shown tab is filled with the part's colour. The shown tab also names the part's Source engine. Switching tabs changes every card, the matrix, the part settings and the bottom bar to that part; the master controls stay as they are.
 - The **MASTER** group holds the plugin-wide settings, each with a small label under it: **Mode** (Single, Layer, Split or Multi), **Latency** (Live or Studio), **Split** (the split note), **Gain** (voice gain) and **Clip** (soft clip). Master **Dry** and **Out** stay in the bottom bar. The group is the same on both tabs.
 - The **cog** opens the **Settings and About** panel (see below).
+
+## Presets
+
+The preset bar sits in the header between the part tabs and the MASTER group: `◀ [ name ▾ ] ▶`, in the same green-on-grey LCD look as the engine menus.
+
+- **Arrows:** step back and forward through the list in order, across banks (Bank 1, Bank 2, then User). After the last preset they wrap to the first. A Patch loads into the part the window shows (the A or B tab).
+- **Name:** shows what you loaded last. A Performance shows its name. After loading a Patch into one part the bar names each part, for example "A: Glass Bells / B: Warm Drift". A sound nobody has loaded shows "Init". A long name is cut with "…" so the bar never pushes the MASTER group; the full name is the bar's VoiceOver label.
+- **Edited mark:** a `*` after the name means you have changed the sound since you loaded it. It clears when you save or load another preset. Changes the host makes (automation, loading a project or an undo step) do not set it.
+- **Dropdown:** click the name. The list is grouped under **Bank 1**, **Bank 2** and **User** headings (EG13 FX lists **FX** and **User**). The preset the shown part came from has a tick. Each entry has a kind mark: **A+B** is a Performance (both parts, loaded whole) and **A|B** is a Patch (one part's sound). A Performance loads when you choose it. A Patch opens a submenu, **Load into A** or **Load into B**, so you choose the part; the arrows load a Patch into the shown part. The User group is read again each time you point at the bar, so files you add to the Presets folder appear.
+- **Init:** loads the init sound into both parts and shows "Init".
+- **Save:** writes the loaded preset back to its User file. A factory preset is read-only, so Save on one makes a User copy under the same name. Save is off when nothing is loaded, or when the two parts came from different presets (use Save As).
+- **Save As…:** a small panel asks for a name and what to save: **Whole instrument** (a Performance), **Part A** or **Part B** (a Patch). If a User preset of that name and kind exists, the panel asks "Replace it?" before it overwrites anything.
+- **Rename…** and **Delete…** apply to a User preset only (the one the shown part came from). Delete asks for confirmation and removes the file; the sound stays as it is.
+- **Messages:** a preset that cannot be loaded, files skipped in the User folder, or a failed save show as a small LCD line under the name for four seconds. A preset that fails to load never stops the sound.
+- The loaded name and the edited mark are saved with the host project, so reopening a project shows them again.
 
 ## Cards
 

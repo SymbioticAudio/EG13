@@ -258,6 +258,67 @@ enum EG13Snapshot {
         return ok
     }
 
+    /// The preset bar design set (M7 gate 5a): the header at 75, 100 and 200 %, the dropdown for the
+    /// instrument and EG13 FX (a drawn copy of the macOS menu), an edited name, a name too long for
+    /// the bar, and Save As with its clash question.
+    static func runPresets(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let work = FileManager.default.temporaryDirectory.appendingPathComponent("eg13-presets-snapshot-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: work) }
+        func state(_ loaded: [(Int, String, String, String)], edited: Bool = false) -> String {
+            let items = loaded.map { "{\"part\":\($0.0),\"bank\":\"\($0.1)\",\"name\":\"\($0.2)\",\"kind\":\"\($0.3)\"}" }
+            return "{\"version\":1,\"loaded\":[\(items.joined(separator: ","))],\"edited\":\(edited)}"
+        }
+        /// A synth over a preview core with two User presets in a folder of its own.
+        func make(fx: Bool = false, _ browser: String) -> (EG13PreviewCore, EG13Synth)? {
+            let core = EG13PreviewCore.standard()
+            core.fxList = fx
+            core.browser = browser
+            let folder = work.appendingPathComponent(fx ? "fx" : "instrument")
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let files = fx ? [("Warm Wash", nil as Int?), ("Dark Spring", 0)] : [("My Pad", nil), ("Bass test", 1)]
+            for (name, part) in files {
+                let url = folder.appendingPathComponent(name).appendingPathExtension(part == nil ? "eg13perf" : "eg13patch")
+                try? core.savePreset(part: part, name: name).write(to: url, atomically: true, encoding: .utf8)
+            }
+            let synth = EG13Synth(core: core, kind: fx ? .effect : .instrument, presetsFolder: folder)
+            for _ in 0..<12 { synth.tick() }
+            return (core, synth)
+        }
+        let perf = "performance", patch = "patch"
+        guard let (c1, glass) = make(state([(-1, "Bank 1", "Glass Tide", perf)])),
+              let (c2, mine) = make(state([(-1, "User", "My Pad", perf)])),
+              let (c3, fx) = make(fx: true, state([(-1, "FX", "Ring Shimmer", perf)])),
+              let (c4, edited) = make(state([(-1, "Bank 1", "Glass Tide", perf)], edited: true)),
+              let (c5, long) = make(state([(0, "Bank 2", "catnap \u{2014} pluck side", patch),
+                                           (1, "Bank 2", "catnap \u{2014} pad side with a very long extended name", patch)],
+                                          edited: true))
+        else { return 1 }
+        let base = EG13Layout.baseSize
+        let strip = CGSize(width: base.width, height: EG13Layout.headerHeight)
+        var ok = true
+        ok = write(EG13HeaderPreview(synth: glass), size: strip, zoom: 1, to: "\(directory)/header-a.png") && ok
+        ok = write(EG13HeaderPreview(synth: glass), size: strip, zoom: 0.75, to: "\(directory)/header-75.png") && ok
+        ok = write(EG13HeaderPreview(synth: glass), size: strip, zoom: 2, to: "\(directory)/header-200.png") && ok
+        ok = write(EG13HeaderPreview(synth: edited), size: strip, zoom: 1, to: "\(directory)/edited.png") && ok
+        long.selectedPart = 0
+        ok = write(EG13HeaderPreview(synth: long), size: strip, zoom: 1, to: "\(directory)/long-name.png") && ok
+        let sheet = CGSize(width: base.width, height: 640)
+        ok = write(EG13PresetSheet(synth: mine, content: EG13PresetBarSnapshots.menu(mine.presets, openPatch: "Bowed Bells")),
+                   size: sheet, zoom: 1, to: "\(directory)/menu-instrument.png") && ok
+        ok = write(EG13PresetSheet(synth: fx, content: EG13PresetBarSnapshots.menu(fx.presets, openPatch: "Tape Smear")),
+                   size: CGSize(width: base.width, height: 420), zoom: 1, to: "\(directory)/menu-fx.png") && ok
+        let dialogSize = CGSize(width: base.width, height: 250)
+        ok = write(EG13PresetSheet(synth: mine, content: EG13PresetBarSnapshots.saveAs(
+                    mine.presets, name: "Evening Glass", scope: .whole, clash: false)),
+                   size: dialogSize, zoom: 1, to: "\(directory)/save-as.png") && ok
+        ok = write(EG13PresetSheet(synth: mine, content: EG13PresetBarSnapshots.saveAs(
+                    mine.presets, name: "My Pad", scope: .whole, clash: true)),
+                   size: dialogSize, zoom: 1, to: "\(directory)/clash.png") && ok
+        withExtendedLifetime((c1, c2, c3, c4, c5)) {}
+        return ok ? 0 : 1
+    }
+
     /// The layout design set: both parts at 100%, Part A at 75%, the header close-up, a contact sheet
     /// of every engine for each slot kind, and the worst case (the tallest engines in every slot) as
     /// the full height of both columns, with the visible strip marked.
@@ -521,6 +582,22 @@ struct EG13ContextMenuSheet: View {
                     }
                 }
             }
+        }
+    }
+}
+
+/// The header with something drawn under the preset bar (a menu or a dialog), on the window grey.
+struct EG13PresetSheet<Content: View>: View {
+    let synth: EG13Synth
+    let content: Content
+    /// Where the bar's left edge is in the header (measured from a header snapshot).
+    var barX: CGFloat { synth.kind == .effect ? 398 : 376 }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            EG13Theme.theme.surface.window.color
+            EG13HeaderPreview(synth: synth)
+            content.offset(x: barX, y: EG13Layout.headerHeight - 12)
         }
     }
 }

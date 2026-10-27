@@ -226,6 +226,7 @@ public final class EG13Synth {
             engineGeneration = frame.engineGeneration
             reloadDescriptors()
             reloadRoutes()
+            presets.refreshFromHost()  // the host may have loaded a project or an undo step
         }
         // Only a parameter whose value changed is written, so only its controls are invalidated.
         for index in 0..<min(paramByIndex.count, frame.values.count) {

@@ -90,10 +90,32 @@ public final class EG13PresetBrowser {
 
     /// Re-reads the User folder (the dropdown does this when it opens). Files that are not
     /// presets, are from a newer format or are for the other plugin are skipped and named in `message`.
-    public func reloadUserFolder() {
+    /// keepingMessage: a message already shown stays unless files were skipped (the header re-reads
+    /// when the pointer reaches the bar, which must not wipe the message of a load).
+    public func reloadUserFolder(keepingMessage: Bool = false) {
         let scan = library.scan(plugin: pluginName)
         entries = factory + scan.entries
-        message = scan.skipped.isEmpty ? nil : Self.skippedMessage(scan.skipped)
+        if !scan.skipped.isEmpty {
+            message = Self.skippedMessage(scan.skipped)
+        } else if !keepingMessage {
+            message = nil
+        }
+    }
+
+    /// Clears the message (the header shows one for a few seconds).
+    public func dismissMessage() { message = nil }
+
+    /// The list entry the shown part's sound came from (a Performance counts for both parts), or
+    /// nil for Init or a name no longer in the list.
+    var currentEntry: EG13PresetEntry? { currentIndex().map { entries[$0] } }
+
+    /// Whether Save has one preset to act on: something is loaded and it is one preset, not a name per part.
+    var canSave: Bool { loaded.count == 1 }
+
+    /// Reads the project's browser string again. The host loading a project or an undo step
+    /// changes it underneath the editor; the synth calls this when the engine generation changes.
+    func refreshFromHost() {
+        restore(core.browserState())
     }
 
     private static func skippedMessage(_ skipped: [String]) -> String {

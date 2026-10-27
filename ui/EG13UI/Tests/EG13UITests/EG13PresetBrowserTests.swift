@@ -347,4 +347,70 @@ struct EG13PresetBrowserTests {
         #expect(browser.entries.map(\.name) == ["glass"])
         #expect(browser.displayName == "glass")
     }
+
+    // MARK: Menu (header dropdown)
+
+    @Test("menu groups by bank, marks kinds, ticks the shown part's preset and keeps User listed when empty")
+    func menuGroups() {
+        let folder = Self.tempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let list = [Self.factory("Bank 1", "Perf", .performance, 0), Self.factory("Bank 1", "Patch", .patch, 1),
+                    Self.factory("Bank 2", "catnap", .performance, 2)]
+        let (_, browser) = Self.make(factory: list, folder: folder)
+        var menu = browser.menu
+        #expect(menu.groups.map(\.title) == ["Bank 1", "Bank 2", "User"])
+        #expect(menu.groups[0].rows.map(\.mark) == ["A+B", "A|B"])
+        #expect(menu.groups[2].rows.isEmpty)
+        #expect(menu.groups.flatMap(\.rows).allSatisfy { !$0.ticked })
+        browser.load(list[1], into: .part(0))
+        menu = browser.menu
+        #expect(menu.groups[0].rows.map(\.ticked) == [false, true])
+        browser.shownPart = { 1 }  // part B holds nothing from the list
+        #expect(browser.menu.groups.flatMap(\.rows).allSatisfy { !$0.ticked })
+    }
+
+    @Test("menu enables Save, Rename and Delete only where they apply")
+    func menuEnabledStates() {
+        let folder = Self.tempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let perf = Self.factory("Bank 1", "Perf", .performance, 0)
+        let patch = Self.factory("Bank 1", "Patch", .patch, 1)
+        let (_, browser) = Self.make(factory: [perf, patch], folder: folder)
+        // Init: only Save As.
+        var menu = browser.menu
+        #expect(!menu.canSave && menu.canSaveAs && !menu.canRename && !menu.canDelete)
+        // A factory Performance: Save (as a User copy) and Save As, but no Rename or Delete.
+        browser.load(perf)
+        menu = browser.menu
+        #expect(menu.canSave && menu.canSaveAs && !menu.canRename && !menu.canDelete)
+        // A saved User preset: everything.
+        #expect(browser.saveAs(name: "Mine", scope: .whole) == .saved)
+        menu = browser.menu
+        #expect(menu.canSave && menu.canRename && menu.canDelete)
+        // A name per part: Save has no single preset, Rename and Delete follow the shown part.
+        browser.load(patch, into: .part(1))
+        browser.shownPart = { 1 }
+        menu = browser.menu
+        #expect(!menu.canSave && !menu.canRename && !menu.canDelete)
+        browser.shownPart = { 0 }
+        menu = browser.menu
+        #expect(!menu.canSave && menu.canRename && menu.canDelete)
+    }
+
+    @Test("a host load changes the browser string; the next engine generation re-reads it")
+    func hostLoadRereadsBrowserString() {
+        let folder = Self.tempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (core, browser) = Self.make(factory: [Self.factory("Bank 1", "One", .performance, 0)], folder: folder)
+        let synth = EG13Synth(core: core, kind: .instrument, presetsFolder: folder)
+        #expect(synth.presets.displayName == "Init")
+        core.browser = #"{"version":1,"loaded":[{"part":-1,"bank":"Bank 1","name":"One","kind":"performance"}],"edited":true}"#
+        synth.tick()  // no new generation: nothing re-read
+        #expect(synth.presets.displayName == "Init")
+        core.generation += 1  // the host's state load bumps the generation
+        synth.tick()
+        #expect(synth.presets.displayName == "One")
+        #expect(synth.presets.isEdited)
+        _ = browser
+    }
 }

@@ -7,7 +7,7 @@ import SymbioticBrand
 #endif
 
 /// Header on the rack grey: the EG13 wordmark, the A/B part tabs in the part accents (the shown
-/// tab also names the part's Source engine) and the MASTER group (Mode, Latency Mode, Split Note,
+/// tab also names the part's Source engine), the preset bar and the MASTER group (Mode, Latency Mode, Split Note,
 /// Voice Gain, Soft Clip), each with a small label. The cog opens the Settings and About panel.
 struct EG13HeaderView: View {
     @Bindable var synth: EG13Synth
@@ -21,6 +21,8 @@ struct EG13HeaderView: View {
         HStack(spacing: theme.spacing.m) {
             wordmark
             partTabs
+            EG13PresetBar(synth: synth)
+                .environment(\.eg13ControlColors, EG13Palette.headerControls)
             Spacer(minLength: 0)
             masterGroup(header, part: part)
             Button(action: onSettings) { Icon(.appSettings, size: 16) }
