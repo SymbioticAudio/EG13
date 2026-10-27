@@ -103,6 +103,31 @@ enum EG13Snapshot {
         return ok ? 0 : 1
     }
 
+    /// The M7 design-library requests: each reusable component on its own at 100 % and 200 %, named
+    /// `<component>-100.png` / `<component>-200.png`. The mod animation is a function of the tick count, so a
+    /// rerun draws the same PNGs.
+    static func runDesignRequests(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let core = EG13PreviewCore.modulationDemo()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<70 { synth.tick() }
+        synth.selectedPart = 0
+        let voices = core.demoParam("Voices", value: 5, min: 1, max: 8, stepped: true)
+        let engine = core.demoParam("Engine", value: 2, max: 7, stepped: true)
+        var ok = true
+        for (name, scale) in [("100", CGFloat(1)), ("200", CGFloat(2))] {
+            ok = writeFitted(EG13KnobCapSheet(), to: "\(directory)/knob-cap-\(name).png", scale: scale) && ok
+            ok = writeFitted(EG13MarkRequestSheet(), to: "\(directory)/mod-wave-mark-\(name).png", scale: scale) && ok
+            ok = writeFitted(EG13LCDRequestSheet(synth: synth, voices: voices, engine: engine), to: "\(directory)/lcd-readout-\(name).png", scale: scale) && ok
+            ok = writeFitted(EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_MOD1, part: 0, number: 1,
+                                            width: EG13Layout.modCardWidth),
+                             to: "\(directory)/mini-trace-\(name).png", scale: scale) && ok
+            ok = write(EG13RootView(synth: synth), size: EG13Layout.baseSize, zoom: scale,
+                       to: "\(directory)/card-columns-\(name).png") && ok
+        }
+        return ok ? 0 : 1
+    }
+
     /// The matrix editor: the right column on MATRIX at 100 % (Part A, route 3 highlighted as after a
     /// Motion row) and Part B, with the modulation demo's routes. For checking, not for the gate.
     static func runMatrix(into directory: String) -> Int32 {
@@ -505,6 +530,123 @@ struct EG13MarkSheet: View {
             row(2)
         }
         .frame(width: 640, alignment: .leading)
+    }
+}
+
+/// The knob cap request: the three sizes in each cap colour at a few values, then the same knobs
+/// with another plugin's colours injected (the layers and proportions are the same; only the slots change).
+struct EG13KnobCapSheet: View {
+    @Environment(\.symbioticTheme) private var theme
+    private let caps: [(String, EG13ParamEmphasis)] = [("white", .plain), ("pink", .pink), ("teal", .teal), ("black", .black)]
+    private let sizes: [EG13KnobSize] = [.large, .medium, .small]
+
+    private func recoloured(_ cap: EG13ParamEmphasis.Cap) -> EG13KnobStyle {
+        var style = EG13Palette.knobStyle(for: .plain)
+        switch cap {
+        case .pink:
+            style.cap = .accent
+            style.accent = Color(red: 0.95, green: 0.62, blue: 0.1)
+            style.accentInk = Color(red: 0.62, green: 0.38, blue: 0.0)
+            style.label = .chip
+        case .teal:
+            style.cap = .accent
+            style.accent = Color(red: 0.3, green: 0.5, blue: 0.95)
+            style.accentInk = Color(red: 0.16, green: 0.3, blue: 0.7)
+            style.label = .chip
+        default: break
+        }
+        return style
+    }
+
+    private func line(_ title: String, style: @escaping (EG13ParamEmphasis) -> EG13KnobStyle) -> some View {
+        VStack(alignment: .leading, spacing: theme.spacing.xs) {
+            Text(title).font(theme.type.caption.font.weight(.bold)).foregroundStyle(theme.text.secondary.color)
+            ForEach(caps, id: \.0) { cap in
+                HStack(spacing: theme.spacing.m) {
+                    ForEach(sizes, id: \.self) { size in
+                        ForEach([0.0, 0.35, 0.8], id: \.self) { value in
+                            let d = EG13Layout.knobDiameter(size)
+                            EG13KnobShape(normalized: value, style: style(cap.1), size: size)
+                                .frame(width: d, height: d)
+                                .frame(width: 52, height: 52)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            line("EG13 colours: rows white, pink, teal, black cap; large, medium, small at 0, 35, 80 %") { EG13Palette.knobStyle(for: $0) }
+            line("Another plugin's colours injected (same geometry): white, amber, blue, black") { emphasis in
+                var style = recoloured(emphasis.cap)
+                if emphasis.cap == .black { style = EG13Palette.knobStyle(for: .black) }
+                return style
+            }
+        }
+        .padding(theme.spacing.m)
+        .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(theme.surface.panel.color))
+    }
+}
+
+/// The modulation wave mark on its own: each cap colour with the pointer up (mark in the bottom third)
+/// and down (mark in the top third), large and medium.
+struct EG13MarkRequestSheet: View {
+    @Environment(\.symbioticTheme) private var theme
+    private let caps: [EG13ParamEmphasis] = [.plain, .pink, .teal, .black]
+    private let values: [(String, Double)] = [("pointer up, 50 %", 0.5), ("up, 75 %", 0.75), ("down, 5 %", 0.05), ("down, 95 %", 0.95)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.xs) {
+            ForEach([EG13KnobSize.large, .medium], id: \.self) { size in
+                let d = EG13Layout.knobDiameter(size) * 1.5
+                HStack(alignment: .top, spacing: theme.spacing.l) {
+                    ForEach(values, id: \.0) { value in
+                        VStack(spacing: theme.spacing.xs) {
+                            HStack(spacing: theme.spacing.s) {
+                                ForEach(caps.indices, id: \.self) { i in
+                                    EG13KnobShape(normalized: value.1, style: EG13Palette.knobStyle(for: caps[i]),
+                                                  size: size, showsModulationMark: true)
+                                        .frame(width: EG13Layout.knobDiameter(size), height: EG13Layout.knobDiameter(size))
+                                }
+                            }
+                            Text(value.0).font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.text.secondary.color)
+                        }
+                    }
+                }
+                .frame(minHeight: d / 1.5)
+            }
+        }
+        .padding(theme.spacing.m)
+        .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(theme.surface.panel.color))
+    }
+}
+
+/// LCD readout and button: value wells, the steppers with minus and plus, the engine menu well, and a
+/// card header with the MOTION n button over its popover list with level bars.
+struct EG13LCDRequestSheet: View {
+    let synth: EG13Synth
+    @Environment(\.symbioticTheme) private var theme
+    let voices: EG13Param
+    let engine: EG13Param
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            HStack(spacing: theme.spacing.m) {
+                EG13LCDText(text: "Value 0.62").frame(width: 88, height: 26)
+                EG13LCDText(text: "Focused", isFocused: true).frame(width: 88, height: 26)
+                EG13Stepped(param: voices)
+                EG13EnginePicker(names: EG13PreviewCore.engineNames, selector: engine,
+                                 selected: 2, accessibilityName: "Engine", wellWidth: EG13Layout.enginePickerWidth)
+            }
+            EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0, width: EG13Layout.slotCardWidth)
+            EG13MotionList(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.text.secondary.color.opacity(0.4), lineWidth: 1))
+        }
+        .padding(theme.spacing.m)
+        .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(theme.surface.panel.color))
     }
 }
 
