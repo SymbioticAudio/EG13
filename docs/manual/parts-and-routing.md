@@ -18,6 +18,17 @@ A voice stops (and becomes free for a new note) when its note is released and ei
 
 If an engine ever produces an invalid signal (a numerical blow-up), the voice is muted for a moment and only the slots whose output went invalid (Source, Filter or Shaper) start their engine afresh; the others carry on. A held note continues; if the Source itself was restarted, the note starts again from its attack.
 
+## Glide
+
+**Glide** (in the bottom bar) slides each voice's pitch to its new note instead of jumping. It is a part setting, saved with presets, and runs from *Off* to 2 seconds; the knob is finer at short times (the time is 2 s × the knob position squared).
+
+- The time is a time constant: the pitch covers about two thirds of the way to the new note in the Glide time and 95 % of it in three times that. So every interval, a semitone or two octaves, takes the same time.
+- A voice glides only when a new note reaches it while it is still sounding. A voice starting from silence starts at its note. What that means depends on the part's **Voice Mode**:
+  - *Mono* and *Legato*: the one voice glides from note to note for as long as it sounds, including from the release tail of the last note. *Legato* glides between overlapping notes without retriggering; *Mono* glides and retriggers.
+  - *Poly*: a new note takes a free voice where there is one, so most notes do not glide. A note glides when it takes over a voice still sounding: one still in its release, or one stolen when every voice is busy (with **Voices** at 1, any note played while the one before still sounds).
+  - Trigger *Always on*: notes glide to each new key and, when you let go, back to the Base Note.
+- Pitch bend, Transpose and routes into *Pitch* are not glided: they move the pitch at once, on top of the gliding note.
+
 ## Engine switching
 
 Each engine of each slot (Source, Filter, Shaper, the four Mod slots and Part FX) remembers its own settings in each part. Switching Source from Macro Oscillator to Digital Oscillator and back brings back the Macro Oscillator exactly as you left it. The host's parameters change to the new engine's values; this change is not recorded as automation. A P value the host sets after the engine change, in the same moment (a restore, or a host setting every parameter at once), is kept: the host is not sent the engine's remembered value for it. The same holds for the Filter and Shaper *Type*: switching from Analog Filter to Classic Filters and back brings the Analog Filter back as you left it, and the host shows each slot's P values named after its current engine. The **Part FX** *Type* works the same way: each of Off, Granular, Granular Delay, Resonator and Reverb keeps its own P1 to P16 in each part, so switching from Granular to Reverb and back brings Granular back as you left it. Part A's Part FX and Part B's Part FX are separate, with separate memories.
