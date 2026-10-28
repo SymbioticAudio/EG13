@@ -16,7 +16,7 @@ M7 also carries EG13's reusable design work back to the shared design library, s
 2. **Factory presets: two banks.**
    - **Bank 1:** 30–50 original presets (owner), including the first-load patch. It mixes a few A+B combinations with single-part sounds (§4.1). Built from the patch ideas in the original modules' manuals and inspired by ambient patches shared by the VCV Rack community (the VCV forum threads, and "Melodic Ambient Patching" on Patchstorage). These are new patches that take ideas, not files. Each preset carries a one-line note naming the idea it comes from.
    - **Bank 2: catnap.** A rebuild of "~zero-g:catnap : vcv rack jam" by **plantay** (patchstorage.com/zero-gcatnap-vcv-rack-jam/, licence *Creative Commons Attribution 4.0*, confirmed on the page 2026-10-27), with attribution (owner).
-3. **Preset browsing in the editor header** (owner): previous/next arrows, and a dropdown between them showing the current preset name and listing every preset grouped by bank (Bank 1, Bank 2, User). A single-part preset can be loaded into A or B (owner).
+3. **Preset browsing in the editor header** (owner): previous/next arrows, and a dropdown between them showing the current preset name and listing every preset grouped by bank (Bank 1, Bank 2, User). A single-part preset can be loaded into A or B (owner). *Owner redesign 2026-10-27 (see §4.3): the arrows are removed; a "Presets" button opens the dropdown and each part tab names what is loaded into it.*
 4. **User bank** (owner): users can save their own presets into a User bank in the same list.
 4a. **EG13 FX** (owner): the same browser, with a small FX bank of its own.
 5. **Signing and notarisation, switchable** (owner: "middle path"). The release pipeline can sign, notarise and build a `.pkg` installer, but this switches on only when Apple Developer ID credentials are added to the repository's GitHub secrets. Without them, the pipeline makes unsigned builds. The owner decides at release time, or in a later release, whether to pay for the Apple Developer Program (US$99/year).
@@ -68,6 +68,13 @@ Bank 1 has "a few combination patches A+B as well as single-part sounds" (owner)
 - Each factory preset gets a golden render test (parent spec §10).
 
 ### 4.3 Browsing (header)
+**Owner redesign, 2026-10-27** (after testing in Logic: stepping from a Performance into a Patch left the other part sounding, and nothing showed what was in Part B). This replaces the arrows and the name display below; the rest of §4.3 stands.
+- No ◀ ▶ arrows, in either plugin. One LCD button labelled **Presets ▾** only opens the dropdown (same content and behaviour; Init, Save, Save As, Rename and Delete stay in it).
+- Each part tab shows what is loaded into its part instead of the Source engine name: a Patch's name; a Performance as `name·A` / `name·B`; otherwise `Init`. A `*` after a tab's name marks that part edited (a part's controls and routes mark it; a master control that is part of the sound marks both; setup controls never). Long names are cut with "…", full name (and a credit) on hover. The MASTER group is never squeezed.
+- The dropdown ticks what A and B hold (a Performance once).
+- The browser string is version 2 with `"edited":[a,b]`; any other string reads as Init (no migration before v1.0).
+
+Original M7 design (superseded where the redesign says so):
 - **Layout:** `◀  [ preset name ▾ ]  ▶` in the header's preset area (parent spec §8). The visual design goes to the owner as a design gate with screenshots, as in M6a and M6b.
 - **Kinds in the list:** each entry shows a small mark for its kind, Performance (A+B) or Patch (one part).
 - **Loading a Patch:** the user chooses A or B (owner).

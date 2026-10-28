@@ -38,7 +38,7 @@ public final class EG13Synth {
     public private(set) var activeVoices = [0, 0]
     /// The part the window shows (A/B tabs). Editor state only, not saved.
     public var selectedPart = 0
-    /// The preset list and what is loaded (the header's name and edited mark).
+    /// The preset list and what is loaded (the part tabs' names and edited marks).
     public let presets: EG13PresetBrowser
 
     /// The matrix, per part: codes and names as the core reports them (amounts are read live from
@@ -159,7 +159,8 @@ public final class EG13Synth {
         paramByID[id]?.setHeld(nil)
         heldIDs.remove(id)
         // A setup control (Level, Voice Gain, MIDI channel, ...) is not part of any preset.
-        if !core.isSetupParam(id) { presets.markEdited() }
+        // A part's control marks that part; a master one that is part of the sound (Mode) marks both.
+        if !core.isSetupParam(id) { presets.markEdited(part: EG13ParamID.partIndex(of: id)) }
         core.beginEdit(id)
     }
 
@@ -380,7 +381,7 @@ public final class EG13Synth {
                                destination: destination ?? (current.destinationHidden ? 0 : current.destination),
                                via: via ?? (current.viaHidden ? 0 : current.via))
         reloadRoutes()
-        if ok { presets.markEdited() }
+        if ok { presets.markEdited(part: part) }
         return ok
     }
 

@@ -555,13 +555,13 @@ TEST_CASE("a new instrument instance starts on the firstLoad preset, and a new F
   REQUIRE(apply(instrument));
   // The browser string names the preset, so the header shows it, not Init.
   const auto browser = nlohmann::json::parse(instrument.store.browser());
-  REQUIRE(browser["version"] == 1);
+  REQUIRE(browser["version"] == 2);
   REQUIRE(browser["loaded"].size() == 1);
   REQUIRE(browser["loaded"][0]["part"] == -1);
   REQUIRE(browser["loaded"][0]["bank"] == "Bank 1");
   REQUIRE(browser["loaded"][0]["name"] == "Opener");
   REQUIRE(browser["loaded"][0]["kind"] == "performance");
-  REQUIRE(browser["edited"] == false);
+  REQUIRE(browser["edited"] == nlohmann::json::array({false, false}));  // one mark per part
   REQUIRE(instrument.synth.param(kEngineA) == 3);
   REQUIRE(instrument.synth.param(kEngineB) == 5);
   Fixture effect(eg13::PluginKind::Effect);

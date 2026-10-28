@@ -80,10 +80,10 @@ struct EG13PresetDialog: Equatable {
     }
 }
 
-/// The header's preset bar: `◀ [ name ▾ ] ▶` in the LCD look of the Motion button and the engine
-/// menus (green on grey, monospaced). The arrows step through the list; the name opens the
-/// dropdown. The "*" after the name marks a preset edited since it was loaded. A message (a
-/// problem, or a credited preset's credit and licence) shows as a small line under the name for
+/// The header's preset button: `[ Presets ▾ ]` in the LCD look of the Motion button and the engine
+/// menus (green on grey, monospaced). It only opens the dropdown (owner redesign 2026-10-27: no
+/// arrows; the part tabs name what each part holds and carry the edited marks). A message (a
+/// problem, or a credited preset's credit and licence) shows as a small line under the button for
 /// four seconds; a credited row also has it as help.
 struct EG13PresetBar: View {
     @Bindable var synth: EG13Synth
@@ -96,45 +96,24 @@ struct EG13PresetBar: View {
 
     static let height: CGFloat = 26
     static let messageSeconds = 4.0
+    /// The button's text.
+    static let title = "Presets"
 
     var body: some View {
         let presets = synth.presets
-        HStack(spacing: theme.spacing.xs) {
-            arrow("\u{25C0}", label: "Previous preset") { presets.step(-1) }
-            nameWell(presets)
-                .overlay(alignment: .bottomLeading) { messageLine.offset(y: 15) }
-            arrow("\u{25B6}", label: "Next preset") { presets.step(1) }
-        }
-        .frame(minWidth: 150, idealWidth: 220, maxWidth: 320)
-        .onChange(of: presets.message) { _, new in show(new) }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Presets")
+        button(presets)
+            .fixedSize()
+            .overlay(alignment: .bottomLeading) { messageLine.offset(y: 15) }
+            .onChange(of: presets.message) { _, new in show(new) }
     }
 
     // MARK: Pieces
 
     private var lcdFont: Font { .system(size: max(theme.type.caption.size, 11), weight: .bold, design: .monospaced) }
 
-    private func arrow(_ glyph: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(glyph)
-                .font(lcdFont)
-                .foregroundStyle(colors.lcdText)
-                .frame(width: Self.height - 2, height: Self.height)
-                .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(colors.lcdBackground))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-    }
-
-    private func nameWell(_ presets: EG13PresetBrowser) -> some View {
-        // The "*" is its own text, so a long name is cut before it and the edited mark always shows.
-        let label = HStack(spacing: 0) {
-            Text(presets.displayName)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            if presets.isEdited { Text("*") }
-            Spacer(minLength: theme.spacing.s)
+    private func button(_ presets: EG13PresetBrowser) -> some View {
+        let label = HStack(spacing: theme.spacing.s) {
+            Text(Self.title)
             Text("\u{25BE}")
         }
         .font(lcdFont)
@@ -155,7 +134,7 @@ struct EG13PresetBar: View {
                 label  // snapshots: ImageRenderer cannot draw a Menu
             }
         }
-        .accessibilityLabel("Preset: \(presets.displayName)\(presets.isEdited ? ", edited" : "")")
+        .accessibilityLabel(Self.title)
         .accessibilityHint("Opens the preset list")
     }
 

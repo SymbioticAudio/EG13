@@ -63,83 +63,94 @@ struct EG13PresetBrowserTests {
         #expect(EG13PresetBrowser.defaultUserURL(for: .effect).path == "/nonexistent/eg13-test/presets/FX")
     }
 
-    @Test("step wraps from the last User preset to the first Bank 1 preset and loads Patches into the shown part")
-    func stepWraps() {
+    /// The two tabs' names, A then B.
+    static func names(_ browser: EG13PresetBrowser) -> [String] { [browser.partName(0), browser.partName(1)] }
+    static func edited(_ browser: EG13PresetBrowser) -> [Bool] { [browser.isEdited(part: 0), browser.isEdited(part: 1)] }
+
+    @Test("the browser has no step: the header has no arrows (owner redesign 2026-10-27)")
+    func noStep() {
+        // Compile-time: EG13PresetBrowser.step(_:) is gone. Loading goes through the menu only.
         let folder = Self.tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
-        let core = EG13FakeCore.standard()
-        Self.writeUser(core, in: folder, file: "mine.eg13perf", name: "Mine")
-        let list = [Self.factory("Bank 1", "One", .patch, 0), Self.factory("Bank 2", "Two", .performance, 1)]
-        let (fake, browser) = Self.make(factory: list, folder: folder)
-        var shown = 1
-        browser.shownPart = { shown }
-        browser.step(1)  // from Init: the first
-        #expect(fake.applied.last?.target == .part(1))
-        #expect(browser.displayName == "B: One")
-        browser.step(1)
-        #expect(fake.applied.last?.target == .whole)
-        #expect(browser.displayName == "Two")
-        browser.step(1)
-        #expect(browser.displayName == "Mine")
-        browser.step(1)  // wraps to the first Bank 1 preset, a Patch, into the shown part
-        #expect(fake.applied.last?.target == .part(1))
-        #expect(browser.displayName == "A: Mine / B: One")
-        shown = 0
-        browser.step(-1)  // from what part A holds, back across the wrap
-        #expect(browser.displayName == "Two")
-        #expect(fake.applied.count == 5)
+        let (_, browser) = Self.make(factory: [Self.factory("Bank 1", "One", .performance, 0)], folder: folder)
+        #expect(Self.names(browser) == ["Init", "Init"])
     }
 
-    @Test("step from Init goes back to the last preset")
-    func stepBackFromInit() {
+    @Test("each tab names what its part holds: a Patch by name, a Performance as name·A / name·B, else Init")
+    func partNames() {
         let folder = Self.tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
-        let (_, browser) = Self.make(factory: [Self.factory("Bank 1", "One", .performance, 0),
-                                               Self.factory("Bank 1", "Two", .performance, 1)], folder: folder)
-        browser.step(-1)
-        #expect(browser.displayName == "Two")
-    }
-
-    @Test("a Patch after a Performance names each part, and a Patch into A then B shows both")
-    func displayNames() {
-        let folder = Self.tempFolder()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let perf = Self.factory("Bank 1", "Perf", .performance, 0)
-        let patch = Self.factory("Bank 1", "Patch", .patch, 1)
-        let (_, browser) = Self.make(factory: [perf, patch], folder: folder)
-        #expect(browser.displayName == "Init")
+        let perf = Self.factory("Bank 1", "Harbour Lights", .performance, 0)
+        let patch = Self.factory("Bank 1", "Comb Choir", .patch, 1)
+        let other = Self.factory("Bank 2", "Tin Choir", .patch, 2)
+        let (_, browser) = Self.make(factory: [perf, patch, other], folder: folder)
+        #expect(Self.names(browser) == ["Init", "Init"])
         browser.load(patch, into: .part(0))
-        #expect(browser.displayName == "A: Patch")
-        browser.load(patch, into: .part(1))
-        #expect(browser.displayName == "A: Patch / B: Patch")
+        #expect(Self.names(browser) == ["Comb Choir", "Init"])
+        browser.load(other, into: .part(1))
+        #expect(Self.names(browser) == ["Comb Choir", "Tin Choir"])
         browser.load(perf)
-        #expect(browser.displayName == "Perf")
+        #expect(Self.names(browser) == ["Harbour Lights\u{00B7}A", "Harbour Lights\u{00B7}B"])
+        // A Patch later replaces only that part's name.
         browser.load(patch, into: .part(1))
-        #expect(browser.displayName == "A: Perf / B: Patch")
+        #expect(Self.names(browser) == ["Harbour Lights\u{00B7}A", "Comb Choir"])
+        browser.loadInit()
+        #expect(Self.names(browser) == ["Init", "Init"])
     }
 
-    @Test("an editor edit marks edited, loading clears it, and host-only value changes don't")
+    @Test("a tab's help is the full name, and a credited preset's credit and licence")
+    func partHelp() {
+        let folder = Self.tempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let catnap = EG13PresetEntry(bank: "Bank 2", name: "catnap", kind: .performance, credit: Self.catnapCredit,
+                                     licence: "CC BY 4.0", source: .factory(1), json: "{}")
+        let plain = Self.factory("Bank 1", "A very long name that the tab cuts", .patch, 0)
+        let (_, browser) = Self.make(factory: [plain, catnap], folder: folder)
+        #expect(browser.partHelp(0) == "Init")
+        browser.load(catnap)
+        #expect(browser.partHelp(1) == "catnap\u{00B7}B\n\(catnap.attribution!)")
+        browser.load(plain, into: .part(0))
+        #expect(browser.partHelp(0) == "A very long name that the tab cuts")
+    }
+
+    @Test("an editor edit marks its own part, loading clears it, and host-only value changes don't")
     func editedMark() {
+        let folder = Self.tempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let core = EG13FakeCore.full()
+        core.factory = [Self.factory("Bank 1", "One", .performance, 0), Self.factory("Bank 1", "Pat", .patch, 1)]
+        let synth = EG13Synth(core: core, kind: .instrument, presetsFolder: folder)
+        synth.presets.load(synth.presets.entries[0])
+        #expect(Self.edited(synth.presets) == [false, false])
+        // The host changes a value: a snapshot, no gesture.
+        core.values[0] = 0.3
+        synth.tick()
+        #expect(Self.edited(synth.presets) == [false, false])
+        synth.edit(EG13ParamID.part(1, .pan), 0.5)
+        #expect(Self.edited(synth.presets) == [false, true])
+        #expect(core.browser.contains("\"edited\":[false,true]"))
+        // A Patch into B clears B only; A stays as it was.
+        synth.edit(EG13ParamID.part(0, .pan), 0.5)
+        synth.presets.load(synth.presets.entries[1], into: .part(1))
+        #expect(Self.edited(synth.presets) == [true, false])
+        synth.presets.load(synth.presets.entries[0])
+        #expect(Self.edited(synth.presets) == [false, false])
+        #expect(core.browser.contains("\"edited\":[false,false]"))
+        // A route change from the editor counts too, for its part.
+        _ = synth.setRoute(part: 1, index: 0, source: 1, destination: 1, via: 0)
+        #expect(Self.edited(synth.presets) == [false, true])
+    }
+
+    @Test("a master control that is part of the sound (Mode) marks both parts")
+    func masterMarksBoth() {
         let folder = Self.tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let core = EG13FakeCore.full()
         core.factory = [Self.factory("Bank 1", "One", .performance, 0)]
         let synth = EG13Synth(core: core, kind: .instrument, presetsFolder: folder)
         synth.presets.load(synth.presets.entries[0])
-        #expect(!synth.presets.isEdited)
-        // The host changes a value: a snapshot, no gesture.
-        core.values[0] = 0.3
-        synth.tick()
-        #expect(!synth.presets.isEdited)
-        synth.edit(EG13ParamID.part(0, .pan), 0.5)
-        #expect(synth.presets.isEdited)
-        #expect(core.browser.contains("\"edited\":true"))
-        synth.presets.load(synth.presets.entries[0])
-        #expect(!synth.presets.isEdited)
-        #expect(core.browser.contains("\"edited\":false"))
-        // A route change from the editor counts too.
-        _ = synth.setRoute(part: 0, index: 0, source: 1, destination: 1, via: 0)
-        #expect(synth.presets.isEdited)
+        synth.edit(EG13ParamID.master(.mode), 1)
+        #expect(Self.edited(synth.presets) == [true, true])
     }
 
     @Test("a setup control (master Level, MIDI channel) does not set the edited mark")
@@ -152,11 +163,11 @@ struct EG13PresetBrowserTests {
         synth.presets.load(synth.presets.entries[0])
         synth.edit(EG13ParamID.master(.level), 0.5)
         synth.edit(EG13ParamID.part(1, .midiChannel), 5)
-        #expect(!synth.presets.isEdited)
-        #expect(!core.browser.contains("\"edited\":true"))
+        #expect(Self.edited(synth.presets) == [false, false])
+        #expect(!core.browser.contains("true"))
         // The sound still marks it.
         synth.edit(EG13ParamID.part(0, .pan), 0.5)
-        #expect(synth.presets.isEdited)
+        #expect(Self.edited(synth.presets) == [true, false])
     }
 
     @Test("Save on a factory preset acts as Save As into User")
@@ -168,7 +179,7 @@ struct EG13PresetBrowserTests {
         #expect(browser.save() == .saved)
         #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Glass.eg13perf").path))
         #expect(browser.entries.map(\.bank) == ["Bank 1", "User"])
-        #expect(browser.displayName == "Glass")
+        #expect(Self.names(browser) == ["Glass\u{00B7}A", "Glass\u{00B7}B"])
         // Now the loaded preset is the User one: Save overwrites it in place.
         #expect(browser.save() == .saved)
         #expect(browser.entries.count == 2)
@@ -186,12 +197,12 @@ struct EG13PresetBrowserTests {
         browser.load(browser.entries[0])
         // First time: no dialog, the User copy is made.
         #expect(EG13PresetDialog.save(browser) == nil)
-        #expect(browser.displayName == "Glass")
+        #expect(Self.names(browser) == ["Glass\u{00B7}A", "Glass\u{00B7}B"])
         let url = folder.appendingPathComponent("Glass.eg13perf")
         try? "marker".write(to: url, atomically: true, encoding: .utf8)
         // Reload the factory preset and save again: the clash opens the dialog at the Replace question.
         browser.load(browser.entries[0])
-        browser.markEdited()
+        browser.markEdited(part: 0)
         var dialog = EG13PresetDialog.save(browser)
         #expect(dialog?.mode == .saveAs)
         #expect(dialog?.name == "Glass")
@@ -202,7 +213,7 @@ struct EG13PresetBrowserTests {
         // Confirming replaces the User copy and clears the mark.
         #expect(dialog?.submit(browser) == true)
         #expect((try? String(contentsOf: url, encoding: .utf8)) != "marker")
-        #expect(!browser.isEdited)
+        #expect(Self.edited(browser) == [false, false])
         _ = dialog
     }
 
@@ -221,7 +232,7 @@ struct EG13PresetBrowserTests {
         // A Patch of the same name is a different preset.
         #expect(browser.saveAs(name: "Glass", scope: .part(0)) == .saved)
         #expect(browser.entries.count == 2)
-        #expect(browser.displayName == "A: Glass / B: Glass")
+        #expect(Self.names(browser) == ["Glass", "Glass\u{00B7}B"])
         _ = core
     }
 
@@ -236,7 +247,7 @@ struct EG13PresetBrowserTests {
         let files = try FileManager.default.contentsOfDirectory(atPath: folder.path)
         #expect(files == ["A-B- C 🎹.eg13perf"])
         #expect(browser.entries.map(\.name) == ["A/B: C 🎹"])
-        #expect(browser.displayName == "A/B: C 🎹")
+        #expect(browser.partName(0) == "A/B: C 🎹\u{00B7}A")
         // The folder holds nothing but that file (no path escapes).
         #expect(EG13PresetLibrary.fileName(for: "../../etc") == "-..-etc")
         #expect(EG13PresetLibrary.fileName(for: "...") == "Untitled")
@@ -266,7 +277,7 @@ struct EG13PresetBrowserTests {
         #expect(!message.contains("readme.txt"))
         // The rest of the list works.
         browser.load(browser.entries[0])
-        #expect(browser.displayName == "Good")
+        #expect(browser.partName(0) == "Good\u{00B7}A")
     }
 
     @Test("a preset the plugin refuses leaves the name alone and says why")
@@ -278,11 +289,11 @@ struct EG13PresetBrowserTests {
         browser.load(browser.entries[0])
         core.applyResult = EG13PresetApplyResult(status: .invalid, message: "This preset is for EG13 FX.")
         browser.load(browser.entries[1])
-        #expect(browser.displayName == "One")
+        #expect(browser.partName(0) == "One\u{00B7}A")
         #expect(browser.message == "This preset is for EG13 FX.")
         core.applyResult = EG13PresetApplyResult(status: .warnings, message: "An engine was missing.")
         browser.load(browser.entries[1])
-        #expect(browser.displayName == "Two")
+        #expect(browser.partName(0) == "Two\u{00B7}A")
         #expect(browser.message == "An engine was missing.")
     }
 
@@ -310,31 +321,35 @@ struct EG13PresetBrowserTests {
         #expect(browser.rename(old, to: "Other") == .clash)
         #expect(browser.rename(old, to: "New") == .saved)
         #expect(browser.entries.map(\.name) == ["New", "Other"])
-        #expect(browser.displayName == "New")
+        #expect(browser.partName(1) == "New\u{00B7}B")
         #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("Old.eg13perf").path))
         browser.delete(browser.entries[0])
         #expect(browser.entries.map(\.name) == ["Other"])
         #expect(browser.rename(browser.entries[0], to: "") != .saved)
     }
 
-    @Test("browser state restores the name and edited mark, and an empty state shows Init")
+    @Test("browser state restores the names and per-part edited marks; an empty, old or unknown state is Init")
     func restoreState() {
         let folder = Self.tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let (_, empty) = Self.make(folder: folder)
-        #expect(empty.displayName == "Init")
-        #expect(!empty.isEdited)
-        let saved = "{\"version\":1,\"loaded\":[{\"part\":-1,\"bank\":\"Bank 1\",\"name\":\"Glass\",\"kind\":\"performance\"}],\"edited\":true}"
+        #expect(Self.names(empty) == ["Init", "Init"])
+        #expect(Self.edited(empty) == [false, false])
+        let saved = #"{"version":2,"loaded":[{"part":-1,"bank":"Bank 1","name":"Glass","kind":"performance"}],"edited":[false,true]}"#
         let (_, restored) = Self.make(browser: saved, folder: folder)
-        #expect(restored.displayName == "Glass")
-        #expect(restored.isEdited)
-        let parts = "{\"version\":1,\"loaded\":[{\"part\":0,\"bank\":\"User\",\"name\":\"x\",\"kind\":\"patch\"},{\"part\":1,\"bank\":\"User\",\"name\":\"y\",\"kind\":\"patch\"}],\"edited\":false}"
+        #expect(Self.names(restored) == ["Glass\u{00B7}A", "Glass\u{00B7}B"])
+        #expect(Self.edited(restored) == [false, true])
+        let parts = #"{"version":2,"loaded":[{"part":0,"bank":"User","name":"x","kind":"patch"},{"part":1,"bank":"User","name":"y","kind":"patch"}],"edited":[true,false]}"#
         let (_, two) = Self.make(browser: parts, folder: folder)
-        #expect(two.displayName == "A: x / B: y")
-        for junk in ["not json", "{}", "{\"version\":2,\"loaded\":[],\"edited\":true}"] {
+        #expect(Self.names(two) == ["x", "y"])
+        #expect(Self.edited(two) == [true, false])
+        // The format before the per-part mark (version 1), junk and a newer version all read as Init.
+        let old = #"{"version":1,"loaded":[{"part":-1,"bank":"Bank 1","name":"Glass","kind":"performance"}],"edited":true}"#
+        for junk in ["not json", "{}", old, #"{"version":3,"loaded":[],"edited":[true,true]}"#,
+                     #"{"version":2,"loaded":[],"edited":true}"#] {
             let (_, broken) = Self.make(browser: junk, folder: folder)
-            #expect(broken.displayName == "Init")
-            #expect(!broken.isEdited)
+            #expect(Self.names(broken) == ["Init", "Init"])
+            #expect(Self.edited(broken) == [false, false])
         }
     }
 
@@ -344,20 +359,20 @@ struct EG13PresetBrowserTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let (core, browser) = Self.make(factory: [Self.factory("Bank 1", "One", .performance, 0)], folder: folder)
         browser.load(browser.entries[0])
-        browser.markEdited()
-        browser.markEdited()
+        browser.markEdited(part: 1)
+        browser.markEdited(part: 1)
         #expect(core.browserWrites.count == 2)
         browser.saveAs(name: "Mine", scope: .whole)
         #expect(core.browserWrites.count == 3)
         let last = try #require(JSONSerialization.jsonObject(with: Data(core.browserWrites[2].utf8)) as? [String: Any])
-        #expect(last["version"] as? Int == 1)
-        #expect(last["edited"] as? Bool == false)
+        #expect(last["version"] as? Int == 2)
+        #expect(last["edited"] as? [Bool] == [false, false])
         let loaded = try #require(last["loaded"] as? [[String: Any]])
         #expect(loaded.first?["name"] as? String == "Mine")
         #expect(loaded.first?["bank"] as? String == "User")
         // A new browser over the same string shows the same name.
         let again = EG13PresetBrowser(core: core, kind: .instrument, folder: folder)
-        #expect(again.displayName == "Mine")
+        #expect(again.partName(1) == "Mine\u{00B7}B")
     }
 
     @Test("loadInit asks the plugin, clears the edited mark and shows Init")
@@ -366,17 +381,17 @@ struct EG13PresetBrowserTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let (core, browser) = Self.make(factory: [Self.factory("Bank 1", "One", .performance, 0)], folder: folder)
         browser.load(browser.entries[0])
-        browser.markEdited()
+        browser.markEdited(part: nil)
         browser.loadInit()
         #expect(core.initCalls == 1)
-        #expect(browser.displayName == "Init")
-        #expect(!browser.isEdited)
-        #expect(core.browser.contains("\"loaded\":[]") && core.browser.contains("\"edited\":false"))
+        #expect(Self.names(browser) == ["Init", "Init"])
+        #expect(Self.edited(browser) == [false, false])
+        #expect(core.browser.contains("\"loaded\":[]") && core.browser.contains("\"edited\":[false,false]"))
         // A refused Init changes nothing.
         browser.load(browser.entries[0])
         core.applyResult = EG13PresetApplyResult(status: .invalid, message: "no")
         browser.loadInit()
-        #expect(browser.displayName == "One")
+        #expect(browser.partName(0) == "One\u{00B7}A")
         #expect(browser.message == "no")
     }
 
@@ -390,12 +405,12 @@ struct EG13PresetBrowserTests {
         let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         #expect(files == ["glass.eg13perf"])
         #expect(browser.entries.map(\.name) == ["glass"])
-        #expect(browser.displayName == "glass")
+        #expect(browser.partName(0) == "glass\u{00B7}A")
     }
 
     // MARK: Menu (header dropdown)
 
-    @Test("menu groups by bank, marks kinds, ticks the shown part's preset and keeps User listed when empty")
+    @Test("menu groups by bank, marks kinds, ticks what A and B hold (a Performance once) and keeps User listed")
     func menuGroups() {
         let folder = Self.tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -410,8 +425,13 @@ struct EG13PresetBrowserTests {
         browser.load(list[1], into: .part(0))
         menu = browser.menu
         #expect(menu.groups[0].rows.map(\.ticked) == [false, true])
-        browser.shownPart = { 1 }  // part B holds nothing from the list
-        #expect(browser.menu.groups.flatMap(\.rows).allSatisfy { !$0.ticked })
+        browser.shownPart = { 1 }  // the tick does not follow the shown part
+        #expect(browser.menu.groups[0].rows.map(\.ticked) == [false, true])
+        browser.load(list[2])
+        #expect(browser.menu.groups.flatMap(\.rows).map(\.ticked) == [false, false, true])
+        // A Performance in A and a Patch in B: both ticked.
+        browser.load(list[1], into: .part(1))
+        #expect(browser.menu.groups.flatMap(\.rows).map(\.ticked) == [false, true, true])
     }
 
     @Test("menu enables Save, Rename and Delete only where they apply")
@@ -448,14 +468,14 @@ struct EG13PresetBrowserTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let (core, browser) = Self.make(factory: [Self.factory("Bank 1", "One", .performance, 0)], folder: folder)
         let synth = EG13Synth(core: core, kind: .instrument, presetsFolder: folder)
-        #expect(synth.presets.displayName == "Init")
-        core.browser = #"{"version":1,"loaded":[{"part":-1,"bank":"Bank 1","name":"One","kind":"performance"}],"edited":true}"#
+        #expect(Self.names(synth.presets) == ["Init", "Init"])
+        core.browser = #"{"version":2,"loaded":[{"part":-1,"bank":"Bank 1","name":"One","kind":"performance"}],"edited":[true,false]}"#
         synth.tick()  // no new generation: nothing re-read
-        #expect(synth.presets.displayName == "Init")
+        #expect(Self.names(synth.presets) == ["Init", "Init"])
         core.generation += 1  // the host's state load bumps the generation
         synth.tick()
-        #expect(synth.presets.displayName == "One")
-        #expect(synth.presets.isEdited)
+        #expect(Self.names(synth.presets) == ["One\u{00B7}A", "One\u{00B7}B"])
+        #expect(Self.edited(synth.presets) == [true, false])
         _ = browser
     }
 
