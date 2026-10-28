@@ -70,9 +70,11 @@ const EngineInfo kInfo = {"braids", "Digital Oscillator", 7, kParams, false};
 struct BraidsEngine::Impl {
   braids::MacroOscillator osc;
   braids::SignatureWaveshaper waveshaper;
-  uint8_t sync[kNativeBlock];
-  int16_t buffer[kNativeBlock];
+  uint8_t sync[kNativeBlock + 1];
+  int16_t buffer[kNativeBlock + 1];  // + 1: the carried sample (see renderBlock)
   int16_t held;
+  int16_t carry;
+  bool hasCarry;
 };
 
 BraidsEngine::BraidsEngine() : impl_(std::make_unique<Impl>()) { reset(); }
@@ -100,6 +102,8 @@ void BraidsEngine::reset() {
   impl_->waveshaper.Init(0x0000);
   std::memset(impl_->sync, 0, sizeof(impl_->sync));
   impl_->held = 0;
+  impl_->carry = 0;
+  impl_->hasCarry = false;
   gate_ = false;
   strike_ = false;
   gain_ = 0.0f;
@@ -133,7 +137,25 @@ void BraidsEngine::renderBlock(const ParamValues& p, float* const* out, int offs
     s.osc.Strike();
     strike_ = false;
   }
-  s.osc.Render(s.sync, s.buffer, size_t(count));
+  // Many upstream shapes render two samples per loop step and run past the
+  // buffer on an odd size. With no resampler (a 96 kHz host) an odd host block
+  // reaches here, so an odd remainder renders one sample more and keeps it for
+  // the next call. Even-sized calls never carry, so they render as before.
+  int start = 0;
+  if (s.hasCarry) {
+    s.buffer[0] = s.carry;
+    s.hasCarry = false;
+    start = 1;
+  }
+  const int need = count - start;
+  if (need > 0) {
+    const int rendered = need + (need & 1);
+    s.osc.Render(s.sync, s.buffer + start, size_t(rendered));
+    if (rendered > need) {
+      s.carry = s.buffer[count];
+      s.hasCarry = true;
+    }
+  }
 
   const uint16_t mask = kBitMasks[bitDepthIndex(p.p[5])];
   const int decimation = kDecimation[sampleRateIndex(p.p[6])];

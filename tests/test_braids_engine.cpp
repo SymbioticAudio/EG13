@@ -218,3 +218,40 @@ TEST_CASE("Digital Oscillator processing does not allocate") {
   }
   REQUIRE(allocations == 0);
 }
+
+TEST_CASE("Digital Oscillator renders every shape at the lowest pitch") {
+  // Note 0 with Frequency at -12 st clamps the Braids pitch to 0. The Sub
+  // shapes (Color low: 2-octave sub) and Triple shapes (detune -24 st) then put
+  // an analog oscillator 2 octaves lower still, the lowest pitch Braids sees.
+  for (int shape = 0; shape < BraidsEngine::kNumShapes; ++shape) {
+    for (float edge : {0.0f, 1.0f}) {
+      ParamValues p = defaults();
+      p.p[0] = (float(shape) + 0.5f) / float(BraidsEngine::kNumShapes);
+      p.p[1] = edge;
+      p.p[2] = 0.0f;
+      p.p[3] = 0.0f;
+      BraidsEngine engine;
+      engine.prepare(BraidsEngine::kNativeRate, 512);
+      engine.noteOn(0.0f, 1.0f);
+      INFO("shape " << shape << " timbre " << edge);
+      for (float s : render(engine, p, 96000 * 2, 24)) REQUIRE(std::isfinite(s));
+    }
+  }
+}
+
+TEST_CASE("Digital Oscillator accepts odd-sized process calls") {
+  // At a 96 kHz host there is no resampler, so the host's block size (or the
+  // Voice's split of it) reaches the engine as is. Many upstream shapes render
+  // two samples per loop step and would run past the buffer on an odd count.
+  for (int shape = 0; shape < BraidsEngine::kNumShapes; ++shape) {
+    ParamValues p = defaults();
+    p.p[0] = (float(shape) + 0.5f) / float(BraidsEngine::kNumShapes);
+    BraidsEngine engine;
+    engine.prepare(BraidsEngine::kNativeRate, 512);
+    engine.noteOn(48.0f, 1.0f);
+    INFO("shape " << shape);
+    for (int chunk : {1, 3, 7, 23}) {
+      for (float s : render(engine, p, 4800, chunk)) REQUIRE(std::isfinite(s));
+    }
+  }
+}
