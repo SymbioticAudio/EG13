@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -25,8 +26,16 @@ class StateStore {
 
   // The UI's browser state: an opaque string it owns (loaded preset names, edited flag), saved as
   // the "browser" key and restored by load; empty when the state has none.
-  const std::string& browser() const { return browser_; }
-  void setBrowser(std::string value) { browser_ = std::move(value); }
+  // Guarded by a small mutex (never taken on the audio thread): a host may save from another thread
+  // (an AU's ClassInfo) while the editor, on the main thread, sets it.
+  std::string browser() const {
+    const std::lock_guard<std::mutex> lock(browserMutex_);
+    return browser_;
+  }
+  void setBrowser(std::string value) {
+    const std::lock_guard<std::mutex> lock(browserMutex_);
+    browser_ = std::move(value);
+  }
 
  private:
   std::string extraTopLevel_ = "{}";
@@ -35,6 +44,7 @@ class StateStore {
   // newer version's extra routes, numbers, segments and parts) is written back on save.
   std::string loadedRoutes_;
   std::string loadedShapes_;
+  mutable std::mutex browserMutex_;
   std::string browser_;
 };
 

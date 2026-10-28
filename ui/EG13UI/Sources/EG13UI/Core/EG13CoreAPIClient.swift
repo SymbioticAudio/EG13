@@ -183,4 +183,6 @@ public final class EG13CoreAPIClient: EG13Core {
     }
 
     public func setBrowserState(_ state: String) { api.pointee.browser_state_set(context, state) }
+
+    public func isSetupParam(_ id: UInt32) -> Bool { api.pointee.param_is_setup(context, id) }
 }

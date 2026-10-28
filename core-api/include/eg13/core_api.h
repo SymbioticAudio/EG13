@@ -168,6 +168,10 @@ typedef struct EG13CoreAPI {
    * back to its default. The setup fields are kept. Marks the project dirty. Returns an
    * EG13_PRESET_ result; message as in preset_apply. */
   int32_t (*preset_init)(void* context, char* message, uint32_t size);
+  /* Whether a parameter is a setup field: one a preset never saves or loads (master Level, Voice
+   * Gain, Latency Mode; per part MIDI channel, Output, MPE mode and bend range, CC A to D). The
+   * editor does not mark the preset edited for these. False for an unknown ID. */
+  bool (*param_is_setup)(void* context, uint32_t id);
 } EG13CoreAPI;
 
 #ifdef __cplusplus

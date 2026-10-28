@@ -131,7 +131,7 @@ struct EG13PresetBrowserTests {
         core.values[0] = 0.3
         synth.tick()
         #expect(!synth.presets.isEdited)
-        synth.edit(EG13ParamID.master(.level), 0.5)
+        synth.edit(EG13ParamID.part(0, .pan), 0.5)
         #expect(synth.presets.isEdited)
         #expect(core.browser.contains("\"edited\":true"))
         synth.presets.load(synth.presets.entries[0])
@@ -139,6 +139,23 @@ struct EG13PresetBrowserTests {
         #expect(core.browser.contains("\"edited\":false"))
         // A route change from the editor counts too.
         _ = synth.setRoute(part: 0, index: 0, source: 1, destination: 1, via: 0)
+        #expect(synth.presets.isEdited)
+    }
+
+    @Test("a setup control (master Level, MIDI channel) does not set the edited mark")
+    func setupControlsDoNotMark() {
+        let folder = Self.tempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let core = EG13FakeCore.full()
+        core.factory = [Self.factory("Bank 1", "One", .performance, 0)]
+        let synth = EG13Synth(core: core, kind: .instrument, presetsFolder: folder)
+        synth.presets.load(synth.presets.entries[0])
+        synth.edit(EG13ParamID.master(.level), 0.5)
+        synth.edit(EG13ParamID.part(1, .midiChannel), 5)
+        #expect(!synth.presets.isEdited)
+        #expect(!core.browser.contains("\"edited\":true"))
+        // The sound still marks it.
+        synth.edit(EG13ParamID.part(0, .pan), 0.5)
         #expect(synth.presets.isEdited)
     }
 
@@ -159,6 +176,34 @@ struct EG13PresetBrowserTests {
         browser.loadInit()
         #expect(browser.save() == .refused("Use Save As to name this sound."))
         _ = core
+    }
+
+    @Test("Save on a factory preset whose User copy exists opens Save As asking to replace it")
+    func saveFactoryTwice() {
+        let folder = Self.tempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (_, browser) = Self.make(factory: [Self.factory("Bank 1", "Glass", .performance, 0)], folder: folder)
+        browser.load(browser.entries[0])
+        // First time: no dialog, the User copy is made.
+        #expect(EG13PresetDialog.save(browser) == nil)
+        #expect(browser.displayName == "Glass")
+        let url = folder.appendingPathComponent("Glass.eg13perf")
+        try? "marker".write(to: url, atomically: true, encoding: .utf8)
+        // Reload the factory preset and save again: the clash opens the dialog at the Replace question.
+        browser.load(browser.entries[0])
+        browser.markEdited()
+        var dialog = EG13PresetDialog.save(browser)
+        #expect(dialog?.mode == .saveAs)
+        #expect(dialog?.name == "Glass")
+        #expect(dialog?.clash == true)
+        #expect(dialog?.action == "Replace")
+        #expect(dialog?.prompt?.contains("already exists") == true)
+        #expect((try? String(contentsOf: url, encoding: .utf8)) == "marker")  // nothing written yet
+        // Confirming replaces the User copy and clears the mark.
+        #expect(dialog?.submit(browser) == true)
+        #expect((try? String(contentsOf: url, encoding: .utf8)) != "marker")
+        #expect(!browser.isEdited)
+        _ = dialog
     }
 
     @Test("Save As to an existing name reports a clash and replaces only after confirmation")

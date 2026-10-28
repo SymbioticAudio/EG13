@@ -263,6 +263,10 @@ final class EG13FakeCore: EG13Core {
         ]
         return String(decoding: (try? JSONSerialization.data(withJSONObject: root)) ?? Data(), as: UTF8.self)
     }
+    /// The setup fields the fake knows: what the real core's preset code treats as setup.
+    var setupIDs: Set<UInt32> = [EG13ParamID.master(.level), EG13ParamID.part(0, .midiChannel),
+                                 EG13ParamID.part(1, .midiChannel)]
+    func isSetupParam(_ id: UInt32) -> Bool { setupIDs.contains(id) }
     func browserState() -> String { browser }
     func setBrowserState(_ state: String) {
         browser = state

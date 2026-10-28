@@ -158,7 +158,8 @@ public final class EG13Synth {
         guard openGestures.insert(id).inserted else { return }
         paramByID[id]?.setHeld(nil)
         heldIDs.remove(id)
-        presets.markEdited()
+        // A setup control (Level, Voice Gain, MIDI channel, ...) is not part of any preset.
+        if !core.isSetupParam(id) { presets.markEdited() }
         core.beginEdit(id)
     }
 

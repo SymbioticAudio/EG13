@@ -715,3 +715,16 @@ TEST_CASE("EG13 FX preset_init restores the FX init patch") {
   REQUIRE(r.destination == 32);
   REQUIRE(r.amount == Catch::Approx(0.2f));
 }
+
+TEST_CASE("param_is_setup is the preset core's setup-field set") {
+  Fixture f;
+  size_t setup = 0;
+  for (size_t i = 0; i < eg13::kParamCount; ++i) {
+    const uint32_t id = eg13::paramSpec(i).id;
+    INFO("param " << eg13::paramSpec(i).name);
+    REQUIRE(f.api.param_is_setup(f.api.context, id) == eg13::preset::isSetupParam(id));
+    if (f.api.param_is_setup(f.api.context, id)) ++setup;
+  }
+  REQUIRE(setup == 3 + 8 * eg13::kNumParts);  // master Level, Voice Gain, Latency; 8 per part
+  REQUIRE_FALSE(f.api.param_is_setup(f.api.context, 0xFFFFFFFFu));
+}

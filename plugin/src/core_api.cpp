@@ -357,6 +357,8 @@ uint32_t presetSave(void* context, int32_t part, const char* name, char* buffer,
   }
 }
 
+bool paramIsSetup(void*, uint32_t id) noexcept { return preset::isSetupParam(id); }
+
 bool browserStateGet(void* context, char* buffer, uint32_t size) noexcept {
   try {
     const std::string value = ctx(context).getBrowser ? ctx(context).getBrowser() : std::string();
@@ -419,6 +421,7 @@ EG13CoreAPI makeCoreApi(CoreApiContext& context) {
   api.preset_init = presetInit;
   api.browser_state_get = browserStateGet;
   api.browser_state_set = browserStateSet;
+  api.param_is_setup = paramIsSetup;
   return api;
 }
 

@@ -485,4 +485,5 @@ final class EG13PreviewCore: EG13Core {
     }
     func browserState() -> String { browser }
     func setBrowserState(_ state: String) { browser = state }
+    func isSetupParam(_ id: UInt32) -> Bool { false }
 }

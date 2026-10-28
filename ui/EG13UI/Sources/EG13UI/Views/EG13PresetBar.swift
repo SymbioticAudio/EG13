@@ -64,6 +64,14 @@ struct EG13PresetDialog: Equatable {
         return true
     }
 
+    /// The menu's Save. nil when it saved (or refused: the bar shows the message); otherwise the
+    /// Save As dialog at its Replace question, for a factory preset whose User copy already exists.
+    static func save(_ browser: EG13PresetBrowser) -> EG13PresetDialog? {
+        guard browser.save() == .clash, let info = browser.loaded.first else { return nil }
+        return EG13PresetDialog(mode: .saveAs, name: info.name, scope: info.part < 0 ? .whole : .part(info.part),
+                                clash: true)
+    }
+
     static func saveAs(_ browser: EG13PresetBrowser, shownPart: Int) -> EG13PresetDialog {
         let current = browser.currentEntry
         // A Patch is saved back as a Patch of the shown part; anything else as the whole instrument.
@@ -192,7 +200,7 @@ struct EG13PresetBar: View {
         Divider()
         Button("Init") { presets.loadInit() }
         Divider()
-        Button("Save") { presets.save() }.disabled(!menu.canSave)
+        Button("Save") { dialog = EG13PresetDialog.save(presets) }.disabled(!menu.canSave)
         Button("Save As\u{2026}") { dialog = .saveAs(presets, shownPart: synth.selectedPart) }
         Button("Rename\u{2026}") {
             if let entry = presets.currentEntry { dialog = EG13PresetDialog(mode: .rename(entry), name: entry.name) }

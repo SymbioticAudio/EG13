@@ -83,7 +83,7 @@ Bank 1 has "a few combination patches A+B as well as single-part sounds" (owner)
 - **Saving a factory preset:** factory presets are read-only, so Save on one acts as Save As into User (Claude's call).
 - **Save As:** asks whether to save the whole instrument (Performance), Part A, or Part B (Patch).
 - **Persistence:** the host's project state remembers which preset was loaded and whether it was edited.
-- **Errors:** a preset that fails to load never stops audio. The part falls back to Init and the UI shows a message (parent spec §9).
+- **Errors:** a preset that fails to load never stops audio. The sound and the name stay as they were, and the UI shows a message saying why (parent spec §9).
 - **The FX plugin:** EG13 FX has the same browser (owner).
   - The FX bank is a small set of effect presets of its own (owner), for example granular washes and ring-mod treatments. Claude's call: about 8 to 12, reviewed by ear like the others.
   - EG13 FX lists only the FX bank and the user's FX presets, which are saved to a `FX/` subfolder of the Presets folder (Claude's call).

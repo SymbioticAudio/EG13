@@ -26,8 +26,25 @@ echo "== clap-validator: $CLAP"
 # are not at their declared defaults after init: the defaults stay the init patch's, which is what
 # reset-to-default uses. param-default-values is skipped for the instrument alone; EG13 FX keeps
 # every test.
-"$CLAP_VALIDATOR" validate "$CLAP" --only-failed -p com.symbioticaudio.eg13.fx
-"$CLAP_VALIDATOR" validate "$CLAP" --only-failed -p com.symbioticaudio.eg13 -x '^param-default-values$'
+# An ID that matches no plugin runs only the 7 library-level tests and passes, so each run must also
+# have run a plugin-level test (the skip above makes this the only guard against a renamed ID).
+clap_validate() {
+  local id="$1" out
+  shift
+  out="$(mktemp)"
+  if ! "$CLAP_VALIDATOR" validate "$CLAP" --only-failed -p "$id" "$@" 2>&1 | tee "$out"; then
+    rm -f "$out"
+    return 1
+  fi
+  if ! grep -q "Test param-fuzz-basic completed" "$out"; then
+    rm -f "$out"
+    echo "validate.sh: clap-validator ran no plugin tests for '$id': is the plugin ID right?" >&2
+    return 1
+  fi
+  rm -f "$out"
+}
+clap_validate com.symbioticaudio.eg13.fx
+clap_validate com.symbioticaudio.eg13 -x '^param-default-values$'
 
 echo "== AU Info.plist: $COMPONENT/Contents/Info.plist"
 # A stale or generic bundle plist makes auval report "didn't find the component", so check first.

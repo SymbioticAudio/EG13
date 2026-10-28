@@ -96,4 +96,8 @@ public protocol EG13Core: AnyObject {
     /// The browser string the project saved ("" for none).
     func browserState() -> String
     func setBrowserState(_ state: String)
+    /// Whether a parameter is a setup field (master Level, Voice Gain, Latency Mode; per part MIDI
+    /// channel, Output, MPE, CC A to D): presets never carry these, so editing one is not an edit
+    /// of the preset's sound.
+    func isSetupParam(_ id: UInt32) -> Bool
 }

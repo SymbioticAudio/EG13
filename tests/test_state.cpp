@@ -1,8 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <string>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
@@ -716,4 +718,25 @@ TEST_CASE("Browser state round-trips through StateStore, and a pre-M7 state give
   odd["browser"] = 5;
   REQUIRE(other.load(synth, odd.dump()) == state::LoadResult::Ok);
   REQUIRE(other.browser().empty());
+}
+
+TEST_CASE("Saving on one thread while another sets the browser string never tears it") {
+  Synth synth(PluginKind::Instrument);
+  state::StateStore store;
+  const std::string a(4096, 'a');
+  const std::string b(8192, 'b');
+  std::atomic<bool> stop{false};
+  std::thread writer([&] {
+    for (int i = 0; !stop; ++i) store.setBrowser(i % 2 ? a : b);
+  });
+  bool torn = false;
+  for (int i = 0; i < 200; ++i) {
+    const auto root = nlohmann::json::parse(store.save(synth));
+    if (!root.contains("browser")) continue;  // saved before the first set
+    const std::string value = root["browser"];
+    if (value != a && value != b) torn = true;
+  }
+  stop = true;
+  writer.join();
+  REQUIRE_FALSE(torn);
 }

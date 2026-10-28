@@ -229,7 +229,8 @@ std::string StateStore::save(const Synth& synth) const {
   }
   root["schemaVersion"] = kSchemaVersion;
   root["params"] = std::move(params);
-  if (!browser_.empty()) root["browser"] = browser_;
+  const std::string browser = this->browser();
+  if (!browser.empty()) root["browser"] = browser;
 
   const EngineStash stash = synth.engineStash();
   for (const Section& section : kSections) {
@@ -294,7 +295,7 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
     extraParams_ = "{}";
     loadedRoutes_.clear();
     loadedShapes_.clear();
-    browser_.clear();
+    setBrowser({});
     return LoadResult::OkWithWarnings;
   }
   bool warnings = schema > kSchemaVersion;
@@ -348,7 +349,7 @@ LoadResult StateStore::load(Synth& synth, const std::string& json) {
   loadedRoutes_ = std::move(routesDump);
   loadedShapes_ = std::move(shapesDump);
   const auto browser = root.find("browser");
-  browser_ = browser != root.end() && browser->is_string() ? browser->get<std::string>() : std::string();
+  setBrowser(browser != root.end() && browser->is_string() ? browser->get<std::string>() : std::string());
   return warnings ? LoadResult::OkWithWarnings : LoadResult::Ok;
 }
 

@@ -87,6 +87,12 @@ APPLE_ID=me@example.com APPLE_TEAM_ID=ABCDE12345 APPLE_APP_PASSWORD=x \
   scripts/sign-and-notarize.sh --dry-run build/mac/plugins
 ```
 
+## Rehearsing, and running a tag again
+
+To try the whole pipeline (signing included) before the real release, push a rehearsal tag: `v1.0.0-rc1` or `v1.0.0-beta1`, where `1.0.0` is the version in `CMakeLists.txt`. The workflow compares the part before the hyphen to that version, drafts a GitHub **pre-release** (not a release), and uses the same notes file `docs/release/notes-v<version>.md`. Any other suffix is refused. Delete the rehearsal draft and its tag when you are done.
+
+Running a tag again (a re-run, or deleting and pushing the tag) creates a second draft release. Delete the old draft first, in the Releases page or with `gh release delete <tag>`.
+
 ## Renewing
 
 Developer ID certificates last five years. When one is renewed, export it again (step 3) and replace its secret. If you revoke an app-specific password, make a new one and replace `APPLE_APP_PASSWORD`.

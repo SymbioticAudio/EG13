@@ -14,9 +14,9 @@ To load a Patch from the dropdown, open its row's submenu and choose **Load into
 - After a Performance: its name, for example `First Light`.
 - After Patches: the name for each part that came from a preset, for example `A: Rain on Strings`. When the two parts came from different presets the bar shows both, `A: Rain on Strings / B: Teak Mallets`. Loading a Patch into one part of a Performance gives `A: First Light / B: Teak Mallets`.
 - **Init** after choosing Init from the dropdown.
-- A `*` after the name is the **edited mark**: you have changed the sound in EG13's editor since it was loaded (a knob, an engine, a setting or a route). Saving, or loading a preset or Init, clears it. Changes the host makes (automation, an undo step, loading a project) do not set it: EG13 cannot tell automation apart from an edit you make in the host.
+- A `*` after the name is the **edited mark**: you have changed the sound in EG13's editor since it was loaded (a knob, an engine, a setting or a route). The setup controls are the exception, because a preset never carries them: master Level, Voice Gain, Latency Mode, and each part's MIDI channel, Output, MPE mode and bend range and CC A to D do not set the mark. Saving, or loading a preset or Init, clears it. Changes the host makes (automation, an undo step, loading a project) do not set it: EG13 cannot tell automation apart from an edit you make in the host.
 
-The project remembers which preset is loaded and whether it was edited, so the bar shows the same name when you reopen the project. Loading a preset marks the project as changed in the host; opening the editor alone does not.
+The project remembers which preset is loaded and whether it was edited, so the bar shows the same name when you reopen the project. Loading a preset marks the project as changed in the host, and so does a change to the loaded preset's name or edited mark; setting them to what they already are, and opening the editor alone, do not.
 
 ## What a preset changes, and what it keeps
 
@@ -80,7 +80,7 @@ EG13 FX lists only the FX bank and your own FX presets. The instrument's presets
 ## Your own presets (the User bank)
 
 - **Save As…** saves the current sound under a new name. Choose **Whole instrument** to save a Performance, or **Part A** or **Part B** to save that part as a Patch. If a User preset of that name and kind exists, EG13 asks before replacing it.
-- **Save** writes the loaded preset back to its User file. On a factory preset it saves a User copy under the same name. Save is greyed out when Init is loaded (there is no name to save under) and when the two parts came from different presets (there is no single preset to save over): use Save As.
+- **Save** writes the loaded preset back to its User file. On a factory preset it saves a User copy under the same name; if that User copy already exists, Save opens Save As with the name filled in and asks "Replace it?". Save is greyed out when Init is loaded (there is no name to save under) and when the two parts came from different presets (there is no single preset to save over): use Save As.
 - **Rename…** and **Delete…** act on the User preset the shown part came from. Delete removes the file; the sound you are hearing stays.
 - A saved preset keeps its **name** only. The note, credit and licence of a factory preset are not copied into your file. If you share a changed copy of a Bank 2 preset, credit the original yourself (see Credits).
 

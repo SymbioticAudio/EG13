@@ -400,12 +400,21 @@ TEST_CASE("A factory render does not depend on what rendered before it") {
     if (table[i].plugin == PluginKind::Instrument) instruments.push_back(i);
   }
   REQUIRE(instruments.size() >= 3);
+  // A mix of the generators that draw from the generator: Braids (Backward Glass, with Beads),
+  // Plaits (Disco Toms), Rings (Belfry) and Clouds (Prism Fog). One intervening render of each
+  // is enough to show the property; rendering every preset made this the slowest test.
+  std::vector<size_t> others;
+  for (const char* want : {"Bank 1/Backward Glass", "Bank 1/Disco Toms", "Bank 1/Belfry", "Bank 1/Prism Fog"}) {
+    const auto it = std::find_if(instruments.begin(), instruments.end(), [&](size_t i) { return label(table[i]) == want; });
+    REQUIRE(it != instruments.end());
+    others.push_back(*it);
+  }
   std::string error;
   for (const size_t pick : {instruments[1], instruments.back()}) {
     INFO(label(table[pick]));
     Audio alone, after;
     REQUIRE(renderScript(table[pick].json, 0, stressScript(), alone, error));
-    for (const size_t other : instruments) {
+    for (const size_t other : others) {
       if (other == pick) continue;
       Audio scratch;
       REQUIRE(renderScript(table[other].json, 0, stressScript(), scratch, error));
