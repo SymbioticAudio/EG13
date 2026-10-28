@@ -154,4 +154,19 @@ extension EG13Param {
             current: { [self] in value }, begin: { [self] in beginEdit() },
             edit: { [self] in setValue($0) }, end: { [self] in endEdit() })
     }
+
+    /// The same over a stepper's offered values: the interaction steps through the options'
+    /// indices and sends each option's value. Without choices, the plain interaction.
+    public func makeInteraction(choices: EG13StepChoices?) -> EG13ControlInteraction {
+        guard let choices else { return makeInteraction() }
+        return EG13ControlInteraction(
+            minValue: 0, maxValue: Double(choices.options.count - 1),
+            defaultValue: Double(choices.index(of: descriptor.defaultValue)), isStepped: true,
+            current: { [self] in Double(choices.index(of: value)) }, begin: { [self] in beginEdit() },
+            edit: { [self] in setValue(choices.options[min(max(Int($0), 0), choices.options.count - 1)].value) },
+            end: { [self] in endEdit() })
+    }
+
+    /// The text a stepper shows: the option's name when it offers choices, else the core's.
+    public func text(choices: EG13StepChoices?) -> String { choices?.label(for: value) ?? text }
 }

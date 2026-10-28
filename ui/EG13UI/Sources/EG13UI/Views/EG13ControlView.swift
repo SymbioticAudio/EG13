@@ -23,7 +23,8 @@ struct EG13ControlView: View {
             case .stepped:
                 EG13Stepped(param: param, label: spec.label)
             case .wideStepped:
-                EG13Stepped(param: param, label: spec.label, wellWidth: EG13Layout.wideStepperWidth)
+                EG13Stepped(param: param, label: spec.label, wellWidth: EG13Layout.wideStepperWidth,
+                            choices: spec.choices)
             case .scope:
                 EG13Stepped(param: param, label: spec.label, wellWidth: EG13Layout.wideStepperWidth, showsLabel: false)
             case .segmented:

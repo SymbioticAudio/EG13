@@ -38,7 +38,8 @@ struct EG13PanelLayoutTests {
         }
     }
 
-    /// Every id of one part and the master whose P the selected engine uses (not named "(unused)").
+    /// Every id of one part and the master whose P the selected engine uses (not named "(unused)"),
+    /// minus master Dry, which the instrument does not show (it has no audio input).
     func expectedIDs(part: Int) -> Set<UInt32> {
         var ids = Set<UInt32>()
         for index in 0..<core.paramCount() {
@@ -46,7 +47,9 @@ struct EG13PanelLayoutTests {
             guard id >> 16 == UInt32(part) || id >> 16 == 0xFF else { continue }
             let slot = (id >> 8) & 0xFF
             let isP = (1...8).contains(slot) && (id & 0xFF) >= 1
-            if !(isP && core.paramName(at: index) == EG13Slot.unusedName) { ids.insert(id) }
+            if !(isP && core.paramName(at: index) == EG13Slot.unusedName) && id != EG13ParamID.master(.dry) {
+                ids.insert(id)
+            }
         }
         return ids
     }

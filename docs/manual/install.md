@@ -37,6 +37,15 @@ Most hosts scan for new plugins when they start, so quit and reopen the host aft
 
 EG13 appears as **EG13** (an instrument) and **EG13 FX** (an audio effect) from the manufacturer **SymbioticAudio**.
 
+## Playing EG13 FX in Logic Pro
+
+EG13 FX processes audio and also plays its parts from MIDI. In Logic Pro there are two ways to set it up:
+
+- **On an audio track (or bus):** insert EG13 FX as an **Audio FX**; it processes that track. To play its parts from MIDI as well, use Logic's MIDI-controlled effect route: in EG13 FX's plug-in header, choose a software instrument track in the MIDI side chain menu, then play that instrument track.
+- **On a software instrument track:** in the **Instrument** slot choose **AU MIDI-controlled Effects > SymbioticAudio > EG13 FX**, then set the **Side Chain** menu in the plug-in window's header to the audio track or bus to process. With Side Chain set to **None**, Logic gives the plug-in no input and it is silent, even the parts that play from MIDI alone.
+
+The instrument (EG13) has no audio input; to process audio, use EG13 FX (see [Parts and routing](parts-and-routing.md)).
+
 ## From the installer (.pkg)
 
 When a release is signed and notarised, it also has an installer, `EG13-<version>-macOS.pkg`. It installs the three plugins for all users of the Mac, in `/Library/Audio/Plug-Ins/Components`, `VST3` and `CLAP` (the Library folder at the top of the disk), and needs no quarantine step.
