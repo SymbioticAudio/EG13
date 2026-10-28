@@ -23,10 +23,10 @@ Engines: **Off**, **Granular**, **Granular Delay**, **Resonator** and **Reverb**
 Each part has a *Part FX Input* setting:
 
 - **Part mix:** the sum of the part's voices goes through the effect.
-- **Input:** only the part's Input (as its Input source routes it: External, Other part or Both; in the instrument only Other part carries a signal, see [Parts and routing](parts-and-routing.md#input-and-input-source)) goes through the effect. The part's voices skip the effect and are still heard. They are delayed by the effect's delay so they stay in time with it.
+- **Input:** only the part's Input (as its Input source routes it: External, Other part or Both in EG13 FX; Off or Other part in the instrument, see [Parts and routing](parts-and-routing.md#input-and-input-source)) goes through the effect. The part's voices skip the effect and are still heard. They are delayed by the effect's delay so they stay in time with it.
 - **Part mix + Input:** both go through the effect.
 
-With nothing on the Input (External in the instrument or with nothing connected to EG13 FX, or Other part in Single mode) the effect receives silence in *Input* mode, and the voices are still heard.
+With nothing on the Input (Off in the instrument, nothing connected to EG13 FX, or Other part in Single mode) the effect receives silence in *Input* mode, and the voices are still heard.
 
 The Input is delayed by the voices' own delay before it enters the effect, so the processed Input leaves the part in time with the voices (and, in EG13 FX, with Dry): to the sample for notes, and to within about half a sample where an effect's own rate conversion adds a fraction (measured up to 0.43 of a sample at 44.1 kHz).
 
