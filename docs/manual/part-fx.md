@@ -58,7 +58,7 @@ Clouds, the granular texture processor, as the VCV Rack port runs it. It records
 - **Freeze** (P9): on (50 % or more), the buffer stops recording and the effect keeps playing what it holds.
 - **Mode** (P10): *Granular*, *Stretch*, *Looping delay* or *Spectral*, in 16 fixed steps (see above).
   - *Granular*: overlapping grains taken from the buffer.
-  - *Stretch*: the buffer played as a continuous stream that can be slowed down, sped up or transposed without the grain texture. **Not working in this version:** in *Stretch* the processed sound is silent and only the dry part (Blend) is heard (see [Known limitations](limitations.md)).
+  - *Stretch*: the buffer played as a continuous stream that can be slowed down, sped up or transposed without the grain texture. (EG13 restores one line of the module code that the newest firmware dropped, which had left this mode silent.)
   - *Looping delay*: a delay with a pitch shifter; with Freeze on it loops what it holds.
   - *Spectral*: the sound's spectrum is captured and resynthesised, smeared, warped and quantised.
 - **Quality** (P11): *16-bit stereo* (the default), *16-bit mono*, *8-bit stereo* or *8-bit mono*, in 16 fixed steps. Mono and 8-bit trade fidelity for a longer buffer: about 1, 2, 4 and 7 seconds respectively. The 8-bit qualities record at half the rate (16 kHz) with a grainy, compressed 8-bit sound; mono mixes left and right before recording.

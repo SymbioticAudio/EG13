@@ -47,7 +47,7 @@ These are under the GNU General Public License, version 3 or (at your option) an
 
 Each of these components is distributed under the MIT licence, whose text follows the list, with the copyright notices below.
 
-- **Eurorack firmware (DSP code and stmlib):** Copyright 2012-2022 Emilie Gillet. EG13 ships one modified file, stmlib's `utils/random` (its generator state is per thread), in `third_party/eurorack-patches`.
+- **Eurorack firmware (DSP code and stmlib):** Copyright 2012-2022 Emilie Gillet. EG13 ships two modified files in `third_party/eurorack-patches`: stmlib's `utils/random` (its generator state is per thread) and Clouds' `dsp/window.h` (`Window::Start()` resets `done_`, as it did before upstream commits fbb53ba and 0e3756f).
 - **SIMD Everywhere:** Copyright (c) 2017 Evan Nemerson and the SIMD Everywhere contributors.
 - **r8brain-free-src:** Copyright (c) 2013-2026 Aleksey Vaneev.
 - **JSON for Modern C++:** Copyright (c) 2013-2025 Niels Lohmann. It contains code copyright (c) 2008-2009 Björn Hoehrmann, (c) 2009 Florian Loitsch, (c) 2016-2021 Evan Nemerson and (c) 2018 The Abseil Authors, all under the MIT licence.

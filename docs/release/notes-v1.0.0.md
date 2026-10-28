@@ -37,7 +37,6 @@ EG13 1.0 is the first release of EG13: a free, open-source two-part synthesizer 
 - Host undo covers route amounts only; changing a route's source, via or destination cannot be undone yet.
 - No colour-blind palette option, no MIDI learn, no drag-to-assign for modulation and no editing of custom envelope shapes yet.
 - The preset browser has no tags or search.
-- The Granular Part FX's *Stretch* mode gives no processed sound in this version (the other three modes work).
 - Typing a value into a host's parameter field does nothing; use the control.
 
 The full list is in the manual's [Known limitations](https://github.com/SymbioticAudio/EG13/blob/v1.0.0/docs/manual/limitations.md).

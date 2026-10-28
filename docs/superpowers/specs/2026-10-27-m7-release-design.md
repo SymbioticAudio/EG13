@@ -196,3 +196,4 @@ Bank 1 has "a few combination patches A+B as well as single-part sounds" (owner)
 ## 10. Owner answers to the builder check (2026-10-27)
 1. **Patches and Performances:** both. The dropdown can load a single part into A or B. The presets include a few A+B combinations as well as single-part sounds (§4.1, §4.3).
 2. **EG13 FX:** the same browser, with a small FX bank of presets (§4.3).
+3. **Clouds Stretch:** fix it in our build (2026-10-27). `Window::Start()` had lost its `done_ = false` upstream, which left Stretch silent; the line is restored in a shadow copy, `third_party/eurorack-patches/clouds/dsp/window.h`. The bare-module reference for Stretch in the fidelity tests includes this fix, and the adapters stay bit-exact against it.
