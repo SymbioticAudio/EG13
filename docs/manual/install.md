@@ -29,7 +29,13 @@ Unless the release says it is signed and notarised, macOS has not checked the pl
 
 ## Rescanning in your host
 
-Most hosts scan for new plugins when they start; some need a manual rescan from their plugin settings. Logic Pro and GarageBand use the AU: if EG13 does not appear, open Logic Pro > Settings > Plug-in Manager and choose Reset & Rescan Selection for EG13, or restart the Mac.
+Most hosts scan for new plugins when they start, so quit and reopen the host after installing. If EG13 still does not appear:
+
+- **Logic Pro** (and GarageBand) use the AU. Open Logic Pro > Settings > Plug-in Manager, select EG13 and choose **Reset & Rescan Selection**. If it is listed as failed, clear the quarantine (above) and rescan again. Restarting the Mac also makes macOS register the AU again.
+- **REAPER** uses the AU, VST3 or CLAP. Open REAPER > Settings > Plug-ins > VST and choose **Re-scan** (or **Clear cache/re-scan**); the CLAP page under Plug-ins has the same button. A plugin REAPER failed to load before the quarantine was cleared is remembered: use Clear cache/re-scan.
+- **Bitwig Studio** uses the VST3 or CLAP (it does not load AU). Open Settings > Locations and rescan the plug-in locations, or restart Bitwig.
+
+EG13 appears as **EG13** (an instrument) and **EG13 FX** (an audio effect) from the manufacturer **SymbioticAudio**.
 
 ## From the installer (.pkg)
 

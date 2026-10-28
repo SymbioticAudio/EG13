@@ -2,7 +2,7 @@
   "kind": "performance",
   "plugin": "instrument",
   "name": "catnap",
-  "note": "The whole patch, rebuilt from its saved settings: part B is the untriggered Plaits chord drone (C minor steps from a looping Marbles sequence, a slow Tides swell opening and snapping shut the Ripples low-pass) and plays only into part A, where your notes strike the Rings bell and both go into the octave-up Clouds grains, which freeze and thaw at random. Rings is played from the keys here, not by Marbles; Plateau is left out (its saved Wet is 0) and Warps too (its mixer channel is at 0). Like the patch, it drones as soon as it is loaded.",
+  "note": "It drones as soon as it is loaded, as the patch does. The whole patch, rebuilt from its saved settings: part B is the untriggered Plaits chord drone (C minor steps from a looping Marbles sequence, a slow Tides swell opening and snapping shut the Ripples low-pass) and plays only into part A, where your notes strike the Rings bell and both go into the octave-up Clouds grains, which freeze and thaw at random. Rings is played from the keys here, not by Marbles; Plateau is left out (its saved Wet is 0) and Warps too (its mixer channel is at 0).",
   "credit": "~zero-g:catnap by plantay (patchstorage.com/zero-gcatnap-vcv-rack-jam)",
   "licence": "CC BY 4.0",
   "order": 1,

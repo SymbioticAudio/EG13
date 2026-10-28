@@ -22,7 +22,7 @@ The header strip holds, from the left, the EG13 name, the A and B part tabs, the
 
 ## Presets
 
-The preset bar sits in the header between the part tabs and the MASTER group: `◀ [ name ▾ ] ▶`, in the same green-on-grey LCD look as the engine menus.
+The preset bar sits in the header between the part tabs and the MASTER group: `◀ [ name ▾ ] ▶`, in the same green-on-grey LCD look as the engine menus. [Presets](presets.md) describes the banks, what a preset changes and keeps, and the User folder.
 
 - **Arrows:** step back and forward through the list in order, across banks (Bank 1, Bank 2, then User). After the last preset they wrap to the first. A Patch loads into the part the window shows (the A or B tab).
 - **Name:** shows what you loaded last. A Performance shows its name. After loading a Patch into one part the bar names each part, for example "A: Glass Bells / B: Warm Drift". A sound nobody has loaded shows "Init". A long name is cut with "…" so the bar never pushes the MASTER group; the full name is the bar's VoiceOver label.
@@ -33,7 +33,7 @@ The preset bar sits in the header between the part tabs and the MASTER group: `�
 - **Save:** writes the loaded preset back to its User file. A factory preset is read-only, so Save on one makes a User copy under the same name. Save is off when nothing is loaded, or when the two parts came from different presets (use Save As).
 - **Save As…:** a small panel asks for a name and what to save: **Whole instrument** (a Performance), **Part A** or **Part B** (a Patch). If a User preset of that name and kind exists, the panel asks "Replace it?" before it overwrites anything.
 - **Rename…** and **Delete…** apply to a User preset only (the one the shown part came from). Delete asks for confirmation and removes the file; the sound stays as it is.
-- **Messages:** a preset that cannot be loaded, files skipped in the User folder, or a failed save show as a small LCD line under the name for four seconds. A preset that fails to load never stops the sound.
+- **Messages:** a preset that cannot be loaded, files skipped in the User folder, or a failed save show as a small LCD line under the name for four seconds. A preset that fails to load never stops the sound. Loading a preset credited to someone else (Bank 2) shows its credit and licence there in the same way, for example "~zero-g:catnap by plantay (patchstorage.com/zero-gcatnap-vcv-rack-jam) — CC BY 4.0"; a warning from loading takes its place. Its row in the dropdown shows the same text as help when you hover over it. EG13's own presets show no credit line.
 - The loaded name and the edited mark are saved with the host project, so reopening a project shows them again.
 
 ## Cards

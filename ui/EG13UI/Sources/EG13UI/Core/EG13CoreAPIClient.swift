@@ -133,7 +133,7 @@ public final class EG13CoreAPIClient: EG13Core {
             guard api.pointee.factory_preset(context, UInt32(index), &raw) else { return nil }
             return EG13PresetEntry(bank: text(raw.bank), name: text(raw.name),
                                    kind: raw.kind == 0 ? .performance : .patch,
-                                   note: text(raw.note), credit: text(raw.credit),
+                                   note: text(raw.note), credit: text(raw.credit), licence: text(raw.licence),
                                    source: .factory(index), json: text(raw.json))
         }
     }

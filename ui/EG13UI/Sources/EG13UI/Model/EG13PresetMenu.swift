@@ -10,6 +10,8 @@ struct EG13PresetMenu: Equatable {
         /// The shown part's sound came from this entry.
         var ticked: Bool
         var id: String { entry.id }
+        /// The row's help (tooltip): the credit and licence of a credited preset, else nil.
+        var help: String? { entry.attribution }
     }
 
     struct Group: Identifiable, Equatable {

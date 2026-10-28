@@ -2,7 +2,7 @@
   "kind": "patch",
   "plugin": "instrument",
   "name": "catnap — rings",
-  "note": "The Rings side of the patch: a bright, inharmonic modal bell struck by your notes (in the patch Marbles strikes it at random, at one fixed pitch), an octave below the keys, into the octave-up Clouds grains, which freeze and thaw at random.",
+  "note": "The Rings side of the patch: a bright, inharmonic modal bell struck by your notes (in the patch Marbles strikes it at random, at one fixed pitch), an octave below the keys, into the octave-up Clouds grains, which freeze and thaw at random. The patch's Plateau reverb is left out.",
   "credit": "~zero-g:catnap by plantay (patchstorage.com/zero-gcatnap-vcv-rack-jam)",
   "licence": "CC BY 4.0",
   "order": 3,

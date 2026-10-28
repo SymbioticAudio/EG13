@@ -64,6 +64,8 @@ Controls: **Model** (Modal, Sympathetic, String, FM Voice, Sympathetic Q, String
 
 Plays the part's Input through each voice: notes open a gate with **Attack** (1 ms to 2 s) and **Release** (5 ms to 5 s); **Gain** sets the level (−24 to +12 dB). The Input is stereo when the host sends stereo.
 
+Fed from the other part (the *Input source* setting's *Other part*), each voice plays that part's sound at the −12 dB **Voice Gain**, divided by the number of sounding Audio Input voices (see [Levels](modulation.md#levels)), so it arrives well below the other part's own level; raise **Gain** to make up for it.
+
 ## Filters
 
 Every voice has a Filter slot after its Source. **Off** passes the sound through unchanged. All filters' first control is the cutoff, on the same scale (20 Hz to 20 kHz), so one modulation amount sweeps every filter alike. Every filter starts fully open, so choosing one does not change the level.

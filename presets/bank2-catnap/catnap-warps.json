@@ -2,7 +2,7 @@
   "kind": "performance",
   "plugin": "instrument",
   "name": "catnap — warps",
-  "note": "The Warps corner of the patch, which its mixer keeps at 0, brought up: your notes strike the Rings bell, whose even partials are the carrier; the untriggered Plaits chord drone of part B, playing only into part A, is the modulator (in the patch it is the Clouds output, which carries that drone); both inputs are driven hard and a slow Tides swell sweeps the algorithm from crossfade to vocoder and back, into the octave-up Clouds grains, which freeze and thaw at random.",
+  "note": "The Warps corner of the patch, which its mixer keeps at 0, brought up: your notes strike the Rings bell, whose even partials are the carrier; the untriggered Plaits chord drone of part B, playing only into part A, is the modulator (in the patch it is the Clouds output, which carries that drone); both inputs are driven hard and a slow Tides swell sweeps the algorithm from crossfade to vocoder and back, into the octave-up Clouds grains, which freeze and thaw at random. The patch's Plateau reverb is left out.",
   "credit": "~zero-g:catnap by plantay (patchstorage.com/zero-gcatnap-vcv-rack-jam)",
   "licence": "CC BY 4.0",
   "order": 4,

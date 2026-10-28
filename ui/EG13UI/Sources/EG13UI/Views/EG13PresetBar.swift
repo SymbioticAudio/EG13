@@ -74,8 +74,9 @@ struct EG13PresetDialog: Equatable {
 
 /// The header's preset bar: `◀ [ name ▾ ] ▶` in the LCD look of the Motion button and the engine
 /// menus (green on grey, monospaced). The arrows step through the list; the name opens the
-/// dropdown. The "*" after the name marks a preset edited since it was loaded. A message shows
-/// as a small line under the name for four seconds.
+/// dropdown. The "*" after the name marks a preset edited since it was loaded. A message (a
+/// problem, or a credited preset's credit and licence) shows as a small line under the name for
+/// four seconds; a credited row also has it as help.
 struct EG13PresetBar: View {
     @Bindable var synth: EG13Synth
     @State private var dialog: EG13PresetDialog?
@@ -174,14 +175,17 @@ struct EG13PresetBar: View {
                 if group.rows.isEmpty { Text("None saved yet") }
                 ForEach(group.rows) { row in
                     let title = "\(row.ticked ? "\u{2713}" : "\u{2007}") \(row.mark)  \(row.entry.name)"
-                    if row.entry.kind == .patch {
-                        Menu(title) {
-                            Button("Load into A") { presets.load(row.entry, into: .part(0)) }
-                            Button("Load into B") { presets.load(row.entry, into: .part(1)) }
+                    Group {
+                        if row.entry.kind == .patch {
+                            Menu(title) {
+                                Button("Load into A") { presets.load(row.entry, into: .part(0)) }
+                                Button("Load into B") { presets.load(row.entry, into: .part(1)) }
+                            }
+                        } else {
+                            Button(title) { presets.load(row.entry) }
                         }
-                    } else {
-                        Button(title) { presets.load(row.entry) }
                     }
+                    .help(row.help ?? "")
                 }
             }
         }

@@ -2,7 +2,7 @@
   "kind": "patch",
   "plugin": "instrument",
   "name": "catnap — plaits",
-  "note": "The Plaits side of the patch, played from the keys: chords a step or two up the C minor scale from a looping Marbles sequence, through a Ripples low-pass that a slow Tides swell opens and snaps shut, into the octave-up Clouds grains, which freeze and thaw at random. In the patch Plaits drones untriggered; here each note opens it.",
+  "note": "The Plaits side of the patch, played from the keys: chords a step or two up the C minor scale from a looping Marbles sequence, through a Ripples low-pass that a slow Tides swell opens and snaps shut, into the octave-up Clouds grains, which freeze and thaw at random. In the patch Plaits drones untriggered; here each note opens it. The patch's Plateau reverb is left out.",
   "credit": "~zero-g:catnap by plantay (patchstorage.com/zero-gcatnap-vcv-rack-jam)",
   "licence": "CC BY 4.0",
   "order": 2,

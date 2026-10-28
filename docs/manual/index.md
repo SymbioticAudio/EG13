@@ -6,6 +6,7 @@ This manual describes how EG13 behaves, including the choices it makes where the
 
 - [Installing EG13](install.md): the zip and the installer, clearing macOS's quarantine, rescanning.
 - [Interface](interface.md): the window, part tabs, columns and cards, the bottom bar and meters.
+- [Presets](presets.md): Performances and Patches, the factory banks, what a preset changes and keeps, your own presets, and credits.
 - [Engines](engines.md): every Source, Filter and Shaper engine and its controls.
 - [Modulation](modulation.md): mod slots, their engines, the matrix, MPE, tempo sync and gain staging.
 - [Parts and routing](parts-and-routing.md): parts, voices, the engine slots, the Input source, engine switching and the default patches.

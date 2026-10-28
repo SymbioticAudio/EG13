@@ -34,7 +34,8 @@ public final class EG13PresetBrowser {
     /// What the parts' sounds came from; empty is Init.
     private(set) var loaded: [Loaded] = []
     public private(set) var isEdited = false
-    /// The last problem or warning (a preset refused, files skipped, a save that failed), or nil.
+    /// The last problem or warning (a preset refused, files skipped, a save that failed), the
+    /// credit and licence of a credited preset just loaded, or nil.
     public private(set) var message: String?
 
     /// The name the header shows:
@@ -145,7 +146,8 @@ public final class EG13PresetBrowser {
             message = result.message.isEmpty ? "\(entry.name) could not be loaded." : result.message
             return
         }
-        message = result.status == .warnings && !result.message.isEmpty ? result.message : nil
+        // A warning comes first; otherwise a credited preset shows its credit and licence.
+        message = result.status == .warnings && !result.message.isEmpty ? result.message : entry.attribution
         record(Loaded(part: Int(resolved.cPart), bank: entry.bank, name: entry.name, kind: entry.kind))
         isEdited = false
         persist()

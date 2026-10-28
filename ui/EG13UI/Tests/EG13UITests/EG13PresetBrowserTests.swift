@@ -413,4 +413,56 @@ struct EG13PresetBrowserTests {
         #expect(synth.presets.isEdited)
         _ = browser
     }
+
+    static let catnapCredit = "~zero-g:catnap by plantay (patchstorage.com/zero-gcatnap-vcv-rack-jam)"
+
+    @Test("a credited preset shows credit and licence; EG13's own and uncredited presets show none")
+    func attribution() {
+        let catnap = EG13PresetEntry(bank: "Bank 2", name: "catnap", kind: .performance, credit: Self.catnapCredit,
+                                     licence: "CC BY 4.0", source: .factory(0))
+        #expect(catnap.attribution == "\(Self.catnapCredit) \u{2014} CC BY 4.0")
+        let own = EG13PresetEntry(bank: "Bank 1", name: "First Light", kind: .performance, credit: "EG13 factory",
+                                  licence: "GPL-3.0-or-later", source: .factory(1))
+        #expect(own.attribution == nil)
+        #expect(Self.factory("Bank 1", "Plain", .patch, 2).attribution == nil)
+        let noLicence = EG13PresetEntry(bank: "User", name: "Shared", kind: .patch, credit: "A Friend",
+                                        source: .user(URL(fileURLWithPath: "/tmp/x.eg13patch")))
+        #expect(noLicence.attribution == "A Friend")
+    }
+
+    @Test("loading a credited preset shows its credit and licence as the message; the menu row carries it as help")
+    func attributionOnLoadAndMenu() {
+        let folder = Self.tempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let catnap = EG13PresetEntry(bank: "Bank 2", name: "catnap", kind: .performance, credit: Self.catnapCredit,
+                                     licence: "CC BY 4.0", source: .factory(1), json: "{}")
+        let (core, browser) = Self.make(factory: [Self.factory("Bank 1", "One", .performance, 0), catnap], folder: folder)
+        browser.load(catnap)
+        #expect(browser.message == catnap.attribution)
+        browser.load(browser.entries[0])
+        #expect(browser.message == nil)
+        // A warning from the plugin comes first; the credit stays on the menu row.
+        core.applyResult = EG13PresetApplyResult(status: .warnings, message: "Some settings were left out.")
+        browser.load(catnap)
+        #expect(browser.message == "Some settings were left out.")
+        let rows = browser.menu.groups.flatMap(\.rows)
+        #expect(rows.first { $0.entry.name == "catnap" }?.help == catnap.attribution)
+        #expect(rows.first { $0.entry.name == "One" }?.help == nil)
+    }
+
+    @Test("a User file's credit and licence are read")
+    func userFileLicence() throws {
+        let folder = Self.tempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let core = EG13FakeCore.standard()
+        let url = Self.writeUser(core, in: folder, file: "shared.eg13perf", name: "Shared")
+        var root = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        root["credit"] = "A Friend"
+        root["licence"] = "CC BY 4.0"
+        try JSONSerialization.data(withJSONObject: root).write(to: url)
+        let (_, browser) = Self.make(folder: folder)
+        let entry = try #require(browser.entries.first)
+        #expect(entry.licence == "CC BY 4.0")
+        #expect(entry.attribution == "A Friend \u{2014} CC BY 4.0")
+    }
 }

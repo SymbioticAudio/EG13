@@ -10,18 +10,20 @@ public struct EG13PresetEntry: Identifiable, Hashable, Sendable {
     public var kind: Kind
     public var note: String
     public var credit: String
+    public var licence: String
     public var source: Source
     /// The preset file's text for a factory preset (the plugin owns it); empty for a User file,
     /// which is read when it loads.
     public var json: String
 
     public init(bank: String, name: String, kind: Kind, note: String = "", credit: String = "",
-                source: Source, json: String = "") {
+                licence: String = "", source: Source, json: String = "") {
         self.bank = bank
         self.name = name
         self.kind = kind
         self.note = note
         self.credit = credit
+        self.licence = licence
         self.source = source
         self.json = json
     }
@@ -36,6 +38,20 @@ public struct EG13PresetEntry: Identifiable, Hashable, Sendable {
     public var isFactory: Bool {
         if case .factory = source { return true }
         return false
+    }
+
+    /// The credit EG13's own factory presets carry; they show no attribution.
+    static let ownCredit = "EG13 factory"
+
+    /// "credit — licence" for a preset made from someone else's work (Bank 2, rebuilt from a CC BY
+    /// 4.0 patch), or the credit alone when there is no licence. The menu row shows it as help and
+    /// loading the preset shows it as the message. nil for EG13's own presets and for presets with
+    /// no credit (Save writes only the name).
+    public var attribution: String? {
+        let who = credit.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !who.isEmpty, who != Self.ownCredit else { return nil }
+        let terms = licence.trimmingCharacters(in: .whitespacesAndNewlines)
+        return terms.isEmpty ? who : "\(who) \u{2014} \(terms)"
     }
 }
 
@@ -157,7 +173,8 @@ struct EG13PresetLibrary: Sendable {
         let name = (root["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             ?? url.deletingPathExtension().lastPathComponent
         return .success(EG13PresetEntry(bank: "User", name: name, kind: kind, note: root["note"] as? String ?? "",
-                                        credit: root["credit"] as? String ?? "", source: .user(url)))
+                                        credit: root["credit"] as? String ?? "", licence: root["licence"] as? String ?? "",
+                                        source: .user(url)))
     }
 
     func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) }
