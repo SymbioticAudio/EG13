@@ -147,6 +147,35 @@ struct EG13KeyRangeTests {
         #expect(editor.mode == .split)
     }
 
+    @Test("In Split the strip shows the keys each part plays: its range on its side of the split")
+    func splitShowsPlayedKeys() {
+        // Harbour Lights: Split at C4, both parts' Key Low / Key High at the defaults 0 and 127.
+        set(EG13ParamID.master(.mode), Double(EG13Mode.split.rawValue))
+        #expect(editor.range(part: 0) == EG13KeyMap.lowestKey...EG13KeyMap.highestKey)  // the setting
+        #expect(editor.playedRange(part: 0) == EG13KeyMap.lowestKey...59)
+        #expect(editor.playedRange(part: 1) == 60...EG13KeyMap.highestKey)
+        // A key range inside one side is shown whole; one wholly on the other side plays nothing.
+        set(EG13ParamID.part(0, .keyLow), 36)
+        set(EG13ParamID.part(0, .keyHigh), 72)
+        set(EG13ParamID.part(1, .keyLow), 30)
+        set(EG13ParamID.part(1, .keyHigh), 50)
+        #expect(editor.playedRange(part: 0) == 36...59)
+        #expect(editor.playedRange(part: 1) == nil)
+        // The split note on the strip's end: A plays nothing, B its whole range.
+        set(EG13ParamID.master(.splitNote), 0)
+        #expect(editor.playedRange(part: 0) == nil)
+        #expect(editor.playedRange(part: 1) == 30...50)
+        // Other modes: the Key Low / Key High range (Part B none in Single).
+        set(EG13ParamID.master(.splitNote), 60)
+        for mode in [EG13Mode.layer, .multi] {
+            set(EG13ParamID.master(.mode), Double(mode.rawValue))
+            #expect(editor.playedRange(part: 0) == 36...72)
+            #expect(editor.playedRange(part: 1) == 30...50)
+        }
+        set(EG13ParamID.master(.mode), Double(EG13Mode.single.rawValue))
+        #expect(editor.playedRange(part: 1) == nil)
+    }
+
     @Test("each drag is one begin…end gesture")
     func oneGesturePerDrag() {
         let low = EG13KeyMap.Handle.low(part: 0)

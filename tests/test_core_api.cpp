@@ -728,3 +728,36 @@ TEST_CASE("param_is_setup is the preset core's setup-field set") {
   REQUIRE(setup == 3 + 8 * eg13::kNumParts);  // master Level, Voice Gain, Latency; 8 per part
   REQUIRE_FALSE(f.api.param_is_setup(f.api.context, 0xFFFFFFFFu));
 }
+
+// Owner report (Harbour Lights in Logic): a factory Split Performance loaded through preset_apply,
+// as the editor's Presets menu loads it, must route a note below the split to Part A only and one
+// from the split up to Part B only.
+TEST_CASE("A factory Split Performance applied through preset_apply splits the keyboard") {
+  int splits = 0;
+  Fixture f;
+  const uint32_t count = f.api.factory_preset_count(f.api.context);
+  for (uint32_t i = 0; i < count; ++i) {
+    EG13FactoryPreset p{};
+    REQUIRE(f.api.factory_preset(f.api.context, i, &p));
+    if (p.kind != 0) continue;
+    for (const int below : {1, 0}) {
+      Fixture g;
+      REQUIRE(g.applyMessage(p.json, -1).empty());
+      const auto mode =
+          eg13::PartMode(int(g.synth.param(eg13::paramSpec(eg13::masterParamIndex(eg13::MasterParam::Mode)).id)));
+      if (mode != eg13::PartMode::Split) break;
+      splits += below;
+      const int split = int(g.synth.param(eg13::paramSpec(eg13::masterParamIndex(eg13::MasterParam::SplitNote)).id));
+      const int key = below ? split - 12 : split + 7;
+      INFO(p.name << ", split note " << split << ", key " << key);
+      g.synth.prepare(48000.0, 128);
+      std::vector<float> l(128), r(128);
+      float* out[2] = {l.data(), r.data()};
+      g.synth.noteOn(0, key, 0.8f);
+      for (int b = 0; b < 8; ++b) g.synth.process(nullptr, out, nullptr, 128);
+      REQUIRE(g.synth.activeVoiceCount(0) == below);
+      REQUIRE(g.synth.activeVoiceCount(1) == 1 - below);
+    }
+  }
+  REQUIRE(splits >= 4);  // Harbour Lights, Cardboard Kit, Cellar Jazz, Still Water
+}
