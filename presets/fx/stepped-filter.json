@@ -1,0 +1,21 @@
+{
+  "kind": "performance",
+  "plugin": "effect",
+  "name": "Stepped Filter",
+  "note": "A sample-and-hold filter: a Marbles random sequence steps a resonant analog low-pass a few times a second. Good on drums.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 10,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "Analog Filter", "params": { "Frequency": 0.55, "Resonance": 0.75, "Mode": "LP2" } },
+      "Part FX": { "engine": "Reverb", "params": { "Amount": 0.15, "Time": 0.35 } },
+      "Mod 1": { "engine": "Random / S&H", "scope": "per part", "params": { "T Rate": 0.6, "X Range": "Full", "X Steps": 0.5, "X Spread": 0.6 } },
+      "settings": { "Level": 0.4284 },
+      "routes": [
+        { "source": "Mod 1 Random / S&H X1", "destination": "Filter: Frequency", "amount": 0.3 }
+      ]
+    }
+  }
+}

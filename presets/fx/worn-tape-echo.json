@@ -1,0 +1,21 @@
+{
+  "kind": "performance",
+  "plugin": "effect",
+  "name": "Worn Tape Echo",
+  "note": "Beads with Size fully up becomes a delay: tape-coloured repeats with feedback and a little reverb, the time wobbling slightly like a worn tape transport. Good on vocals.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 4,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "Off" },
+      "Part FX": { "engine": "Granular Delay", "params": { "Dry/Wet": 0.4, "Time": 0.15, "Size": 1.0, "Feedback": 0.45, "Reverb": 0.25, "Quality": "Clean tape" } },
+      "Mod 1": { "engine": "LFO", "scope": "per part", "params": { "Range": "Medium", "Frequency": 0.3 } },
+      "settings": { "Level": 0.4647 },
+      "routes": [
+        { "source": "Mod 1 LFO Out 1", "destination": "Part FX: Time", "amount": 0.01 }
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "kind": "performance",
+  "plugin": "effect",
+  "name": "Ring Bells",
+  "note": "Warps' digital ring modulator with its own sine as the carrier, stepped through A minor by a random sequence: the input turns into clangy bells. A high-pass first keeps the kick out of it.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 6,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "State Variable Filter", "params": { "Cutoff": 0.32, "Resonance": 0.0, "Mode": "HP" } },
+      "Shaper": { "engine": "Ring Mod / Vocoder", "params": { "Algorithm": "Digital RM", "Carrier": "Internal Osc", "Modulator": "Voice" } },
+      "Part FX": { "engine": "Reverb", "params": { "Amount": 0.35, "Time": 0.6 } },
+      "Mod 1": { "engine": "Random / S&H", "scope": "per part", "params": { "T Rate": 0.55, "T Deja Vu": "On", "X Deja Vu": "On", "Deja Vu": 0.5, "Length": 0.5, "X Range": "Narrow", "X Spread": 0.35, "X Bias": 0.4, "X Steps": 1.0, "X Scale": "Minor" } },
+      "settings": { "Level": 0.4445, "Base Note": "A2", "Mono": "On" },
+      "routes": [
+        { "source": "Mod 1 Random / S&H X1", "destination": "Pitch", "amount": 1.0 }
+      ]
+    }
+  }
+}

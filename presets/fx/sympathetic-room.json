@@ -1,0 +1,30 @@
+{
+  "kind": "performance",
+  "plugin": "effect",
+  "name": "Sympathetic Room",
+  "note": "Two parts in series: part B rings the input through Rings' sympathetic strings, tuned to A (part B's Base Note) with their structure and position slowly moving, and part A puts the strings in a reverb.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 8,
+  "master": { "Mode": "Single" },
+  "parts": {
+    "A": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "Off" },
+      "Part FX": { "engine": "Reverb", "params": { "Amount": 0.35, "Time": 0.7 } },
+      "settings": { "Level": 0.5512, "Input Source": "Other part" },
+      "routes": []
+    },
+    "B": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "Off" },
+      "Part FX": { "engine": "Resonator", "params": { "Model": "Sympathetic Q", "Mix": 0.55, "Structure": 0.6, "Brightness": 0.65, "Damping": 0.55, "Position": 0.4 } },
+      "Mod 1": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.5 } },
+      "settings": { "Level": 0.63095734, "Trigger": "Always on", "Base Note": "A3" },
+      "routes": [
+        { "source": "Mod 1 LFO Out 1", "destination": "Part FX: Structure", "amount": 0.1 },
+        { "source": "Mod 1 LFO Out 2", "destination": "Part FX: Position", "amount": 0.2 }
+      ]
+    }
+  }
+}

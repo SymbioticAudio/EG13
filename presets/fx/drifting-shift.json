@@ -1,0 +1,22 @@
+{
+  "kind": "performance",
+  "plugin": "effect",
+  "name": "Drifting Shift",
+  "note": "Warps' hidden frequency-shifter mode: the input is shifted slightly up, drifting slowly, with a little feedback, for a phasing, detuned shimmer; a high-pass keeps the lows clean. Good on vocals and pads.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 7,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "State Variable Filter", "params": { "Cutoff": 0.25, "Resonance": 0.0, "Mode": "HP" } },
+      "Shaper": { "engine": "Ring Mod / Vocoder", "params": { "Mode": "Freq shifter", "Carrier": "Internal Osc", "Modulator": "Voice", "Algorithm": 0.53, "Timbre": 0.75, "Carrier Level": 0.35, "Mod Level": 0.7 } },
+      "Part FX": { "engine": "Reverb", "params": { "Amount": 0.3, "Time": 0.55 } },
+      "Mod 1": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.4 } },
+      "settings": { "Level": 0.7488 },
+      "routes": [
+        { "source": "Mod 1 LFO Out 1", "destination": "Shaper: Algorithm", "amount": 0.04 }
+      ]
+    }
+  }
+}

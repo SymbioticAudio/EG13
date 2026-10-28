@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <set>
@@ -271,6 +272,121 @@ TEST_CASE("Every instrument factory preset keeps 1 dB of headroom and no DC at t
     CHECK(peak < std::pow(10.0f, -1.0f / 20.0f));
     CHECK(dc < std::pow(10.0, -50.0 / 20.0));
   }
+}
+
+TEST_CASE("Every FX preset is an effect preset and produces output from input with no MIDI") {
+  // The FX bank's renders play no notes: the test loop (fxTestLoop) goes in for 8 s, then 4 s of
+  // tail. Each preset is heard from the loop, and is (near) silent with a silent input, so it
+  // processes the input rather than making its own sound.
+  size_t count = 0;
+  const preset::FactoryPreset* table = preset::factoryPresets(count);
+  int fx = 0;
+  const Audio silence{std::vector<float>(size_t(kSampleRate), 0.0f), std::vector<float>(size_t(kSampleRate), 0.0f)};
+  for (size_t i = 0; i < count; ++i) {
+    if (std::string(table[i].bank) != "FX") {
+      CHECK(table[i].plugin == PluginKind::Instrument);
+      continue;
+    }
+    ++fx;
+    INFO(label(table[i]));
+    REQUIRE(table[i].plugin == PluginKind::Effect);
+    Audio audio;
+    std::string error;
+    REQUIRE(render(table[i].json, 0, kDefaultSeconds, audio, error));
+    const double loud = rmsDb(audio, 1.0, 8.0);
+    RenderOptions quiet;
+    quiet.input = &silence;
+    Audio none;
+    REQUIRE(render(table[i].json, 0, kDefaultSeconds, none, error, &quiet));
+    const double idle = rmsDb(none, 1.0, 8.0);
+    INFO("RMS with the loop " << loud << " dB, with silence " << idle << " dB");
+    CHECK(loud > -36.0);
+    CHECK(idle < loud - 40.0);
+  }
+  CHECK(fx >= 8);
+  CHECK(fx <= 12);
+}
+
+TEST_CASE("Every FX preset keeps 1 dB of headroom and no DC with the input 6 dB hot") {
+  // The effect form of the two headroom scripts: no notes, the test loop (0 dBFS peak) 6 dB hot,
+  // once alone (stressScript) and once with the mod wheel, slide and channel pressure at their
+  // maximum (extremesScript). Soft Clip off.
+  size_t count = 0;
+  const preset::FactoryPreset* table = preset::factoryPresets(count);
+  for (size_t i = 0; i < count; ++i) {
+    if (table[i].plugin != PluginKind::Effect) continue;
+    for (const NoteScript& script : {stressScript(), extremesScript()}) {
+      INFO(label(table[i]) << (script.expressionMax ? " (extremes)" : " (hot input)"));
+      Audio audio;
+      std::string error;
+      RenderOptions options;
+      options.softClip = false;
+      REQUIRE(renderScript(table[i].json, 0, script, audio, error, &options));
+      const float peak = peakOf(audio);
+      double left = 0.0, right = 0.0;
+      for (size_t k = 0; k < audio.left.size(); ++k) {
+        left += double(audio.left[k]);
+        right += double(audio.right[k]);
+      }
+      const double dc = std::max(std::fabs(left), std::fabs(right)) / double(audio.left.size());
+      INFO("peak " << 20.0 * std::log10(peak + 1e-12) << " dBFS, DC " << 20.0 * std::log10(dc + 1e-12) << " dBFS");
+      CHECK(peak < std::pow(10.0f, -1.0f / 20.0f));
+      CHECK(dc < std::pow(10.0, -50.0 / 20.0));
+    }
+  }
+}
+
+TEST_CASE("The bundled FX test loop is the tool's own, an 8 s loop peaking at 0 dBFS") {
+  const Audio loop = fxTestLoop();
+  REQUIRE(loop.left.size() == size_t(8 * kSampleRate));
+  REQUIRE(loop.right.size() == loop.left.size());
+  CHECK(std::fabs(peakOf(loop) - 1.0f) < 1e-6f);
+  CHECK(rmsDb(loop, 0.0, 8.0) > -24.0);
+  Audio file;
+  std::string error;
+  INFO(error);
+  REQUIRE(readWav(std::string(EG13_PRESETS_DIR) + "/test/fx-input.wav", file, error));
+  REQUIRE(file.left.size() == loop.left.size());
+  float worst = 0.0f;
+  for (size_t i = 0; i < loop.left.size(); ++i) {
+    worst = std::max({worst, std::fabs(file.left[i] - loop.left[i]), std::fabs(file.right[i] - loop.right[i])});
+  }
+  CHECK(worst <= 1.0f / 32767.0f);  // 16-bit rounding
+}
+
+TEST_CASE("readWav reads back what writeWav wrote, and render takes it as an effect's input") {
+  Audio tone;
+  for (size_t i = 0; i < 4800; ++i) {
+    tone.left.push_back(0.5f * float(std::sin(2.0 * kPi * 440.0 * double(i) / kSampleRate)));
+    tone.right.push_back(-tone.left.back());
+  }
+  const std::string path = (std::filesystem::temp_directory_path() / "eg13_readwav_test.wav").string();
+  std::string error;
+  REQUIRE(writeWav(path, tone, error));
+  Audio back;
+  REQUIRE(readWav(path, back, error));
+  REQUIRE(back.left.size() == tone.left.size());
+  for (size_t i = 0; i < tone.left.size(); ++i) {
+    REQUIRE(std::fabs(back.left[i] - tone.left[i]) <= 1.0f / 32767.0f);
+    REQUIRE(std::fabs(back.right[i] - tone.right[i]) <= 1.0f / 32767.0f);
+  }
+  CHECK_FALSE(readWav(path + ".missing", back, error));
+  CHECK_FALSE(error.empty());
+
+  // An effect preset renders the given input (looped over the 8 s hold) instead of the test loop.
+  Synth init(PluginKind::Effect);
+  state::StateStore store;
+  preset::Meta initMeta;
+  initMeta.plugin = PluginKind::Effect;
+  initMeta.name = "Init";
+  const std::string fxInit = preset::save(init, store, initMeta, -1);
+  Audio withLoop, withTone;
+  REQUIRE(render(fxInit, 0, 3.0, withLoop, error));
+  RenderOptions options;
+  options.input = &tone;
+  REQUIRE(render(fxInit, 0, 3.0, withTone, error, &options));
+  CHECK(rmsDb(withTone, 1.0, 3.0) > -40.0);
+  CHECK(withTone.left != withLoop.left);
 }
 
 TEST_CASE("A factory render does not depend on what rendered before it") {

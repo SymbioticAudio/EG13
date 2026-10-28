@@ -86,7 +86,8 @@ A missing or empty directory gives an empty bank. One file per preset, `<slug>.j
 eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]
 eg13_preset info <source.json|file>
 eg13_preset decompile <file> -o <source.json>
-eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress | --extremes] [--no-soft-clip]
+eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress | --extremes] [--no-soft-clip] [--input <wav>]
+eg13_preset testloop -o <out.wav>
 eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]
 eg13_preset table <dir>... -o <factory_presets.cpp>
 ```
@@ -95,8 +96,18 @@ eg13_preset table <dir>... -o <factory_presets.cpp>
   which makes it the way to turn a sound saved in the plugin (`.eg13perf` / `.eg13patch`) into a
   source to tidy and commit. Delete the keys that are Init values to keep a source short.
 - `render` writes a 16-bit 48 kHz stereo WAV for listening. It drives a synth directly, no host.
-  A Patch plays in part A of an Init instance (`--part B` for B, with the Init part A muted). An
-  effect preset gets a fixed 110 Hz saw and noise as its input.
+  A Patch plays in part A of an Init instance (`--part B` for B, with the Init part A muted).
+- **Effect presets** (`plugin: "effect"`) render the way EG13 FX is used, with no MIDI: the script's
+  notes are not played. Instead the **FX test loop** goes into the input for the script's hold
+  (8 s on the note script, once), then silence for the tail. `--input <wav>` uses another 48 kHz
+  WAV (16/24-bit PCM or 32-bit float; mono or stereo), looped over the hold. On `--stress` and
+  `--extremes` the input is 6 dB hot (the loop then peaks at +6 dBFS), and `--extremes` also
+  raises the mod wheel, slide and channel pressure from the start.
+- The FX test loop, `presets/test/fx-input.wav`, is made by the tool from fixed generators (no
+  recorded or third-party audio); `eg13_preset testloop -o presets/test/fx-input.wav` rewrites it,
+  and a ctest checks the file is still the tool's. 8 s at 120 BPM: a kick on every beat, off-beat
+  hats, a plucked A minor pentatonic phrase left of centre, and a sustained A2/E3 tone; peak
+  0 dBFS, RMS about −15 dBFS, no DC.
 - `--stress` plays the **headroom script** instead: C2 G2 C3 E3 G3 B3 D4 G4 at velocity 127, held 6 s,
   7 s in all. `--no-soft-clip` turns the master Soft Clip off and prints the raw peak (`peak_dbfs=`);
   the WAV then clips at full scale. Every instrument factory preset must stay below -1 dBFS on the
@@ -112,9 +123,15 @@ eg13_preset table <dir>... -o <factory_presets.cpp>
   other presets, in the CLI and in the tests. Leave at least 1 dB of margin on both headroom scripts.
 - The **note script**, fixed: C3, G3, D4 and A4 held together at velocity 100 for 8 s, then released,
   then a tail, 12 s in all.
+- Every FX preset must, with Soft Clip off, stay below −1 dBFS on `--stress` and `--extremes` (the
+  loop 6 dB hot) and keep each channel's mean below −50 dBFS (ctest "Every FX preset keeps 1 dB
+  of headroom and no DC with the input 6 dB hot"), and must be heard from the loop with no MIDI
+  but stay silent with a silent input (ctest "Every FX preset is an effect preset and produces
+  output from input with no MIDI"). The FX bank leaves 2 dB: −3 dBFS on the hot input. As for the
+  instruments, put the gain in part `Level`.
 - `info` prints `name`, `note`, `credit`, `plugin`, `kind`, `order` as `key=value` lines (the listening
   script uses it); `compile --name` overrides the preset's name.
-- `golden` renders every factory preset with the note script and compares its level envelope (RMS in
+- `golden` renders every factory preset with the note script (an effect preset: the loop, no notes) and compares its level envelope (RMS in
   dB per 250 ms) with `tests/data/preset_golden.json`. A frame louder than -60 dB must be within
   1.5 dB. `--write` rewrites the file; do that when a preset is added, removed or changed on
   purpose, and look at the diff. The same check runs as the ctest "Each factory preset matches its

@@ -3,7 +3,8 @@
 //   eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]
 //   eg13_preset info <source.json|file>
 //   eg13_preset decompile <file> -o <source.json>
-//   eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress | --extremes] [--no-soft-clip]
+//   eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress | --extremes] [--no-soft-clip] [--input <wav>]
+//   eg13_preset testloop -o <out.wav>
 //   eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]
 //   eg13_preset table <dir>... -o <factory_presets.cpp>
 #include <algorithm>
@@ -29,7 +30,8 @@ int usage() {
                "  eg13_preset compile <source.json> -o <file> [--bank <name>] [--name <name>]\n"
                "  eg13_preset info <source.json|file>\n"
                "  eg13_preset decompile <file> -o <source.json>\n"
-               "  eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress | --extremes] [--no-soft-clip]\n"
+               "  eg13_preset render <source.json|file> -o <out.wav> [--seconds 12] [--part A|B] [--stress | --extremes] [--no-soft-clip] [--input <wav>]\n"
+               "  eg13_preset testloop -o <out.wav>\n"
                "  eg13_preset golden [--write] [--presets <dir>] [--file <preset_golden.json>]\n"
                "  eg13_preset table <dir>... -o <factory_presets.cpp>\n";
   return 2;
@@ -61,6 +63,7 @@ bool write(const std::string& path, const std::string& text) {
 struct Args {
   std::vector<std::string> positional;
   std::string output, bank, name, presets = EG13_PRESETS_DIR, file = EG13_GOLDEN_FILE, part = "A";
+  std::string input;        // render: an effect preset's input WAV instead of the test loop
   double seconds = kDefaultSeconds;
   bool writeGolden = false;
   bool stress = false;      // render: the headroom script (stressScript) instead of the note script
@@ -86,6 +89,7 @@ Args parse(int argc, char** argv) {
     else if (arg == "--presets") value(a.presets);
     else if (arg == "--file") value(a.file);
     else if (arg == "--part") value(a.part);
+    else if (arg == "--input") value(a.input);
     else if (arg == "--seconds") {
       std::string s;
       value(s);
@@ -155,6 +159,15 @@ int renderCommand(const Args& a) {
   RenderOptions options;
   options.softClip = !a.noSoftClip;
   if (a.stress && a.extremes) return usage();
+  Audio input;
+  if (!a.input.empty()) {
+    if (!readWav(a.input, input, error)) return fail(error);
+    const auto meta = eg13::preset::readMeta(presetJson);
+    if (!meta || meta->plugin != eg13::PluginKind::Effect) {
+      return fail("--input is for effect presets (an instrument preset plays notes, not an input)");
+    }
+    options.input = &input;
+  }
   const NoteScript script = a.stress ? stressScript() : a.extremes ? extremesScript() : noteScript(a.seconds);
   if (!renderScript(presetJson, a.part == "B" ? 1 : 0, script, audio, error, &options)) return fail(error);
   if (a.noSoftClip) {  // the WAV is 16-bit and clips; the raw peak is printed
@@ -163,6 +176,13 @@ int renderCommand(const Args& a) {
     std::printf("peak_dbfs=%.2f\n", 20.0 * std::log10(double(peak) + 1e-12));
   }
   if (!writeWav(a.output, audio, error)) return fail(error);
+  return 0;
+}
+
+int testloop(const Args& a) {
+  std::string error;
+  if (a.output.empty() || !a.positional.empty()) return usage();
+  if (!writeWav(a.output, fxTestLoop(), error)) return fail(error);
   return 0;
 }
 
@@ -236,6 +256,7 @@ int main(int argc, char** argv) {
   if (command == "info") return infoCommand(a);
   if (command == "decompile") return decompileCommand(a);
   if (command == "render") return renderCommand(a);
+  if (command == "testloop") return testloop(a);
   if (command == "golden") return golden(a);
   if (command == "table") return table(a);
   return usage();

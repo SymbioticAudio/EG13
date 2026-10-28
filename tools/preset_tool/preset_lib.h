@@ -39,10 +39,6 @@ bool presetInfo(const std::string& text, std::string& lines, std::string& error)
 // Envelope shapes are not part of the source format and are dropped.
 bool decompile(const std::string& presetJson, std::string& sourceText, std::string& error);
 
-struct Audio {
-  std::vector<float> left, right;
-};
-
 // A held chord: `notes` at `velocity` (0..1) held `holdSeconds`, released, `seconds` in all.
 struct NoteScript {
   std::vector<int> notes;
@@ -52,19 +48,36 @@ struct NoteScript {
   // Every expression at its maximum from before the first note: mod wheel (CC1), slide (CC74),
   // channel pressure, and each note's poly pressure.
   bool expressionMax = false;
+  // An effect preset plays no notes: its input (the test loop, or RenderOptions::input) plays for
+  // `holdSeconds`, this many dB over its own level, then silence for the tail.
+  double inputDb = 0.0;
 };
 // The note script: C3 G3 D4 A4 at velocity 100 held 8 s, released, then a tail, `seconds` in all.
 NoteScript noteScript(double seconds = kDefaultSeconds);
 // The headroom check: eight notes (C2 G2 C3 E3 G3 B3 D4 G4) at velocity 127 held 6 s, then 1 s.
+// For an effect preset: the input 6 dB hot for 6 s, then 1 s.
 NoteScript stressScript();
 // Expression extremes (ruling R6): eight notes (C2 C3 G3 E4 C5 G5 C6 C7) at velocity 127 with every
-// expression at its maximum (expressionMax), held 6 s, then 1 s.
+// expression at its maximum (expressionMax), held 6 s, then 1 s. For an effect preset: the input
+// 6 dB hot with the mod wheel, slide and channel pressure at their maximum.
 NoteScript extremesScript();
+
+struct Audio {
+  std::vector<float> left, right;
+};
+
+// The FX test loop (presets/test/fx-input.wav is this, written by `eg13_preset testloop`): 8 s at
+// 48 kHz, 120 BPM, made here from fixed generators, no recorded audio. A kick on every beat,
+// off-beat hats, a plucked minor-pentatonic phrase (left of centre) and a sustained A2/E3 tone
+// that loops seamlessly; the whole normalised to a 0 dBFS peak.
+Audio fxTestLoop();
 
 struct RenderOptions {
   bool softClip = true;            // false: the master Soft Clip off, so the output is the raw mix
   float partPeaks[kNumParts] = {};  // out: each part's absolute output peak over the render (both
                                     // channels, as the editor's part meters read it)
+  const Audio* input = nullptr;     // an effect preset's input instead of fxTestLoop() (48 kHz,
+                                    // looped over the hold)
 };
 
 // A script on a fresh Synth of the preset's plugin kind with the preset applied (a Patch into
@@ -75,6 +88,8 @@ bool renderScript(const std::string& presetJson, int part, const NoteScript& scr
 bool render(const std::string& presetJson, int part, double seconds, Audio& out, std::string& error,
             RenderOptions* options = nullptr);
 
+// RMS in dB (both channels) from `from` to `to` seconds.
+double rmsDb(const Audio& audio, double from, double to);
 // RMS in dB (both channels) per 250 ms.
 std::vector<double> levelEnvelope(const Audio& audio);
 // Frames louder than the floor in either envelope must agree to within the tolerance, and the
@@ -83,6 +98,9 @@ bool envelopesMatch(const std::vector<double>& expected, const std::vector<doubl
 
 // 16-bit PCM, 48 kHz stereo.
 bool writeWav(const std::string& path, const Audio& audio, std::string& error);
+// A 48 kHz WAV: 16- or 24-bit PCM or 32-bit float, mono (both channels the same) or stereo (more
+// channels: the first two). Other rates are refused (renders run at 48 kHz, nothing resamples).
+bool readWav(const std::string& path, Audio& audio, std::string& error);
 
 // The factory table's contents, from preset source directories (a missing directory is empty).
 // Banks: bank1 "Bank 1", bank2-catnap "Bank 2", fx "FX". Sorted by bank (as listed), order, name.

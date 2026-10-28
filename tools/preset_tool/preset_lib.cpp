@@ -5,8 +5,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -498,9 +500,109 @@ bool decompile(const std::string& presetJson, std::string& sourceText, std::stri
 
 NoteScript noteScript(double seconds) { return {{48, 55, 62, 69}, 100.0f / 127.0f, 8.0, seconds}; }
 
-NoteScript stressScript() { return {{36, 43, 48, 52, 55, 59, 62, 67}, 1.0f, 6.0, 7.0}; }
+NoteScript stressScript() { return {{36, 43, 48, 52, 55, 59, 62, 67}, 1.0f, 6.0, 7.0, false, 6.0}; }
 
-NoteScript extremesScript() { return {{36, 48, 55, 64, 72, 79, 84, 96}, 1.0f, 6.0, 7.0, true}; }
+NoteScript extremesScript() { return {{36, 48, 55, 64, 72, 79, 84, 96}, 1.0f, 6.0, 7.0, true, 6.0}; }
+
+Audio fxTestLoop() {
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kBeat = 0.5;  // 120 BPM
+  const size_t n = size_t(8.0 * kSampleRate);
+  std::vector<double> l(n, 0.0), r(n, 0.0);
+  uint32_t state = 0x5eed1234u;  // one fixed generator for every random value below
+  auto noise = [&] {
+    state = state * 1664525u + 1013904223u;
+    return double(state >> 8) / double(1u << 24) - 0.5;
+  };
+  auto at = [](double seconds) { return size_t(seconds * kSampleRate + 0.5); };
+
+  // Kick on every beat: a sine falling from about 155 Hz to 45 Hz, 0.4 s.
+  for (int beat = 0; beat < 16; ++beat) {
+    double phase = 0.0;
+    for (size_t i = 0, start = at(beat * kBeat); i < at(0.4) && start + i < n; ++i) {
+      const double t = double(i) / kSampleRate;
+      phase += 2.0 * kPi * (45.0 + 110.0 * std::exp(-t / 0.03)) / kSampleRate;
+      const double v = std::sin(phase) * std::exp(-t / 0.12) * std::min(1.0, t / 0.001);
+      l[start + i] += v;
+      r[start + i] += v;
+    }
+  }
+  // Closed hat on every off-beat: twice-differenced noise, 30 ms decay, a little right.
+  for (int beat = 0; beat < 16; ++beat) {
+    double x1 = 0.0, d1 = 0.0;
+    for (size_t i = 0, start = at(beat * kBeat + kBeat / 2.0); i < at(0.08) && start + i < n; ++i) {
+      const double x = noise();
+      const double d = x - x1;
+      const double v = (d - d1) * std::exp(-double(i) / kSampleRate / 0.03);
+      x1 = x;
+      d1 = d;
+      l[start + i] += 0.14 * v;
+      r[start + i] += 0.2 * v;
+    }
+  }
+  // A plucked phrase (Karplus-Strong) in A minor pentatonic, 16th-note steps, two bars played
+  // twice with a different ending, a little left.
+  struct Step {
+    int step, note;
+  };
+  const Step phrase[] = {{0, 57},  {3, 60},  {6, 64},  {8, 62},  {10, 69}, {12, 67}, {14, 64}, {16, 62},
+                         {19, 64}, {22, 67}, {24, 69}, {28, 72}, {32, 57}, {35, 60}, {38, 64}, {40, 62},
+                         {42, 69}, {44, 67}, {46, 64}, {48, 62}, {51, 60}, {54, 57}, {56, 52}, {60, 55}};
+  for (const Step& s : phrase) {
+    const double hz = 440.0 * std::pow(2.0, (s.note - 69) / 12.0);
+    std::vector<double> line(size_t(kSampleRate / hz + 0.5));
+    for (double& v : line) v = noise();
+    double previous = 0.0;
+    const size_t start = at(s.step * kBeat / 4.0);
+    const size_t length = std::min(at(1.2), n - start);  // the last notes fade out before the loop ends
+    for (size_t i = 0, k = 0; i < length; ++i, k = (k + 1) % line.size()) {
+      const double v = line[k];
+      line[k] = 0.996 * 0.5 * (v + previous);
+      previous = v;
+      const double fade = i + at(0.05) > length ? double(length - i) / double(at(0.05)) : 1.0;
+      l[start + i] += 0.9 * v * fade;
+      r[start + i] += 0.6 * v * fade;
+    }
+  }
+  // Sustained A2 + E3 (110 and 165 Hz, whole cycles in 8 s, so it loops without a seam): eight
+  // harmonics falling as 1/k, swelling gently once a bar.
+  for (size_t i = 0; i < n; ++i) {
+    const double t = double(i) / kSampleRate;
+    double v = 0.0;
+    for (int k = 1; k <= 8; ++k) v += (std::sin(2.0 * kPi * 110.0 * k * t) + 0.7 * std::sin(2.0 * kPi * 165.0 * k * t)) / k;
+    v *= 0.07 * (0.8 + 0.2 * std::sin(2.0 * kPi * t / (4.0 * kBeat)));
+    l[i] += v;
+    r[i] += v;
+  }
+
+  // The kicks leave a small offset: a 10 Hz one-pole high-pass takes it out, run round the loop
+  // twice so its state at the start is the one it has at the end (no step where the loop repeats).
+  const double coefficient = std::exp(-2.0 * kPi * 10.0 / kSampleRate);
+  for (std::vector<double>* channel : {&l, &r}) {
+    std::vector<double>& x = *channel;
+    std::vector<double> y(n);
+    double previousIn = x[n - 1], previousOut = 0.0;
+    for (int pass = 0; pass < 2; ++pass) {
+      for (size_t i = 0; i < n; ++i) {
+        previousOut = coefficient * (previousOut + x[i] - previousIn);
+        previousIn = x[i];
+        y[i] = previousOut;
+      }
+    }
+    x = y;
+  }
+
+  double peak = 0.0;
+  for (size_t i = 0; i < n; ++i) peak = std::max({peak, std::fabs(l[i]), std::fabs(r[i])});
+  Audio out;
+  out.left.resize(n);
+  out.right.resize(n);
+  for (size_t i = 0; i < n; ++i) {
+    out.left[i] = float(l[i] / peak);
+    out.right[i] = float(r[i] / peak);
+  }
+  return out;
+}
 
 bool render(const std::string& presetJson, int part, double seconds, Audio& out, std::string& error,
             RenderOptions* options) {
@@ -544,22 +646,21 @@ bool renderScript(const std::string& presetJson, int part, const NoteScript& scr
   const size_t hold = size_t(script.holdSeconds * kSampleRate);
   out.left.assign(total, 0.0f);
   out.right.assign(total, 0.0f);
-  // An effect has nothing to process without an input: a 110 Hz saw and a little noise (a fixed
-  // generator, the same on every machine) for as long as the notes are held.
+  // An effect plays no notes (EG13 FX runs on its input alone): the input, the test loop unless
+  // the caller gives one, plays for the hold (looped if shorter) at the script's input level, then
+  // silence for the tail.
   std::vector<float> inL, inR;
   const bool effect = meta->plugin == PluginKind::Effect;
   if (effect) {
+    const Audio loop = options != nullptr && options->input != nullptr ? Audio() : fxTestLoop();
+    const Audio& input = options != nullptr && options->input != nullptr ? *options->input : loop;
     inL.assign(total, 0.0f);
     inR.assign(total, 0.0f);
-    uint32_t state = 12345u;
-    auto noise = [&] {
-      state = state * 1664525u + 1013904223u;
-      return float(state >> 8) / float(1u << 24) - 0.5f;
-    };
-    for (size_t i = 0; i < std::min(total, hold); ++i) {
-      const float saw = 2.0f * float(std::fmod(double(i) * 110.0 / kSampleRate, 1.0)) - 1.0f;
-      inL[i] = 0.25f * saw + 0.1f * noise();
-      inR[i] = 0.25f * saw + 0.1f * noise();
+    const float gain = float(std::pow(10.0, script.inputDb / 20.0));
+    const size_t length = std::min(input.left.size(), input.right.size());
+    for (size_t i = 0; length > 0 && i < std::min(total, hold); ++i) {
+      inL[i] = gain * input.left[i % length];
+      inR[i] = gain * input.right[i % length];
     }
   }
   if (script.expressionMax) {
@@ -567,14 +668,15 @@ bool renderScript(const std::string& presetJson, int part, const NoteScript& scr
     synth.controlChange(0, 74, 127);
     synth.channelPressure(0, 1.0f);
   }
-  for (const int note : script.notes) {
+  const std::vector<int> notes = effect ? std::vector<int>() : script.notes;
+  for (const int note : notes) {
     synth.noteOn(0, note, script.velocity);
     if (script.expressionMax) synth.polyPressure(0, note, 1.0f);
   }
   bool released = false;
   for (size_t at = 0; at < total;) {
     if (!released && at >= hold) {
-      for (const int note : script.notes) synth.noteOff(0, note);
+      for (const int note : notes) synth.noteOff(0, note);
       released = true;
     }
     size_t n = std::min<size_t>(size_t(kBlock), total - at);
@@ -590,6 +692,16 @@ bool renderScript(const std::string& presetJson, int part, const NoteScript& scr
     for (int p = 0; p < kNumParts; ++p) options->partPeaks[p] = std::max(snap.partPeak[p][0], snap.partPeak[p][1]);
   }
   return true;
+}
+
+double rmsDb(const Audio& audio, double from, double to) {
+  const size_t a = std::min(audio.left.size(), size_t(std::max(0.0, from) * kSampleRate));
+  const size_t b = std::min(audio.left.size(), size_t(std::max(0.0, to) * kSampleRate));
+  double sum = 0.0;
+  for (size_t i = a; i < b; ++i) {
+    sum += double(audio.left[i]) * double(audio.left[i]) + double(audio.right[i]) * double(audio.right[i]);
+  }
+  return b > a ? dbOf(sum / (2.0 * double(b - a))) : -120.0;
 }
 
 std::vector<double> levelEnvelope(const Audio& audio) {
@@ -656,6 +768,68 @@ bool writeWav(const std::string& path, const Audio& audio, std::string& error) {
   if (!out) {
     error = "cannot write " + path;
     return false;
+  }
+  return true;
+}
+
+bool readWav(const std::string& path, Audio& audio, std::string& error) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    error = "cannot read " + path;
+    return false;
+  }
+  const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto u16 = [&](size_t at) { return uint32_t(uint8_t(bytes[at])) | uint32_t(uint8_t(bytes[at + 1])) << 8; };
+  auto u32 = [&](size_t at) { return u16(at) | u16(at + 2) << 16; };
+  if (bytes.size() < 12 || bytes.compare(0, 4, "RIFF") != 0 || bytes.compare(8, 4, "WAVE") != 0) {
+    error = path + ": not a WAV file";
+    return false;
+  }
+  uint32_t format = 0, channels = 0, rate = 0, bits = 0;
+  size_t data = 0, dataBytes = 0;
+  for (size_t at = 12; at + 8 <= bytes.size();) {
+    const std::string id = bytes.substr(at, 4);
+    const size_t size = u32(at + 4);
+    if (id == "fmt " && size >= 16 && at + 24 <= bytes.size()) {
+      format = u16(at + 8);
+      channels = u16(at + 10);
+      rate = u32(at + 12);
+      bits = u16(at + 22);
+      if (format == 0xFFFE && size >= 40 && at + 34 <= bytes.size()) format = u16(at + 32);  // extensible
+    } else if (id == "data") {
+      data = at + 8;
+      dataBytes = std::min(size, bytes.size() - data);
+    }
+    at += 8 + size + (size & 1);
+  }
+  const bool pcm = format == 1 && (bits == 16 || bits == 24);
+  const bool fl = format == 3 && bits == 32;
+  if (data == 0 || channels == 0 || !(pcm || fl)) {
+    error = path + ": only 16- or 24-bit PCM and 32-bit float WAVs are read";
+    return false;
+  }
+  if (rate != uint32_t(kSampleRate)) {
+    error = path + ": " + std::to_string(rate) + " Hz; renders run at 48000 Hz and the input is not resampled";
+    return false;
+  }
+  const size_t width = bits / 8, frames = dataBytes / (width * channels);
+  auto sample = [&](size_t at) -> float {
+    if (fl) {
+      const uint32_t v = u32(at);
+      float f;
+      std::memcpy(&f, &v, sizeof f);
+      return f;
+    }
+    if (bits == 16) return float(int16_t(u16(at))) / 32767.0f;
+    const int32_t v = int32_t((u16(at) | uint32_t(uint8_t(bytes[at + 2])) << 16) << 8) >> 8;
+    return float(v) / 8388607.0f;
+  };
+  audio.left.resize(frames);
+  audio.right.resize(frames);
+  for (size_t f = 0; f < frames; ++f) {
+    const size_t at = data + f * width * channels;
+    audio.left[f] = sample(at);
+    audio.right[f] = channels > 1 ? sample(at + width) : audio.left[f];
   }
   return true;
 }

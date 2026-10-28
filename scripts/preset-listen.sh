@@ -59,6 +59,23 @@ installed=0
 kept=0
 sources=0
 
+# An effect bank renders on the FX test loop (presets/README.md): the page starts with the dry
+# loop, so each preset can be compared with what went in.
+effects=0
+for f in "$dir"/*.json; do
+  [ -e "$f" ] || continue
+  [ "$(info "$f" plugin)" = "effect" ] && effects=1
+done
+loop="$root/presets/test/fx-input.wav"
+if [ "$effects" = 1 ] && [ -f "$loop" ]; then
+  {
+    printf '<section><h2>Input: the FX test loop (dry)</h2>\n'
+    printf '<p class="note">What every effect preset below processes: 8 s, then 4 s of tail. No MIDI is played.</p>\n'
+    printf '<audio controls preload="none" src="data:audio/wav;base64,%s"></audio>\n' "$(base64 < "$loop" | tr -d '\n')"
+    printf '<p class="src">presets/test/fx-input.wav</p></section>\n'
+  } >> "$items"
+fi
+
 # Sorted by the bank order (then file name).
 list="$tmp/list"
 for f in "$dir"/*.json; do

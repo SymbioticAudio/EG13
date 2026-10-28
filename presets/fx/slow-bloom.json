@@ -1,0 +1,24 @@
+{
+  "kind": "performance",
+  "plugin": "effect",
+  "name": "Slow Bloom",
+  "note": "After the Clouds manual's granular textures: the input, softened by a gently swept low-pass, is smeared into long, wide, overlapping grains with feedback and reverb. A slow LFO walks the grain position; a smooth random wanders the grain size.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 1,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "Analog Filter", "params": { "Frequency": 0.85, "Resonance": 0.1, "Mode": "LP2" } },
+      "Part FX": { "engine": "Granular", "params": { "Mode": "Granular", "Blend": 0.7, "Position": 0.55, "Size": 0.75, "Density": 0.82, "Texture": 0.8, "Feedback": 0.35, "Reverb": 0.55, "Spread": 0.8 } },
+      "Mod 1": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.45 } },
+      "Mod 2": { "engine": "Random / S&H", "scope": "per part", "params": { "T Rate": 0.4, "X Range": "Positive", "X Steps": 0.1, "X Spread": 0.5 } },
+      "settings": { "Level": 0.5292 },
+      "routes": [
+        { "source": "Mod 1 LFO Out 1", "destination": "Part FX: Position", "amount": 0.2 },
+        { "source": "Mod 2 Random / S&H X1", "destination": "Part FX: Size", "amount": 0.15 },
+        { "source": "Mod 1 LFO Out 2", "destination": "Filter: Frequency", "amount": 0.08 }
+      ]
+    }
+  }
+}
