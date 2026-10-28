@@ -439,8 +439,9 @@ TEST_CASE("Each factory preset matches its golden level envelope") {
     REQUIRE(render(table[i].json, 0, kDefaultSeconds, audio, error));
     const std::vector<double> expected = golden["presets"][label(table[i])]["envelope"].get<std::vector<double>>();
     std::string why;
+    const bool match = envelopesMatch(expected, levelEnvelope(audio), why);
     INFO(why);
-    REQUIRE(envelopesMatch(expected, levelEnvelope(audio), why));
+    CHECK(match);
   }
 }
 
