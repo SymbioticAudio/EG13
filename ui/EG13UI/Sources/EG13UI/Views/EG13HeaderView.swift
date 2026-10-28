@@ -6,10 +6,10 @@ import SymbioticTokens
 import SymbioticBrand
 #endif
 
-/// Header on the rack grey: the EG13 wordmark, the A/B part tabs in the part accents (each names
-/// what is loaded into its part, with "*" when that part is edited), the Presets button and the
-/// MASTER group (Mode, Latency Mode, Split Note, Voice Gain, Soft Clip), each with a small label.
-/// The cog opens the Settings and About panel.
+/// Header on the rack grey: the EG13 wordmark, the compact A/B part tabs in the part accents, the
+/// Presets button and the MASTER group (Mode, Latency Mode, Split Note, Voice Gain, Soft Clip),
+/// each with a small label. The cog opens the Settings and About panel. Under that row, the name
+/// strip (`EG13PartNameStrip`) names what is loaded into each part (owner, header v2 round 2).
 struct EG13HeaderView: View {
     @Bindable var synth: EG13Synth
     /// The cog was pressed (the root view shows the Settings and About panel over the editor).
@@ -19,24 +19,23 @@ struct EG13HeaderView: View {
     var body: some View {
         let part = synth.selectedPart
         let header = synth.editorControls(part: part).header
-        // No gap doubled around the Spacer: every point goes to the part tabs' names.
-        HStack(spacing: 0) {
-            wordmark.fixedSize()
-                .padding(.trailing, theme.spacing.s)
-            partTabs.layoutPriority(1)
-                .padding(.trailing, theme.spacing.s)
-            EG13PresetBar(synth: synth)
-                .environment(\.eg13ControlColors, EG13Palette.headerControls)
-            Spacer(minLength: theme.spacing.s)
-            masterGroup(header, part: part)
-                .padding(.trailing, theme.spacing.s)
-            Button(action: onSettings) { Icon(.appSettings, size: 16) }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Settings and About")
+        VStack(spacing: 0) {
+            HStack(spacing: theme.spacing.s) {
+                wordmark.fixedSize()
+                partTabs.fixedSize()
+                EG13PresetBar(synth: synth)
+                    .environment(\.eg13ControlColors, EG13Palette.headerControls)
+                Spacer(minLength: 0)
+                masterGroup(header, part: part)
+                Button(action: onSettings) { Icon(.appSettings, size: 16) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Settings and About")
+            }
+            .padding(.horizontal, EG13Layout.outerPadding + 4)
+            .frame(height: EG13Layout.headerHeight)
+            EG13PartNameStrip(synth: synth)
         }
         .foregroundStyle(theme.text.inverse.color)
-        .padding(.horizontal, EG13Layout.outerPadding + 4)
-        .frame(height: EG13Layout.headerHeight)
         .background(theme.surface.inset.color)
     }
 
@@ -54,49 +53,23 @@ struct EG13HeaderView: View {
         }
     }
 
-    /// The widest a tab's preset name gets before it is cut with "…" (the full name is the help).
-    static let partNameMaxWidth: CGFloat = 150
-    /// The MASTER group leaves the tabs little room at the editor's width, so the shown tab's name
-    /// comes first; the other tab keeps at least this much of its name.
-    static let otherPartNameMinWidth: CGFloat = 40
-
+    /// Compact letter tabs; the names are in the strip under the header.
     private var partTabs: some View {
         HStack(spacing: theme.spacing.xs) {
             ForEach(0..<EG13ParamID.parts, id: \.self) { part in
                 let selected = synth.selectedPart == part
-                let presets = synth.presets
-                let edited = presets.isEdited(part: part)
                 Button { synth.selectedPart = part } label: {
-                    HStack(spacing: theme.spacing.xs) {
-                        Text(EG13PartName.letter(part))
-                            .font(theme.type.label.font.weight(.heavy))
-                            .foregroundStyle(selected ? EG13Palette.part(part).ink.color : theme.text.inverse.color)
-                            .frame(width: 22, height: 22)
-                            .background(RoundedRectangle(cornerRadius: 3)
-                                .fill(selected ? EG13Palette.white.color : EG13Palette.part(part).ink.color))
-                        // The "*" is its own text, so a long name is cut before it and the mark always shows.
-                        EG13CappedWidth(maxWidth: Self.partNameMaxWidth,
-                                        minWidth: selected ? 0 : Self.otherPartNameMinWidth) {
-                            HStack(spacing: 0) {
-                                Text(presets.partName(part))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                if edited { Text("*").fixedSize() }
-                            }
-                        }
-                        .font(theme.type.caption.font.weight(.bold))
-                    }
-                    .padding(.horizontal, theme.spacing.xs + 2)
-                    .frame(height: 30)
-                    .background(RoundedRectangle(cornerRadius: theme.radius.s)
-                        .fill(selected ? EG13Palette.part(part).ink.color : Color.clear))
-                    .overlay(RoundedRectangle(cornerRadius: theme.radius.s)
-                        .stroke(EG13Palette.part(part).bright.color, lineWidth: selected ? 0 : 1))
+                    EG13PartChip(part: part, selected: selected, size: 22)
+                        .padding(.horizontal, theme.spacing.xs + 2)
+                        .frame(height: 30)
+                        .background(RoundedRectangle(cornerRadius: theme.radius.s)
+                            .fill(selected ? EG13Palette.part(part).ink.color : Color.clear))
+                        .overlay(RoundedRectangle(cornerRadius: theme.radius.s)
+                            .stroke(EG13Palette.part(part).bright.color, lineWidth: selected ? 0 : 1))
                 }
                 .buttonStyle(.plain)
-                .layoutPriority(selected ? 1 : 0)
-                .help(presets.partHelp(part))
-                .accessibilityLabel("\(EG13PartName.name(part)): \(presets.partName(part))\(edited ? ", edited" : "")")
+                .help(synth.presets.partHelp(part))
+                .accessibilityLabel(EG13PartName.name(part))
                 .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
             }
         }
@@ -130,25 +103,81 @@ struct EG13HeaderView: View {
     }
 }
 
-/// Its content at its natural width, but never wider than `maxWidth` or the width offered (nor
-/// narrower than `minWidth`, or its natural width if that is less): a one-line text in it is cut
-/// with "…" past that, and a short one takes only the room it needs (a plain `.frame(maxWidth:)`
-/// would grow to the maximum whenever the header has room).
-struct EG13CappedWidth: Layout {
-    var maxWidth: CGFloat
-    var minWidth: CGFloat = 0
+/// A part's letter in a small square: white with the part's ink when selected, the ink with white
+/// text otherwise (the tabs and the name strip use the same chip).
+struct EG13PartChip: View {
+    let part: Int
+    let selected: Bool
+    var size: CGFloat = 22
+    @Environment(\.symbioticTheme) private var theme
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard let content = subviews.first else { return .zero }
-        return content.sizeThatFits(ProposedViewSize(width: width(content, proposal), height: proposal.height))
+    var body: some View {
+        Text(EG13PartName.letter(part))
+            .font(theme.type.label.font.weight(.heavy))
+            .foregroundStyle(selected ? EG13Palette.part(part).ink.color : theme.text.inverse.color)
+            .frame(width: size, height: size)
+            .background(RoundedRectangle(cornerRadius: 3)
+                .fill(selected ? EG13Palette.white.color : EG13Palette.part(part).ink.color))
+    }
+}
+
+/// The slim strip under the header row: one half per part, each its letter chip and the name of
+/// what is loaded into the part (`EG13PresetBrowser.partName`), with "*" when the part is edited.
+/// The shown part's half is filled like its tab; clicking a half shows that part. A long name is
+/// cut with "…"; hover for the full name (and a credited preset's credit and licence).
+struct EG13PartNameStrip: View {
+    @Bindable var synth: EG13Synth
+    @Environment(\.symbioticTheme) private var theme
+
+    /// The half's text: the name, then "*" if the part is edited.
+    static func text(_ presets: EG13PresetBrowser, part: Int) -> String {
+        presets.partName(part) + (presets.isEdited(part: part) ? "*" : "")
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+    static func accessibilityLabel(_ presets: EG13PresetBrowser, part: Int) -> String {
+        "\(EG13PartName.name(part)): \(presets.partName(part))\(presets.isEdited(part: part) ? ", edited" : "")"
     }
 
-    private func width(_ content: LayoutSubview, _ proposal: ProposedViewSize) -> CGFloat {
-        let natural = content.sizeThatFits(.unspecified).width
-        return max(min(natural, minWidth), min(natural, maxWidth, proposal.width ?? .infinity))
+    var body: some View {
+        HStack(spacing: theme.spacing.s) {
+            ForEach(0..<EG13ParamID.parts, id: \.self) { part in half(part) }
+        }
+        .padding(.horizontal, EG13Layout.outerPadding)
+        .padding(.vertical, 2)
+        .frame(height: EG13Layout.nameStripHeight)
+        .overlay(alignment: .top) {
+            Rectangle().fill(EG13Palette.white.color.opacity(0.08)).frame(height: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Loaded presets")
+    }
+
+    private func half(_ part: Int) -> some View {
+        let presets = synth.presets
+        let selected = synth.selectedPart == part
+        return Button { synth.selectedPart = part } label: {
+            HStack(spacing: theme.spacing.s) {
+                EG13PartChip(part: part, selected: selected, size: 16)
+                // The "*" is its own text, so a long name is cut before it and the mark always shows.
+                HStack(spacing: 0) {
+                    Text(presets.partName(part))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if presets.isEdited(part: part) { Text("*").fixedSize() }
+                }
+                .font(theme.type.caption.font.weight(.bold))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, theme.spacing.xs)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: theme.radius.s)
+                .fill(selected ? EG13Palette.part(part).ink.color : Color.clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(presets.partHelp(part))
+        .accessibilityLabel(Self.accessibilityLabel(presets, part: part))
+        .accessibilityHint("Shows this part")
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
     }
 }

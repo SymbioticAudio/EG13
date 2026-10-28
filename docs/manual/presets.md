@@ -1,6 +1,6 @@
 # Presets
 
-EG13's presets are chosen from the **Presets** button in the editor's header, `Presets ▾`, and each part tab names what is loaded into it (see [Interface](interface.md) for the header itself). This page covers what the presets are, what loading one changes, your own presets, and where the factory presets come from.
+EG13's presets are chosen from the **Presets** button in the editor's header, `Presets ▾`, and the name strip under the header names what is loaded into each part (see [Interface](interface.md) for the header itself). This page covers what the presets are, what loading one changes, your own presets, and where the factory presets come from.
 
 ## Two kinds of preset
 
@@ -11,14 +11,14 @@ To load a Patch from the dropdown, open its row's submenu and choose **Load into
 
 ## What the header shows
 
-Each part tab shows the name of what is loaded into that part:
+The name strip under the header shows, for each part, the name of what is loaded into it:
 
-- After a Performance: its name and the part letter on each tab, `First Light·A` and `First Light·B`.
-- After a Patch: the Patch's name on that part's tab only, for example `Rain on Strings` on tab A. With a Patch in each part the tabs read `Rain on Strings` and `Teak Mallets`. Loading a Patch into Part B after a Performance gives `First Light·A` and `Teak Mallets`.
+- After a Performance: its name and the part letter for each part, `First Light·A` and `First Light·B`.
+- After a Patch: the Patch's name for that part only, for example `Rain on Strings` for Part A. With a Patch in each part the strip reads `Rain on Strings` and `Teak Mallets`. Loading a Patch into Part B after a Performance gives `First Light·A` and `Teak Mallets`.
 - **Init** on a part nothing has been loaded into, and on both after choosing Init from the menu.
-- A `*` after a tab's name is that part's **edited mark**: you have changed that part in EG13's editor since its sound was loaded (a knob, an engine, a setting or a route of that part). A master setting that belongs to the sound (Mode, Split Note, Soft Clip, Dry) marks both tabs. The setup controls are the exception, because a preset never carries them: master Level, Voice Gain, Latency Mode, and each part's MIDI channel, Output, MPE mode and bend range and CC A to D do not set the mark. Loading a Performance or Init, or saving the whole instrument, clears both marks; loading or saving a Patch clears that part's. Changes the host makes (automation, an undo step, loading a project) do not set it: EG13 cannot tell automation apart from an edit you make in the host.
+- A `*` after a part's name is that part's **edited mark**: you have changed that part in EG13's editor since its sound was loaded (a knob, an engine, a setting or a route of that part). A master setting that belongs to the sound (Mode, Split Note, Soft Clip, Dry) marks both parts. The setup controls are the exception, because a preset never carries them: master Level, Voice Gain, Latency Mode, and each part's MIDI channel, Output, MPE mode and bend range and CC A to D do not set the mark. Loading a Performance or Init, or saving the whole instrument, clears both marks; loading or saving a Patch clears that part's. Changes the host makes (automation, an undo step, loading a project) do not set it: EG13 cannot tell automation apart from an edit you make in the host.
 
-The project remembers what each part was loaded from and whether it was edited, so the tabs show the same names when you reopen the project. Loading a preset marks the project as changed in the host, and so does a change to a tab's name or edited mark; setting them to what they already are, and opening the editor alone, do not.
+The project remembers what each part was loaded from and whether it was edited, so the strip shows the same names when you reopen the project. Loading a preset marks the project as changed in the host, and so does a change to a part's name or edited mark; setting them to what they already are, and opening the editor alone, do not.
 
 ## What a preset changes, and what it keeps
 

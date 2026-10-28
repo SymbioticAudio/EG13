@@ -113,6 +113,31 @@ struct EG13PresetBrowserTests {
         #expect(browser.partHelp(0) == "A very long name that the tab cuts")
     }
 
+    @Test("the name strip under the header: one half per part, its text, VoiceOver label and help")
+    func nameStrip() {
+        let folder = Self.tempFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let perf = Self.factory("Bank 1", "Glass Tide Pools", .performance, 0)
+        let patch = Self.factory("Bank 1", "Bowed Steel", .patch, 1)
+        let (_, browser) = Self.make(factory: [perf, patch], folder: folder)
+        #expect(EG13PartNameStrip.text(browser, part: 0) == "Init")
+        browser.load(perf)
+        browser.load(patch, into: .part(1))
+        browser.markEdited(part: 1)
+        #expect(EG13PartNameStrip.text(browser, part: 0) == "Glass Tide Pools\u{00B7}A")
+        #expect(EG13PartNameStrip.text(browser, part: 1) == "Bowed Steel*")
+        #expect(EG13PartNameStrip.accessibilityLabel(browser, part: 1) == "Part B: Bowed Steel, edited")
+        #expect(EG13PartNameStrip.accessibilityLabel(browser, part: 0) == "Part A: Glass Tide Pools\u{00B7}A")
+    }
+
+    @Test("the name strip fits in the fixed window: the card strip gives up its height")
+    func nameStripHeight() {
+        #expect(EG13Layout.nameStripHeight >= 20 && EG13Layout.nameStripHeight <= 26)
+        #expect(EG13Layout.baseSize.height == 760)
+        #expect(EG13Layout.stripHeight == EG13Layout.baseSize.height - EG13Layout.headerHeight
+                - EG13Layout.nameStripHeight - EG13Layout.bottomBarHeight - 3 * EG13Layout.gap)
+    }
+
     @Test("an editor edit marks its own part, loading clears it, and host-only value changes don't")
     func editedMark() {
         let folder = Self.tempFolder()

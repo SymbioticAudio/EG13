@@ -312,18 +312,18 @@ enum EG13Snapshot {
             return (core, synth)
         }
         let perf = "performance", patch = "patch"
-        guard let (c1, glass) = make(state([(-1, "Bank 1", "Glass Tide", perf)])),
+        guard let (c1, glass) = make(state([(-1, "Bank 1", "Glass Tide Pools", perf)])),
               let (c2, patches) = make(state([(0, "Bank 1", "Warm Drift", patch), (1, "Bank 1", "Bowed Bells", patch)],
                                              edited: [false, true])),
               let (c3, fx) = make(fx: true, state([(0, "FX", "Ring Shimmer", perf), (1, "FX", "Tape Smear", patch)],
                                                   edited: [true, false])),
               let (c4, long) = make(state([(0, "Bank 2", "catnap \u{2014} pluck side", patch),
-                                           (1, "Bank 2", "catnap \u{2014} pad side with a very long extended name", patch)],
+                                           (1, "Bank 2", "catnap \u{2014} pad side, a very long extended name that runs well past forty characters and keeps going until the half has to cut it", patch)],
                                           edited: [false, true])),
               let (c5, fresh) = make("")
         else { return 1 }
         let base = EG13Layout.baseSize
-        let strip = CGSize(width: base.width, height: EG13Layout.headerHeight)
+        let strip = CGSize(width: base.width, height: EG13HeaderPreview.height)
         var ok = true
         ok = write(EG13HeaderPreview(synth: glass), size: strip, zoom: 1, to: "\(directory)/header-performance.png") && ok
         ok = write(EG13HeaderPreview(synth: glass), size: strip, zoom: 0.75, to: "\(directory)/header-75.png") && ok
@@ -364,7 +364,7 @@ enum EG13Snapshot {
         synth.selectedPart = 0
         ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-a.png") && ok
         ok = write(EG13RootView(synth: synth), size: base, zoom: 0.75, to: "\(directory)/editor-a-75.png") && ok
-        ok = write(EG13HeaderPreview(synth: synth), size: CGSize(width: base.width, height: EG13Layout.headerHeight),
+        ok = write(EG13HeaderPreview(synth: synth), size: CGSize(width: base.width, height: EG13HeaderPreview.height),
                    zoom: 1, to: "\(directory)/master.png") && ok
         synth.selectedPart = 1
         ok = write(EG13RootView(synth: synth), size: base, zoom: 1, to: "\(directory)/editor-b.png") && ok
@@ -409,12 +409,13 @@ struct EG13WorstCaseSheet: View {
     }
 }
 
-/// The header at the editor's width, for the close-up of the master settings.
+/// The header and the part name strip at the editor's width, for the close-ups.
 struct EG13HeaderPreview: View {
+    static let height = EG13Layout.headerHeight + EG13Layout.nameStripHeight
     let synth: EG13Synth
     var body: some View {
         EG13RootView(synth: synth)
-            .frame(width: EG13Layout.baseSize.width, height: EG13Layout.headerHeight, alignment: .top)
+            .frame(width: EG13Layout.baseSize.width, height: Self.height, alignment: .top)
             .clipped()
     }
 }
@@ -738,8 +739,8 @@ struct EG13ContextMenuSheet: View {
 struct EG13PresetSheet<Content: View>: View {
     let synth: EG13Synth
     let content: Content
-    /// Where the Presets button's left edge is in the header (measured from the snapshots here; it moves with the tab names).
-    var barX: CGFloat { synth.kind == .effect ? 376 : 368 }
+    /// Where the Presets button's left edge is in the header (measured from a header snapshot).
+    var barX: CGFloat { synth.kind == .effect ? 290 : 270 }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
