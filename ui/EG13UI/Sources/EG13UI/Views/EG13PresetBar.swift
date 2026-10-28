@@ -82,7 +82,7 @@ struct EG13PresetDialog: Equatable {
 
 /// The header's preset button: `[ Presets ▾ ]` in the LCD look of the Motion button and the engine
 /// menus (green on grey, monospaced). It only opens the dropdown (owner redesign 2026-10-27: no
-/// arrows; the part tabs name what each part holds and carry the edited marks). A message (a
+/// arrows; the name strip under the header names what each part holds and carries the edited marks). A message (a
 /// problem, or a credited preset's credit and licence) shows as a small line under the button for
 /// four seconds; a credited row also has it as help.
 struct EG13PresetBar: View {

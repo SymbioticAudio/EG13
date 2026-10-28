@@ -67,16 +67,31 @@ struct EG13PresetBrowserTests {
     static func names(_ browser: EG13PresetBrowser) -> [String] { [browser.partName(0), browser.partName(1)] }
     static func edited(_ browser: EG13PresetBrowser) -> [Bool] { [browser.isEdited(part: 0), browser.isEdited(part: 1)] }
 
-    @Test("the browser has no step: the header has no arrows (owner redesign 2026-10-27)")
-    func noStep() {
-        // Compile-time: EG13PresetBrowser.step(_:) is gone. Loading goes through the menu only.
+    @Test("saving a Patch clears only that part's mark; saving the whole instrument clears both; rename keeps them")
+    func saveAndRenameMarks() {
         let folder = Self.tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
-        let (_, browser) = Self.make(factory: [Self.factory("Bank 1", "One", .performance, 0)], folder: folder)
-        #expect(Self.names(browser) == ["Init", "Init"])
+        let (_, browser) = Self.make(folder: folder)
+        browser.markEdited(part: nil)
+        // Save As a Patch of B: B is now that Patch, unedited; A keeps its mark.
+        #expect(browser.saveAs(name: "Bee", scope: .part(1)) == .saved)
+        #expect(Self.edited(browser) == [true, false])
+        // Save in place of the single Patch record (B): again only B clears.
+        browser.markEdited(part: nil)
+        #expect(browser.save() == .saved)
+        #expect(Self.edited(browser) == [true, false])
+        // Rename leaves both marks alone.
+        browser.markEdited(part: 1)
+        let bee = browser.entries.first { $0.name == "Bee" }!
+        #expect(browser.rename(bee, to: "Bumble") == .saved)
+        #expect(browser.partName(1) == "Bumble")
+        #expect(Self.edited(browser) == [true, true])
+        // The whole instrument clears both.
+        #expect(browser.saveAs(name: "Hive", scope: .whole) == .saved)
+        #expect(Self.edited(browser) == [false, false])
     }
 
-    @Test("each tab names what its part holds: a Patch by name, a Performance as name·A / name·B, else Init")
+    @Test("each part is named for what it holds: a Patch by name, a Performance as name·A / name·B, else Init")
     func partNames() {
         let folder = Self.tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -98,7 +113,7 @@ struct EG13PresetBrowserTests {
         #expect(Self.names(browser) == ["Init", "Init"])
     }
 
-    @Test("a tab's help is the full name, and a credited preset's credit and licence")
+    @Test("a part's help is the full name, and a credited preset's credit and licence")
     func partHelp() {
         let folder = Self.tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -166,7 +181,7 @@ struct EG13PresetBrowserTests {
         #expect(Self.edited(synth.presets) == [false, true])
     }
 
-    @Test("a master control that is part of the sound (Mode) marks both parts")
+    @Test("a master control that is part of the sound (Mode, Split Note, Soft Clip, Dry) marks both parts")
     func masterMarksBoth() {
         let folder = Self.tempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -176,6 +191,12 @@ struct EG13PresetBrowserTests {
         synth.presets.load(synth.presets.entries[0])
         synth.edit(EG13ParamID.master(.mode), 1)
         #expect(Self.edited(synth.presets) == [true, true])
+        // Split Note, Soft Clip and Dry belong to the sound too.
+        for param in [EG13MasterParam.splitNote, .softClip, .dry] {
+            synth.presets.load(synth.presets.entries[0])
+            synth.edit(EG13ParamID.master(param), 0.5)
+            #expect(Self.edited(synth.presets) == [true, true])
+        }
     }
 
     @Test("a setup control (master Level, MIDI channel) does not set the edited mark")

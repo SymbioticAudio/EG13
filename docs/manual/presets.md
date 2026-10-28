@@ -47,7 +47,7 @@ So a preset never moves a part to another MIDI channel or output bus, never chan
 
 **A new instance** of EG13 (the instrument) opens on Bank 1's first preset, **First Light**. A new instance of EG13 FX opens on its init sound. A project you reopen keeps its own sound.
 
-If a preset cannot be loaded (a damaged file, or a preset for the other plugin), the sound and the name stay as they were and a message under the bar says why. Loading never stops the audio.
+If a preset cannot be loaded (a damaged file, or a preset for the other plugin), the sound and the name stay as they were and a message under the Presets button says why. Loading never stops the audio.
 
 ## Factory banks
 
@@ -74,7 +74,7 @@ Seven presets rebuilt from a VCV Rack patch shared under a Creative Commons lice
 - **catnap — tides** (Patch): a variation: the patch's slow filter swell made into a pad, with the chords held as you play them; the mod wheel speeds the swell up and aftertouch opens the filter.
 - **catnap — night** (Performance): a variation: the whole patch, slower and darker. Like **catnap**, it starts droning as soon as it is loaded, with no note held (its Part B is set to Trigger *Always on*).
 
-Loading a Bank 2 preset shows its credit and licence under the bar for four seconds; hovering over its row in the dropdown shows them too.
+Loading a Bank 2 preset shows its credit and licence under the Presets button for four seconds (and when you hover over its name in the name strip); hovering over its row in the dropdown shows them too.
 
 ### FX (EG13 FX)
 
@@ -99,7 +99,7 @@ User presets are files in
 
 and EG13 FX's in the `FX` folder inside it. (In Finder, choose Go > Go to Folder and paste the path.) One file holds one preset. The User bank lists them by name, ignoring case.
 
-- **File names:** the file is named after the preset. Characters that cannot be in a file name on some systems (`/ \ : * ? " < > |` and control characters) become `-`, leading dots and surrounding spaces go, and the name is cut at 80 characters. The preset keeps the name exactly as you typed it, and that is the name the bar shows.
+- **File names:** the file is named after the preset. Characters that cannot be in a file name on some systems (`/ \ : * ? " < > |` and control characters) become `-`, leading dots and surrounding spaces go, and the name is cut at 80 characters. The preset keeps the name exactly as you typed it, and that is the name the name strip shows.
 - **Sharing:** send the `.eg13perf` or `.eg13patch` file; the person receiving it drops it into their Presets folder (EG13 FX presets into `FX`). The folder is read again each time the pointer reaches the Presets button, so the file appears without restarting the host.
 - **Files that cannot be listed** are skipped, and a message names them (up to three, then a count): a file that is not an EG13 preset or cannot be read, a preset from a newer version of EG13, or a preset for the other plugin (an EG13 FX preset in the instrument's folder, or the other way round). The other presets still list.
 

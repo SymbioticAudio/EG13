@@ -38,7 +38,7 @@ public final class EG13Synth {
     public private(set) var activeVoices = [0, 0]
     /// The part the window shows (A/B tabs). Editor state only, not saved.
     public var selectedPart = 0
-    /// The preset list and what is loaded (the part tabs' names and edited marks).
+    /// The preset list and what is loaded (the name strip's names and edited marks).
     public let presets: EG13PresetBrowser
 
     /// The matrix, per part: codes and names as the core reports them (amounts are read live from

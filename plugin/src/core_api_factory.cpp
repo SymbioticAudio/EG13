@@ -98,7 +98,7 @@ bool applyFirstLoadPreset(PluginKind kind, const std::function<std::string()>& s
       const int32_t result = applyPresetJson(kind, save, load, table[i].json, -1, message);
       if (result == EG13_PRESET_INVALID) return false;
       // The editor's browser string (its format is the UI's, EG13PresetBrowser.swift): the header
-      // tabs show this preset's name from the first open.
+      // name strip shows this preset's name from the first open.
       if (setBrowser) {
         setBrowser("{\"version\":2,\"loaded\":[{\"part\":-1,\"bank\":" + jsonQuote(table[i].bank ? table[i].bank : "") +
                    ",\"name\":" + jsonQuote(table[i].name ? table[i].name : "") +

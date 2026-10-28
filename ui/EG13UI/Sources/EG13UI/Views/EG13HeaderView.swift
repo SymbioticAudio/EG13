@@ -95,7 +95,7 @@ struct EG13HeaderView: View {
         }
         .padding(.horizontal, theme.spacing.m)
         .padding(.vertical, 4)
-        .fixedSize()  // keeps its full size; the preset bar gives way
+        .fixedSize()  // keeps its full size; the Spacer gives way
         .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(EG13Palette.white.color.opacity(0.08)))
         .environment(\.eg13ControlColors, EG13Palette.headerControls)
         .accessibilityElement(children: .contain)
@@ -142,7 +142,7 @@ struct EG13PartNameStrip: View {
         HStack(spacing: theme.spacing.s) {
             ForEach(0..<EG13ParamID.parts, id: \.self) { part in half(part) }
         }
-        .padding(.horizontal, EG13Layout.outerPadding)
+        .padding(.horizontal, EG13Layout.outerPadding + 4)  // the header row's inset: the halves line up with the wordmark
         .padding(.vertical, 2)
         .frame(height: EG13Layout.nameStripHeight)
         .overlay(alignment: .top) {

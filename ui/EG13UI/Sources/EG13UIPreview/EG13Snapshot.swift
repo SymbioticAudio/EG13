@@ -283,10 +283,11 @@ enum EG13Snapshot {
         return ok
     }
 
-    /// The preset header design set (M7 gate 5a, owner redesign 2026-10-27): the header after a
-    /// Performance (at 75, 100 and 200 %), a Patch in A and another in B with B edited, a name too
-    /// long for its tab, EG13 FX, the dropdown for the instrument and EG13 FX (a drawn copy of the
-    /// macOS menu), and Save As with its clash question.
+    /// The preset header design set (M7 gate 5a, owner redesign 2026-10-27/28): the header and the
+    /// name strip after a Performance (at 75, 100 and 200 %), a Patch in A and another in B with B
+    /// edited, a name too long for its half of the strip, EG13 FX (a Performance in A after a Patch
+    /// went into B, A edited), Init, the dropdown for the instrument and EG13 FX (a drawn copy of
+    /// the macOS menu), and Save As with its clash question.
     static func runPresets(into directory: String) -> Int32 {
         guard makeDirectory(directory) else { return 1 }
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("eg13-presets-snapshot-\(UUID().uuidString)")
@@ -735,7 +736,7 @@ struct EG13ContextMenuSheet: View {
     }
 }
 
-/// The header with something drawn under the preset bar (a menu or a dialog), on the window grey.
+/// The header with something drawn under the Presets button (a menu or a dialog), on the window grey.
 struct EG13PresetSheet<Content: View>: View {
     let synth: EG13Synth
     let content: Content

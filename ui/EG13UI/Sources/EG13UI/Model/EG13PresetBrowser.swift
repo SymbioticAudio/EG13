@@ -2,8 +2,9 @@ import Foundation
 import Observation
 
 /// The preset browser behind the header: the list (factory presets, then the User folder), the
-/// name each part tab shows, the per-part edited marks, and load, save, rename and delete (M7
-/// design §4.3, owner redesign 2026-10-27: no arrows; each tab names its part's sound).
+/// name the name strip shows for each part, the per-part edited marks, and load, save, rename and
+/// delete (M7 design §4.3, owner redesign 2026-10-27/28: no arrows; a strip under the header names
+/// each part's sound).
 ///
 /// What is loaded is kept as the "browser string" the plugin saves in the project (the format is
 /// owned here; the plugin only stores it, and seeds it with the first-load preset on a new
@@ -44,20 +45,20 @@ public final class EG13PresetBrowser {
     /// credit and licence of a credited preset just loaded, or nil.
     public private(set) var message: String?
 
-    /// The name part `part`'s tab shows (without the edited mark):
+    /// The name the name strip shows for part `part` (without the edited mark):
     /// - nothing loaded into it, or an unreadable browser string: "Init";
     /// - a Patch: its name;
     /// - a Performance: its name, a middle dot and the part letter ("Harbour Lights·A"), so the two
-    ///   tabs read as one preset. Loading a Patch into one part later replaces only that tab's name.
+    ///   halves read as one preset. Loading a Patch into one part later replaces only that part's name.
     public func partName(_ part: Int) -> String {
         guard let info = loadedInfo(part: part) else { return "Init" }
         return info.kind == .performance ? "\(info.name)\u{00B7}\(EG13PartName.letter(part))" : info.name
     }
 
-    /// The part's edited mark (the tab shows "*").
+    /// The part's edited mark (the name strip shows "*").
     public func isEdited(part: Int) -> Bool { edited.indices.contains(part) && edited[part] }
 
-    /// The tab's help: the full name, and on a second line the credit and licence of a credited preset.
+    /// The help of the part's tab and name-strip half: the full name, and on a second line the credit and licence of a credited preset.
     public func partHelp(_ part: Int) -> String {
         let name = partName(part)
         guard let info = loadedInfo(part: part),
