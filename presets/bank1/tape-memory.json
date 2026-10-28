@@ -1,0 +1,25 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Tape Memory",
+  "note": "After the Beads manual: a soft FM piano recorded onto worn tape and played back as grains with randomised time and pitch.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 10,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Macro Oscillator", "params": { "Model": "2-op FM", "Harmonics": 0.3, "Timbre": 0.45, "Morph": 0.3 } },
+      "Filter": { "engine": "State Variable Filter", "params": { "Cutoff": 0.032, "Resonance": 0.0, "Mode": "HP" } },
+      "Shaper": { "engine": "EQ", "params": { "High Freq": 0.566, "High Gain": 0.72, "Low Freq": 0.566, "Low Gain": 0.72 } },
+      "Part FX": { "engine": "Granular Delay", "params": { "Dry/Wet": 0.55, "Time": 0.35, "Size": 0.6, "Density": 0.64, "Shape": 0.65, "Feedback": 0.35, "Reverb": 0.5, "Quality": "Dirty tape", "Time Random": 0.7, "Pitch Random": 0.62 } },
+      "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.25, "Decay": 0.78, "Sustain": 0.35, "Release": 0.7 } },
+      "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.55 } },
+      "settings": { "Level": 0.5039 },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 3 LFO Out 1", "destination": "Part FX: Size", "amount": 0.15 },
+        { "source": "Mod 3 LFO Out 2", "destination": "Part FX: Time", "amount": 0.15 }
+      ]
+    }
+  }
+}

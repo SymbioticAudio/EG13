@@ -54,7 +54,7 @@ Every part has a Part FX slot, and every Part FX, **Off included**, is delayed t
 
 Alone, the other engines add less at 48 kHz (Live / Studio): Granular Delay 243 / 483 samples, Reverb 239 / 491 and the Resonator 24 / 24, and each is padded up to Granular's figure. This delay is part of the totals in the table above (EG13: Source + Shaper + Part FX; for example Live at 48 kHz: 107 + 161 + 263 = 531 samples; Studio: 221 + 300 + 539 = 1060). It is the accepted cost for version 1 (owner decision, 2026-10-20; the Part FX share, about 5.5 ms in Live and 11 ms in Studio, accepted 2026-10-23, to be tested by playing). Filters add no latency. Each mode has its own fixed latency: within a mode, changing engines never moves the sound.
 
-- **EG13** aligns note onsets. Sound that the Input excites through the Modal Synth or Resonator therefore arrives up to about 6 ms after the Dry signal.
+- **EG13** aligns note onsets. It has no audio input (see [Parts and routing](parts-and-routing.md#input-and-input-source)), so there is no Dry signal to line up with.
 - **EG13 FX** aligns the processed Input exactly with Dry.
 
 ### Changing the mode

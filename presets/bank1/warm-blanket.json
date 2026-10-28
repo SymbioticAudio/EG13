@@ -1,0 +1,26 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Warm Blanket",
+  "note": "A plain, warm pad to start from, after the Braids manual's triple-saw shape: three detuned saws through a gentle low-pass, a slow swell and a soft hall. The mod wheel opens the filter, velocity brightens it a little, and a slow LFO keeps it breathing.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 33,
+  "parts": {
+    "A": {
+      "Source": {"engine": "Digital Oscillator", "params": {"Shape": "Triple Saw", "Timbre": 0.45, "Color": 0.6}},
+      "Filter": {"engine": "State Variable Filter", "params": {"Cutoff": 0.6, "Resonance": 0.1, "Mode": "LP"}},
+      "Part FX": {"engine": "Reverb", "params": {"Amount": 0.3, "Time": 0.65, "Brightness": 0.45}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.45, "Sustain": 1.0, "Release": 0.65}},
+      "Mod 3": {"engine": "LFO", "scope": "per part", "params": {"Range": "Low", "Frequency": 0.6}},
+      "settings": {"Level": 0.636},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 0.5},
+        {"source": "Mod 1 Envelope", "destination": "Amp", "amount": 0.5},
+        {"source": "Velocity", "destination": "Filter: Cutoff", "amount": 0.08},
+        {"source": "Mod Wheel", "destination": "Filter: Cutoff", "amount": 0.25},
+        {"source": "Mod 3 LFO Out 1", "destination": "Filter: Cutoff", "amount": 0.04}
+      ]
+    }
+  }
+}

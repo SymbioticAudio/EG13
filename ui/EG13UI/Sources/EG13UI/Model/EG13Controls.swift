@@ -24,6 +24,35 @@ public struct EG13ControlSpec: Equatable, Identifiable, Sendable {
     public var emphasis: EG13ParamEmphasis = .plain
     /// A label to show instead of the parameter's name ("Out" for the master Level).
     public var label: String?
+    /// A stepper that offers only some of the parameter's values, under its own names.
+    public var choices: EG13StepChoices?
+}
+
+/// The values a stepper offers when the parameter holds more than do something in this plugin:
+/// the instrument has no audio input, so its Input Source offers Off (External, which is silent
+/// there) and Other part. A stored value it does not offer (Both) shows as, and steps from, the
+/// offered value it behaves as. The parameter's ids, range and stored values do not change.
+public struct EG13StepChoices: Equatable, Sendable {
+    public struct Option: Equatable, Sendable {
+        public var value: Double
+        public var label: String
+    }
+
+    public var options: [Option]
+    /// A stored value not offered, mapped to the offered value it behaves as.
+    public var aliases: [Double: Double] = [:]
+
+    /// The option the stored value shows as: its own, its alias's, else the first.
+    public func index(of value: Double) -> Int {
+        let shown = aliases[value] ?? value
+        return options.firstIndex { $0.value == shown } ?? 0
+    }
+
+    public func label(for value: Double) -> String { options[index(of: value)].label }
+
+    /// The instrument's Input Source: External is silent there and Both is the same as Other part.
+    static let instrumentInputSource = EG13StepChoices(
+        options: [Option(value: 0, label: "Off"), Option(value: 1, label: "Other part")], aliases: [2: 1])
 }
 
 /// A slot's controls: its engine menu, the P's the engine uses, and a mod slot's Scope.
@@ -85,7 +114,11 @@ extension EG13Synth {
             param(id) == nil ? nil : EG13ControlSpec(id: id, kind: kind, emphasis: emphasis, label: label)
         }
         func steppers(_ params: [EG13PartParam]) -> [EG13ControlSpec] {
-            params.compactMap { spec(EG13ParamID.part(shown, $0), .wideStepped) }
+            params.compactMap { param in
+                var stepper = spec(EG13ParamID.part(shown, param), .wideStepped)
+                if param == .inputSource && kind == .instrument { stepper?.choices = .instrumentInputSource }
+                return stepper
+            }
         }
         let cardKinds: [EG13SlotKind] = [EG13_SLOT_KIND_SOURCE, EG13_SLOT_KIND_FILTER, EG13_SLOT_KIND_SHAPER,
                                          EG13_SLOT_KIND_PART_FX]
@@ -114,8 +147,10 @@ extension EG13Synth {
                 spec(EG13ParamID.routeAmount(shown, $0), .knob(.small), .black, label: "Route \($0 + 1)")
             },
             partBar: partBar,
+            // The instrument has no audio input, so Dry (the input's level in the output) does
+            // nothing there: only EG13 FX shows it.
             masterBar: [
-                spec(EG13ParamID.master(.dry), .knob(.medium), .black),
+                kind == .effect ? spec(EG13ParamID.master(.dry), .knob(.medium), .black) : nil,
                 spec(EG13ParamID.master(.level), .knob(.medium), .black, label: "Out"),
             ].compactMap { $0 },
             partSettings: steppers([.transpose, .baseNote, .midiChannel, .keyLow, .keyHigh, .trigger,

@@ -1,0 +1,85 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Bronze Stabs",
+  "note": "A bright polysynth brass after the community's Plaits-into-VCF subtractive voices: detuned analog waves through a pushed two-pole low-pass that swells open with each note and velocity; the mod wheel adds vibrato.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 26,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Macro Oscillator",
+        "params": {
+          "Model": "Virtual analog",
+          "Harmonics": 0.56,
+          "Timbre": 0.45,
+          "Morph": 0.85
+        }
+      },
+      "Filter": {
+        "engine": "Classic Filters",
+        "params": {
+          "Cutoff": 0.48,
+          "Resonance": 0.3,
+          "Model": "OB-Xd 2-pole Lowpass Pushed"
+        }
+      },
+      "Part FX": {
+        "engine": "Reverb",
+        "params": {
+          "Amount": 0.2,
+          "Time": 0.55,
+          "Brightness": 0.55
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.18,
+          "Decay": 0.5,
+          "Sustain": 0.85,
+          "Release": 0.45
+        }
+      },
+      "Mod 2": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.25,
+          "Decay": 0.55,
+          "Sustain": 0.35,
+          "Release": 0.45
+        }
+      },
+      "Mod 3": {
+        "engine": "LFO",
+        "scope": "per voice",
+        "params": {
+          "Frequency": 0.55
+        }
+      },
+      "settings": {
+        "Level": 0.6285
+      },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 2 Envelope", "via": "Velocity", "destination": "Filter: Cutoff", "amount": 0.3 },
+        { "source": "Note", "destination": "Filter: Cutoff", "amount": 0.4 },
+        { "source": "Mod 3 LFO Out 1", "via": "Mod Wheel", "destination": "Pitch", "amount": 0.012 },
+        { "source": "Mod 4 LFO Out 1", "destination": "Source: Timbre", "amount": 0.1 },
+        { "source": "Mod 4 LFO Out 2", "destination": "Source: Harmonics", "amount": 0.04 }
+      ],
+      "Mod 4": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Range": "Low",
+          "Frequency": 0.55,
+          "Smoothness": 0.4
+        }
+      }
+    }
+  }
+}

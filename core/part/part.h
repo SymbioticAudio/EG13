@@ -11,6 +11,7 @@
 #include "mod/beat_clock.h"
 #include "mod/part_modulation.h"
 #include "part/part_fx.h"
+#include "part/part_level.h"
 #include "util/smoothed_value.h"
 #include "voice/mono_note_stack.h"
 #include "voice/processor_factory.h"
@@ -24,7 +25,7 @@ namespace eg13 {
 constexpr float kDefaultReleaseVelocity = 64.0f / 127.0f;
 
 struct PartSettings {
-  float level = 1.0f;
+  float level = kPartLevelUnity;  // the knob position (0 dB); the gain is partLevelGain(level)
   float pan = 0.0f;
   float glide = 0.0f;  // normalized; see glideSeconds()
   int transpose = 0;
@@ -173,7 +174,7 @@ class Part {
   void moveNote(int v, int key);  // the voice now plays `key` (its channel and expression), no retrigger
   void delayInputSide(const float* const* input, int n);  // fills inputSide_[0..n)
   void updatePitchOffset();
-  void updateGains(float level);
+  void updateGains(float position);  // a Part Level knob position: its gain, the pan and Mono
   // The note the Part FX plays (provisional ruling 18): the most recently started voice's, on an
   // Always-on part its voice's (the held key, or the Base note), before any note the Base note;
   // plus Transpose and the part's pitch bend.
@@ -215,8 +216,8 @@ class Part {
   ParamValues fxParams_;     // its Part FX P's after the routes at the last tick
   ModDisplay display_;
   bool displayEnabled_ = true;
-  float partLevel_ = 1.0f;   // its Part Level (base + routes) at the last tick
-  float outputLevel_ = 1.0f;  // the Part Level applied now: partLevel_, latencySamples() later
+  float partLevel_ = kPartLevelUnity;   // its Part Level (base + routes, a knob position) at the last tick
+  float outputLevel_ = kPartLevelUnity;  // the Part Level applied now: partLevel_, latencySamples() later
   std::vector<float> levelLine_;  // partLevel_ per sample, latencySamples() long
   int levelLinePos_ = 0;
   // Per-voice sources.

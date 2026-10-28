@@ -83,4 +83,21 @@ public protocol EG13Core: AnyObject {
     /// "0.6.0 (abc1234)".
     func version() -> String
     func requestResize(width: UInt32, height: UInt32)
+    /// This plugin kind's factory presets, in the plugin's list order (Bank 1, Bank 2, FX).
+    func factoryPresets() -> [EG13PresetEntry]
+    /// Loads a preset file's sound (a Performance into both parts, a Patch into the target part).
+    /// The plugin keeps the setup fields. `.invalid` changed nothing.
+    func applyPreset(json: String, target: EG13PresetTarget) -> EG13PresetApplyResult
+    /// Loads the plugin's Init sound into both parts, keeping the setup fields.
+    func applyInit() -> EG13PresetApplyResult
+    /// The current sound as a preset file: a Patch of `part`, or a Performance when nil. Empty if
+    /// it could not be made.
+    func savePreset(part: Int?, name: String) -> String
+    /// The browser string the project saved ("" for none).
+    func browserState() -> String
+    func setBrowserState(_ state: String)
+    /// Whether a parameter is a setup field (master Level, Voice Gain, Latency Mode; per part MIDI
+    /// channel, Output, MPE, CC A to D): presets never carry these, so editing one is not an edit
+    /// of the preset's sound.
+    func isSetupParam(_ id: UInt32) -> Bool
 }

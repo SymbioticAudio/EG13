@@ -44,7 +44,8 @@ struct PartParamDef {
 // Stepped settings are integer plain values: a value keeps its meaning when an option is added at
 // the end of a list (the maximum grows, nothing is renumbered).
 const PartParamDef kPartDefs[kPartParamCount] = {
-    {PartParam::Level, "Level", 0, 1, 1, false, ParamFormat::Percent},
+    // Task 8g: the knob position 0..1, silence to +12 dB, 0 dB at the default (part/part_level.h).
+    {PartParam::Level, "Level", 0, 1, kPartLevelUnity, false, ParamFormat::PartLevel},
     {PartParam::Pan, "Pan", -1, 1, 0, false, ParamFormat::Pan},
     {PartParam::Glide, "Glide", 0, 1, 0, false, ParamFormat::GlideTime},
     {PartParam::Transpose, "Transpose", -24, 24, 0, true, ParamFormat::Semitones},
@@ -493,6 +494,18 @@ void formatParam(size_t index, double value, char* buf, size_t size, const PartE
     case ParamFormat::Percent:
       std::snprintf(buf, size, "%d%%", int(std::lround(v * 100.0f)));
       break;
+    case ParamFormat::PartLevel: {
+      const float gain = partLevelGain(v);
+      const double db = gain > 0.0f ? 20.0 * std::log10(double(gain)) : 0.0;
+      if (gain <= 0.0f) {
+        std::snprintf(buf, size, "-inf dB");
+      } else if (std::fabs(db) < 0.05) {
+        std::snprintf(buf, size, "0.0 dB");  // never "-0.0 dB" or "+0.0 dB"
+      } else {
+        std::snprintf(buf, size, "%+.1f dB", db);
+      }
+      break;
+    }
     case ParamFormat::Pan:
       if (v < -0.005f) {
         std::snprintf(buf, size, "L%d", int(std::lround(-v * 100.0f)));

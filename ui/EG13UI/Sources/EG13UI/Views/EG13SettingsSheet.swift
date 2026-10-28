@@ -116,6 +116,12 @@ struct EG13SettingsPane: View {
             Text("Settings are saved for every EG13 on this Mac, not in your project.")
                 .font(theme.type.caption.font)
                 .foregroundStyle(theme.text.secondary.color)
+            if let error = store.saveError {
+                Text(error)
+                    .font(theme.type.caption.font.weight(.bold))
+                    .foregroundStyle(theme.text.primary.color)
+                    .accessibilityLabel(error)
+            }
         }
     }
 

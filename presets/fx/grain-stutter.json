@@ -1,0 +1,18 @@
+{
+  "kind": "performance",
+  "plugin": "effect",
+  "name": "Grain Stutter",
+  "note": "Beads' grains at a steady rate with clicky edges and random sizes and pitches, recorded at the vintage digital quality: a drum loop turns into stuttering, pitched fragments.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 5,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "Off" },
+      "Part FX": { "engine": "Granular Delay", "params": { "Dry/Wet": 0.6, "Time": 0.2, "Size": 0.3, "Density": 0.3, "Shape": 0.2, "Feedback": 0.2, "Quality": "Vintage digital", "Pitch Random": 0.7, "Size Random": 0.65 } },
+      "settings": { "Level": 0.4634 },
+      "routes": []
+    }
+  }
+}

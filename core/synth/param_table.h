@@ -6,6 +6,7 @@
 #include "engine/part_fx_engine.h"
 #include "engine/voice_engine.h"
 #include "mod/mod_routes.h"
+#include "part/part_level.h"
 #include "synth/plugin_kind.h"
 
 namespace eg13 {
@@ -139,6 +140,7 @@ enum class ParamFormat {
   LatencyMode,  // M5: ConverterQuality
   PartFxEngine,  // M5
   PartFxInput,   // M5
+  PartLevel,     // task 8g: the knob position, shown as its gain in dB (partLevelGain)
 };
 
 struct ParamSpec {

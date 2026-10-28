@@ -66,6 +66,23 @@ void requestRestartIfModeChanged(Plugin* plugin) {
   }
 }
 
+// What a state load does, for the host's stateLoad and for preset loads: replace the synth's state,
+// follow it in the host's parameter list, and ask for a restart if the Latency Mode changed.
+// Main thread; safe while the audio thread processes (Synth::loadParams hands the load over).
+state::LoadResult loadStateJson(Plugin* plugin, const std::string& data) {
+  const state::LoadResult result = plugin->store.load(plugin->synth, data);
+  if (result == state::LoadResult::Invalid) return result;
+  // Engines may have changed too: names and value text follow them.
+  if (plugin->hostParams) {
+    plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT |
+                                                 CLAP_PARAM_RESCAN_INFO);
+  }
+  // While inactive the load applies at the next activate. While active, requestedQuality()
+  // changes at the next audio block, so if the host stops processing the request waits for it.
+  requestRestartIfModeChanged(plugin);
+  return result;
+}
+
 // The host's transport (CLAP beat times are fixed point) for the beat clock.
 Transport transportFrom(const clap_event_transport_t& t) {
   Transport out;
@@ -158,22 +175,23 @@ void handleEvent(Plugin* plugin, const clap_event_header_t* hdr) {
 // ---- audio ports --------------------------------------------------------------
 
 uint32_t audioPortsCount(const clap_plugin_t* p, bool isInput) {
+  // The instrument has no audio input: an out-of-process AU host (Logic Pro 12) fails every render
+  // while an input bus is unconnected, so a sidechain made it silent. External audio goes through
+  // EG13 FX; the instrument's parts still feed each other inside the core (Input source Other part).
   const bool instrument = self(p)->kind == PluginKind::Instrument;
-  if (isInput) return 1;                 // instrument: sidechain; FX: main input
-  return instrument ? 2 : 1;             // instrument: main + Bus 2
+  if (isInput) return instrument ? 0 : 1;  // FX: main input
+  return instrument ? 2 : 1;               // instrument: main + Bus 2
 }
 
 bool audioPortsGet(const clap_plugin_t* p, uint32_t index, bool isInput,
                    clap_audio_port_info_t* info) {
   if (index >= audioPortsCount(p, isInput)) return false;
-  const bool instrument = self(p)->kind == PluginKind::Instrument;
   const char* name = "Output";
   uint32_t flags = CLAP_AUDIO_PORT_IS_MAIN;
   clap_id id = 1;
-  if (isInput) {
+  if (isInput) {  // EG13 FX only
     id = 0;
-    name = instrument ? "Sidechain" : "Input";
-    flags = instrument ? 0u : uint32_t(CLAP_AUDIO_PORT_IS_MAIN);
+    name = "Input";
   } else if (index == 1) {
     id = 2;
     name = "Bus 2";
@@ -318,16 +336,7 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
       if (read == 0) break;
       data.append(buffer, size_t(read));
     }
-    Plugin* plugin = self(p);
-    if (plugin->store.load(plugin->synth, data) == state::LoadResult::Invalid) return false;
-    // Engines may have changed too: names and value text follow them.
-    if (plugin->hostParams) {
-      plugin->hostParams->rescan(plugin->host, CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT |
-                                                   CLAP_PARAM_RESCAN_INFO);
-    }
-    // While inactive the load applies at the next activate. While active, requestedQuality()
-    // changes at the next audio block, so if the host stops processing the request waits for it.
-    requestRestartIfModeChanged(plugin);
+    if (loadStateJson(self(p), data) == state::LoadResult::Invalid) return false;
     return true;
   } catch (...) {
     return false;
@@ -375,8 +384,13 @@ bool pluginInit(const clap_plugin_t* p) {
       },
       [plugin] {
         if (plugin->hostState && plugin->hostState->mark_dirty) plugin->hostState->mark_dirty(plugin->host);
-      }});
+      },
+      [plugin](const std::string& json) { return int(loadStateJson(plugin, json)); },
+      [plugin] { return plugin->store.save(plugin->synth); },
+      [plugin] { return plugin->store.browser(); },
+      [plugin](const std::string& value) { plugin->store.setBrowser(value); }});
   plugin->coreApi = makeCoreApi(*plugin->coreContext);
+  attachFactoryPresets(plugin->coreApi);
 #if EG13_HAS_UI
   plugin->gui = std::make_unique<Gui>(
       plugin->coreApi, plugin->kind == PluginKind::Effect ? 1 : 0, *plugin->bridge, [plugin] {
@@ -466,9 +480,10 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
     bus2[1] = b.channel_count > 1 ? b.data32[1] : b.data32[0];
   }
 
-  // Input: the FX's main input or the instrument's sidechain (port 0 for both).
+  // Input: the FX's main input (the instrument has none, so its Input is silent).
   const float* in[2] = {nullptr, nullptr};
-  const bool hasInput = proc->audio_inputs_count > 0 && proc->audio_inputs[0].data32 != nullptr &&
+  const bool hasInput = plugin->kind == PluginKind::Effect && proc->audio_inputs_count > 0 &&
+                        proc->audio_inputs[0].data32 != nullptr &&
                         proc->audio_inputs[0].channel_count > 0;
   if (hasInput) {
     const clap_audio_buffer_t& inBuf = proc->audio_inputs[0];
@@ -626,6 +641,11 @@ const clap_plugin_t* createPlugin(const clap_host_t* host, PluginKind kind,
   plugin->clap.process = pluginProcess;
   plugin->clap.get_extension = pluginGetExtension;
   plugin->clap.on_main_thread = pluginOnMainThread;
+  // A new instrument opens on the first-load preset. The host's stateLoad, if it has a state,
+  // comes later and replaces it.
+  applyFirstLoadPreset(kind, [plugin] { return plugin->store.save(plugin->synth); },
+                       [plugin](const std::string& json) { return int(loadStateJson(plugin, json)); },
+                       [plugin](const std::string& value) { plugin->store.setBrowser(value); });
   return &plugin->clap;
 }
 

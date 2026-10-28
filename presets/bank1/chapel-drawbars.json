@@ -1,0 +1,27 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Chapel Drawbars",
+  "note": "An additive drawbar organ (the Plaits manual's harmonic model) voiced by the Shelves EQ: a lifted presence bell, softened lows and top, its bell swept by a slow rotary LFO that also pans and wobbles the pitch. The mod wheel speeds the rotor up; the organ ignores velocity.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 36,
+  "parts": {
+    "A": {
+      "Source": {"engine": "Macro Oscillator", "params": {"Model": "Harmonic", "Harmonics": 0.45, "Timbre": 0.3, "Morph": 0.2}},
+      "Filter": {"engine": "Off"},
+      "Shaper": {"engine": "EQ", "params": {"Low Freq": 0.25, "Low Gain": 0.42, "Mid 1 Freq": 0.6, "Mid 1 Gain": 0.6, "Mid 1 Q": 0.3, "High Freq": 0.75, "High Gain": 0.4}},
+      "Part FX": {"engine": "Reverb", "params": {"Amount": 0.3, "Time": 0.75, "Brightness": 0.4}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.02, "Sustain": 1.0, "Release": 0.25}},
+      "Mod 3": {"engine": "LFO", "scope": "per part", "params": {"Frequency": 0.35, "Range": "Medium"}},
+      "settings": {"Level": 0.657},
+      "routes": [
+        {"source": "Mod 1 Envelope", "destination": "Amp", "amount": 1.0},
+        {"source": "Mod 3 LFO Out 1", "destination": "Pan", "amount": 0.2},
+        {"source": "Mod 3 LFO Out 2", "destination": "Pitch", "amount": 0.002},
+        {"source": "Mod 3 LFO Out 1", "destination": "Shaper: Mid 1 Freq", "amount": 0.05},
+        {"source": "Mod Wheel", "destination": "Mod 3: Frequency", "amount": 0.35}
+      ]
+    }
+  }
+}

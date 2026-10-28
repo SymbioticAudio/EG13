@@ -1,0 +1,105 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Clockwork Bloom",
+  "note": "A held chord chopped into sixteenth-note plucks by a tempo-synced falling ramp, after the Tides manual's clocked slopes, while Marbles-style random steps move a resonant filter on each beat.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 16,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Macro Oscillator",
+        "params": {
+          "Model": "Wave terrain",
+          "Harmonics": 0.4,
+          "Timbre": 0.45,
+          "Morph": 0.4
+        }
+      },
+      "Filter": {
+        "engine": "Analog Filter",
+        "params": {
+          "Frequency": 0.55,
+          "Resonance": 0.45,
+          "Mode": "LP2"
+        }
+      },
+      "Part FX": {
+        "engine": "Reverb",
+        "params": {
+          "Amount": 0.3,
+          "Time": 0.65,
+          "Brightness": 0.5
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.2,
+          "Sustain": 1.0,
+          "Release": 0.6
+        }
+      },
+      "Mod 3": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Sync": "On",
+          "Frequency": 0.823,
+          "Slope": 0.0,
+          "Shape": 0.35,
+          "Smoothness": 0.4
+        }
+      },
+      "Mod 4": {
+        "engine": "Random / S&H",
+        "scope": "per part",
+        "params": {
+          "Sync": "On",
+          "T Rate": 0.5,
+          "X Steps": 0.3,
+          "X Spread": 0.6,
+          "X Range": "Full"
+        }
+      },
+      "settings": {
+        "Level": 0.7172
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 0.3
+        },
+        {
+          "source": "Mod 3 LFO Out 1",
+          "via": "Mod 1 Envelope",
+          "destination": "Amp",
+          "amount": 0.7
+        },
+        {
+          "source": "Mod 4 Random / S&H X1",
+          "destination": "Filter: Frequency",
+          "amount": 0.15
+        },
+        {
+          "source": "Mod 3 LFO Out 1",
+          "destination": "Filter: Frequency",
+          "amount": 0.08
+        }
+      ],
+      "Shaper": {
+        "engine": "EQ",
+        "params": {
+          "Low Freq": 0.05,
+          "Low Gain": 0.0,
+          "High Freq": 0.1,
+          "High Gain": 0.5
+        }
+      }
+    }
+  }
+}

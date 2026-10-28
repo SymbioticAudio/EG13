@@ -156,8 +156,9 @@ void UiBridge::drain(const clap_output_events_t* out) {
   }
   // Space was freed: ask for exactly one pump if the main thread has a backlog. CLAP allows
   // request_callback from any thread. Order argument: see markBacklog.
+  // Shares push's pumpPending_ flag, so a request already outstanding is not repeated.
   if (backlogPending_.exchange(false, std::memory_order_acq_rel) && requestPump_ &&
-      !detached_.load(std::memory_order_acquire)) {
+      !detached_.load(std::memory_order_acquire) && !pumpPending_.exchange(true, std::memory_order_acq_rel)) {
     requestPump_();
   }
 }

@@ -24,6 +24,7 @@
 #include "synth_helpers.h"
 #include "test_engines.h"
 #include "test_helpers.h"
+#include "util/dc_blocker.h"
 
 using namespace eg13;
 
@@ -2119,12 +2120,17 @@ TEST_CASE("EG13 FX: the Input through Part FX lines up with Dry") {
     const Stereo in = sineInput(9600, rate);
     Stereo out(9600);
     run(synth, out, 0, 9600, &in);
-    // The processed Input is the Input delayed by the reported latency (what Dry carries).
+    // The processed Input is the Input delayed by the reported latency (what Dry carries), through
+    // the Part FX's DC filter (an 8 Hz high-pass: a few degrees of phase at 220 Hz).
     double worst = 0.0;
     // The slot's trim (ruling G11) scales the engine's whole output, a passing dry signal included.
     const float trim = partFxTrim(int(PartFxEngine::Reverb));
+    std::vector<float> filtered = in.l;
+    DcBlocker dc;
+    dc.prepare(rate);
+    dc.process(filtered.data(), int(filtered.size()));
     for (size_t i = latency + 2400; i < 9600; ++i) {
-      worst = std::max(worst, double(std::fabs(out.l[i] - trim * in.l[i - latency])));
+      worst = std::max(worst, double(std::fabs(out.l[i] - trim * filtered[i - latency])));
     }
     INFO("rate " << rate << " latency " << latency << " worst error " << worst);
     REQUIRE(worst < 0.02);
@@ -2150,4 +2156,18 @@ TEST_CASE("EG13 FX init patch processes Input through Granular with no MIDI") {
   REQUIRE(test::rms(withFx, 24000, 48000) > 0.01);  // it sounds with no MIDI
   INFO("RMS difference from Part FX Off " << diffRms(withFx, without, 24000, 48000));
   REQUIRE(diffRms(withFx, without, 24000, 48000) > 0.01);  // and Granular is in the chain
+}
+
+TEST_CASE("A per-part modulation slot publishes its range with no notes playing") {
+  Synth synth(PluginKind::Instrument, steadySource);
+  lfoOnPartLevel(synth, false);
+  synth.prepare(48000.0, 512);
+  synth.setActive(true);
+  (void)renderHost(synth, 24000, 512, nullptr);  // half a second, no note on
+  UiSnapshot snap;
+  synth.uiSnapshot(&snap);
+  // The free-running LFO swept a range, and Part Level shows its modulation.
+  REQUIRE(snap.modOutMax[0][3][0] - snap.modOutMin[0][3][0] > 0.5f);
+  REQUIRE(snap.modValue[0][kDestPartLevel] != 0.0f);
+  synth.setActive(false);
 }

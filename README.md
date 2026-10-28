@@ -1,26 +1,38 @@
 # EG13
 
-An open-source tribute synthesizer: a bi-timbral instrument and audio processor built on
-the open-source Eurorack firmware by Émilie Gillet
-([pichenettes/eurorack](https://github.com/pichenettes/eurorack)).
+EG13 is a free, open-source synthesizer plugin for macOS: a two-part (bi-timbral) instrument, and an audio effect, built on the DSP of the open-source Eurorack firmware by Émilie Gillet ([pichenettes/eurorack](https://github.com/pichenettes/eurorack)). Each engine slot takes one of the modules' sound engines, so a voice can be a modal synth through an analog filter model into a ring modulator, with granular texture after it.
 
-EG13 is not affiliated with or endorsed by Mutable Instruments. "Mutable Instruments" is a
-registered trademark; EG13 uses its own names for each engine.
+![The EG13 editor showing Part A of First Light, the patch a new instance opens on](docs/images/eg13.png)
 
-**Status:** M6b (modulation in the editor): the SwiftUI editor (see `docs/manual/interface.md`) shows live modulation: a wave mark on every modulated knob, MOTION lists of a card's routes, a trace on each mod card (15 Hz), and a MODS / MATRIX switch for the right-hand column with a full matrix editor (source, destination, amount, "Modulate from..." with grouped sources). Part settings carry a key-range strip (drag the Key Low / Key High ends and the Split marker). A Settings and About overlay holds app-wide settings (settings.json). The UI tables are generated from the core (ui_tables_up_to_date ctest) and CI pins Xcode 26.3. M6a (editor foundation): the A/B part tabs, the Source, Filter, Shaper and Part FX cards, four Mod cards, the bottom bar and the meters. Still to come: Custom envelope shape editing, a MIDI CC-learn UI, drag-to-assign and presets (M7, which also adds a colour-blind palette option). M5 (Part FX): each part ends in a Part FX slot (Off, Granular, Granular Delay, Resonator, Reverb) with a Latency Mode (Live / Studio) and an input selector. M4 (modulation): two parts × 8 voices, each Source → Filter → Shaper → Amp → pan, with four mod slots per part (Envelope, LFO, Random / S&H, Function Generator; per voice or per part) and a 12-route modulation matrix (velocity, release velocity, keytrack, gate, random, MPE pressure / slide / per-note bend, mod wheel, pitch bend, channel pressure, four CCs, transport phase and the mod slots' outputs into any engine control, pitch, Amp, pan, part level and other mod slots). MPE (lower or upper zone per part), tempo sync, gain staging (−12 dB per voice, Source trims) and a master soft clipper. Sources: Macro Oscillator, Digital Oscillator, Modal Synth, Resonator, Audio Input. Filters: Analog Filter, Classic Filters (205 types), State Variable Filter. Shapers: Ring Mod / Vocoder and EQ. See `docs/superpowers/specs/2026-10-20-eg13-design.md` for the full design and `docs/manual/` for how EG13 behaves.
-Pre-1.0: saved projects and presets may not load in later versions until the parameter layout is frozen.
+EG13 is not affiliated with or endorsed by Mutable Instruments. "Mutable Instruments" is a registered trademark; EG13 uses its own names for each engine.
 
-## Formats
+## Download
 
-CLAP and AU v2 (macOS 14+, universal), plus VST3 and Standalone.
+Get the latest version from the [Releases page](https://github.com/SymbioticAudio/EG13/releases). Unzip it and follow `INSTALL.txt`, or the [install guide](docs/manual/install.md).
+
+- **Formats:** AU, VST3 and CLAP. Each holds both plugins: **EG13** (the instrument) and **EG13 FX** (the audio effect).
+- **Requirements:** macOS 14 (Sonoma) or later, on Apple silicon or Intel (universal binaries).
+- **Unsigned for now:** the release is not yet signed and notarised by Apple, so macOS blocks the plugins until you clear the quarantine once. The install guide shows the two ways to do it.
+
+## What it does
+
+- **Two parts, A and B**, of up to eight voices each, played as one part, layered, split across the keyboard, or on separate MIDI channels.
+- **Each voice** runs a Source, a Filter, a Shaper and an Amp. **Each part** has four mod slots (envelope, LFO, random and function generator engines), a 12-route modulation matrix, and a Part FX slot: granular, granular delay, resonator or reverb.
+- **Expression:** MPE, mod wheel, aftertouch, four assignable CCs, and tempo sync to the host.
+- **Presets:** a new instance opens on **First Light**, a slowly evolving two-part ambient patch. Bank 1 holds 40 presets made for EG13, Bank 2 seven presets rebuilt from a CC BY-licensed VCV Rack patch (the patch, three of its parts and three variations), and EG13 FX has 12 effect presets of its own. Save your own into the User bank and share them as files.
+- **EG13 FX** runs the same parts on an audio track, so the filters, ring modulator, granular and reverb engines process any sound. The instrument has no audio input: to process external audio, use EG13 FX on an audio track or bus (you can still play it from MIDI; for Logic Pro's setup, see `docs/manual/install.md`).
+
+The [manual](docs/manual/index.md) covers every engine and setting; [Presets](docs/manual/presets.md) covers the banks and your own presets; [Known limitations](docs/manual/limitations.md) lists what version 1.0 does not do yet.
 
 ## Engines
+
+The editor uses its own names; the module each engine is based on is listed for reference.
 
 - **Macro Oscillator** — based on Plaits
 - **Digital Oscillator** — based on Braids
 - **Modal Synth** — based on Elements
 - **Resonator** — based on Rings
-- **Audio Input** — the plugin input through a per-voice gate
+- **Audio Input** — EG13 FX's input (or, in the instrument, the other part) through a per-voice gate
 - **Analog Filter** — the VCV model of Ripples
 - **Classic Filters** — sst-filters (Surge's filters)
 - **State Variable Filter** — the SVF from the Eurorack DSP library
@@ -44,7 +56,7 @@ brew install cmake ninja
 cmake --preset mac
 cmake --build --preset mac --target EG13_all eg13_tests
 ctest --preset mac
-scripts/validate.sh            # clap-validator, auval, pluginval
+scripts/validate.sh            # clap-validator, auval, out-of-process AU render, pluginval
 ```
 
 The SwiftUI editor (`ui/EG13UI`) is built into the plugins by default on macOS. It needs
@@ -83,7 +95,7 @@ EG13 has a **Latency Mode** (Live or Studio; see `docs/manual/latency.md`). The 
 | Studio | EG13 | 918 samples (20.82 ms) | 1060 samples (22.08 ms) | 1578 samples (16.44 ms) |
 | Studio | EG13 FX | 1194 samples (27.07 ms) | 1330 samples (27.71 ms) | 2118 samples (22.06 ms) |
 
-The Modal Synth's 32 kHz engine, the Ring Mod / Vocoder's 96 kHz engine and the Part FX Granular's 32 kHz engine set it, and every engine is padded to it so changing engines never shifts timing. The Part FX slot takes 263 samples (5.48 ms) in Live and 539 (11.23 ms) in Studio at 48 kHz, whole-block wait included, and every part pays it even with Part FX Off (otherwise switching an effect would move the sound in time). Processed input lines up with Dry in EG13 FX; hosts compensate automatically. In the instrument, note onsets are aligned: sidechain input that excites the Resonator or Modal Synth arrives up to about 6 ms after Dry.
+The Modal Synth's 32 kHz engine, the Ring Mod / Vocoder's 96 kHz engine and the Part FX Granular's 32 kHz engine set it, and every engine is padded to it so changing engines never shifts timing. The Part FX slot takes 263 samples (5.48 ms) in Live and 539 (11.23 ms) in Studio at 48 kHz, whole-block wait included, and every part pays it even with Part FX Off (otherwise switching an effect would move the sound in time). Processed input lines up with Dry in EG13 FX; hosts compensate automatically. In the instrument, note onsets are aligned.
 
 CPU, Apple M1 (base), 48 kHz, 128-sample blocks, 2 × 8 voices, no modulation (5 s per figure; repeats vary by about one point):
 
@@ -123,13 +135,14 @@ AudioUnit SDKs.
 cmake --preset linux && cmake --build --preset linux && ctest --preset linux
 ```
 
-## Credits and licences
+## Credits
 
-- EG13 is licensed under GPL-3.0 (see `LICENSE`).
-- Eurorack DSP: © Émilie Gillet, MIT licence.
+- DSP based on the open-source Eurorack firmware by Émilie Gillet (MIT licence).
 - Analog Filter and EQ: the Ripples and Shelves models from VCV's AudibleInstruments (© 2020 Tyler Coy and contributors), GPL-3.0-or-later.
 - Classic Filters: sst-filters and sst-basic-blocks by the Surge Synth Team, GPL-3.0-or-later.
-- simde (SIMD Everywhere): MIT licence.
-- CLAP and clap-wrapper: free-audio, MIT licence.
-- Catch2: Boost Software License 1.0. nlohmann/json: MIT licence.
-- VST3 SDK (Steinberg, MIT), AudioUnitSDK (Apple, Apache-2.0), RtAudio/RtMidi (MIT-style, Standalone build).
+- Bank 2 presets: a rebuild of "~zero-g:catnap : vcv rack jam" by plantay ([Patchstorage](https://patchstorage.com/zero-gcatnap-vcv-rack-jam/)), CC BY 4.0; see [Presets](docs/manual/presets.md#credits) for what was changed.
+- The plugin formats, sample-rate conversion, JSON and the rest: see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which lists every component in the plugins with its copyright and licence.
+
+## Licence
+
+EG13 is free software under the GNU General Public License, version 3 ([LICENSE](LICENSE)). Each release's zip names the tag its source code is at.

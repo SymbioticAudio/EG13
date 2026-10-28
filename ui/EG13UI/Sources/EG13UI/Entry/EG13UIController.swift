@@ -71,7 +71,8 @@ final class EG13UIController: NSObject {
         // zoom 0 means "the default from settings", read fresh: another instance may have changed it.
         let store = EG13SettingsStore.shared
         store.reload()
-        synth = EG13Synth(core: client, kind: kind, settings: store)
+        synth = EG13Synth(core: client, kind: kind, settings: store,
+                           presetsFolder: EG13PresetBrowser.defaultUserURL(for: kind))
         view = EG13PluginView(synth: synth, zoom: CGFloat(store.initialZoom(requested: zoom)))
         super.init()
         EG13LiveObjects.born()

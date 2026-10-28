@@ -1,0 +1,17 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Test Patch",
+  "note": "Fixture for the preset tool tests. Not a factory preset.",
+  "credit": "EG13 tests",
+  "licence": "GPL-3.0-or-later",
+  "order": 20,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Macro Oscillator", "params": { "Harmonics": 0.5, "Timbre": 0.45, "Morph": 0.5 } },
+      "Filter": { "engine": "State Variable Filter", "params": { "Cutoff": 0.8 } },
+      "settings": { "Level": 0.7 },
+      "routes": []
+    }
+  }
+}

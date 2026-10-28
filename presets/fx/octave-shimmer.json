@@ -1,0 +1,21 @@
+{
+  "kind": "performance",
+  "plugin": "effect",
+  "name": "Octave Shimmer",
+  "note": "A shimmer: Clouds grains an octave up, fed back into the buffer and its reverb, so a halo of rising octaves hangs over the dry sound.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 2,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "Off" },
+      "Part FX": { "engine": "Granular", "params": { "Mode": "Granular", "Blend": 0.55, "Position": 0.3, "Size": 0.65, "Pitch": 0.75, "Density": 0.85, "Texture": 0.85, "Feedback": 0.55, "Reverb": 0.7, "Spread": 0.6 } },
+      "Mod 1": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.6 } },
+      "settings": { "Level": 0.5805 },
+      "routes": [
+        { "source": "Mod 1 LFO Out 1", "destination": "Part FX: Size", "amount": 0.1 }
+      ]
+    }
+  }
+}

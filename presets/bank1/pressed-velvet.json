@@ -1,0 +1,123 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Pressed Velvet",
+  "note": "After the Plaits manual's waveshaping model: a soft tone that folds richer as you press (aftertouch or MPE pressure); slide opens the filter, and the mod wheel adds fold on plain keyboards.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 19,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Macro Oscillator",
+        "params": {
+          "Model": "Waveshaping",
+          "Harmonics": 0.35,
+          "Timbre": 0.15,
+          "Morph": 0.4
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.68,
+          "Resonance": 0.1
+        }
+      },
+      "Shaper": {
+        "engine": "EQ",
+        "params": {
+          "Mid 1 Freq": 0.5,
+          "Mid 1 Gain": 0.6,
+          "Mid 1 Q": 0.25,
+          "Low Freq": 0.05,
+          "Low Gain": 0.0
+        }
+      },
+      "Part FX": {
+        "engine": "Reverb",
+        "params": {
+          "Amount": 0.3,
+          "Time": 0.7,
+          "Brightness": 0.4
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.3,
+          "Sustain": 1.0,
+          "Release": 0.65
+        }
+      },
+      "Mod 3": {
+        "engine": "LFO",
+        "scope": "per voice",
+        "params": {
+          "Frequency": 0.55
+        }
+      },
+      "settings": {
+        "Level": 0.5856
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Velocity",
+          "destination": "Source: Timbre",
+          "amount": 0.15
+        },
+        {
+          "source": "Pressure",
+          "destination": "Source: Timbre",
+          "amount": 0.45
+        },
+        {
+          "source": "Channel Pressure",
+          "destination": "Source: Timbre",
+          "amount": 0.45
+        },
+        {
+          "source": "Mod Wheel",
+          "destination": "Source: Timbre",
+          "amount": 0.45
+        },
+        {
+          "source": "Slide",
+          "destination": "Filter: Cutoff",
+          "amount": 0.25
+        },
+        {
+          "source": "Mod 3 LFO Out 1",
+          "via": "Pressure",
+          "destination": "Pitch",
+          "amount": 0.006
+        },
+        {
+          "source": "Mod 4 LFO Out 1",
+          "destination": "Source: Morph",
+          "amount": 0.15
+        },
+        {
+          "source": "Mod 4 LFO Out 2",
+          "destination": "Source: Timbre",
+          "amount": 0.06
+        }
+      ],
+      "Mod 4": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Range": "Low",
+          "Frequency": 0.6
+        }
+      }
+    }
+  }
+}

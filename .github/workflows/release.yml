@@ -1,0 +1,129 @@
+name: Release
+
+# Pushing a tag vX.Y.Z builds, tests and validates the plugins like CI, then drafts a GitHub
+# Release with the zip (and, when the Developer ID secrets are set, the signed .pkg). CI never
+# publishes: the owner reviews the draft and publishes it. A rehearsal tag vX.Y.Z-rcN or
+# vX.Y.Z-betaN (X.Y.Z is the CMake version) drafts a GitHub pre-release with the same notes file.
+# See docs/release/signing-setup.md.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      # Release builds leave out the all-rights-reserved SymbioticBrand artwork.
+      EG13_NO_BRAND: '1'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      notes: ${{ steps.version.outputs.notes }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      # v4.2.2, pinned to its commit: this job sees the signing secrets.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Check the tag and the release notes
+        id: version
+        run: |
+          version="$(sed -nE 's/^project\(EG13 VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt)"
+          if [ -z "$version" ]; then
+            echo "::error::Could not read the project version from CMakeLists.txt"
+            exit 1
+          fi
+          # vX.Y.Z releases; vX.Y.Z-rcN and vX.Y.Z-betaN are rehearsals (a pre-release draft). The part
+          # before the hyphen must be the CMake version.
+          tag="${GITHUB_REF_NAME#v}"
+          prerelease=false
+          if [ "${tag%%-*}" != "$tag" ]; then
+            suffix="${tag#*-}"
+            if ! printf '%s' "$suffix" | grep -Eq '^(rc|beta)[0-9]+$'; then
+              echo "::error::The tag $GITHUB_REF_NAME has an unknown pre-release suffix: use vX.Y.Z-rcN or vX.Y.Z-betaN"
+              exit 1
+            fi
+            prerelease=true
+          fi
+          if [ "${tag%%-*}" != "$version" ] || [ "${GITHUB_REF_NAME:0:1}" != "v" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME does not match the project version: expected v$version or v$version-rcN (CMakeLists.txt project())"
+            exit 1
+          fi
+          notes="docs/release/notes-v$version.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::The release notes $notes are missing: write them before tagging"
+            exit 1
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "notes=$notes" >>"$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >>"$GITHUB_OUTPUT"
+      - name: Build, test and validate
+        uses: ./.github/actions/mac-build
+      - name: Sign and notarise
+        id: sign
+        env:
+          MACOS_DEVELOPER_ID_APP_P12: ${{ secrets.MACOS_DEVELOPER_ID_APP_P12 }}
+          MACOS_DEVELOPER_ID_INSTALLER_P12: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: scripts/sign-and-notarize.sh build/mac/plugins
+      - name: Validate the signed plugins
+        if: steps.sign.outputs.signed == 'true'
+        # validate.sh keeps a valid signature, so this checks the Developer ID-signed bundles.
+        run: scripts/validate.sh build/mac
+      - name: Package the zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/package-release.sh build/mac "$VERSION" build/release-out
+      - name: Build the installer
+        if: steps.sign.outputs.signed == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          MACOS_DEVELOPER_ID_APP_P12: ${{ secrets.MACOS_DEVELOPER_ID_APP_P12 }}
+          MACOS_DEVELOPER_ID_INSTALLER_P12: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: scripts/build-pkg.sh build/mac/plugins "$VERSION" build/release-out
+      - name: Keep the release files for the draft job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: build/release-out/EG13-${{ steps.version.outputs.version }}-macOS.*
+          if-no-files-found: error
+
+  # Only this job can write to the repository; it runs no build code.
+  draft:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      # v4.2.2, pinned to its commit: this job holds the write token.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          sparse-checkout: docs/release
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: release-files
+      - name: Draft the GitHub Release
+        # v3.0.3 (2026-08-30), pinned to its commit.
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: EG13 ${{ needs.build.outputs.version }}
+          body_path: ${{ needs.build.outputs.notes }}
+          draft: true
+          prerelease: ${{ needs.build.outputs.prerelease == 'true' }}
+          files: release-files/EG13-${{ needs.build.outputs.version }}-macOS.*
+          fail_on_unmatched_files: true

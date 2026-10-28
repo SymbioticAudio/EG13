@@ -7,6 +7,7 @@ Engines: **Off**, **Granular**, **Granular Delay**, **Resonator** and **Reverb**
 ## The Part FX slot
 
 - **Off** passes the part's sound unchanged, delayed like every effect (below). While Part FX is Off, the *Input* setting (below) is ignored, so Off never lets the Input leak into the part.
+- **DC filter.** Every effect but Off is followed by a DC filter, the same as after the Shaper ([Engines](engines.md)): a high-pass at 8 Hz (second order), one per part, with nothing to set. Some effects (Granular Delay's *Dirty tape* quality, for one) put out a small steady offset, and anything the voices carry ends up there too; the filter takes it out before the part's Level, so it never reaches the master. It changes the sound by less than 0.01 dB above 40 Hz (at 220 Hz it shifts the phase by about 3 degrees, so a dry copy mixed back in, such as EG13 FX's *Dry*, lines up within a fraction of a dB). It fades with the effect when you change the type. With Part FX *Off* there is no filter and the part's sound passes bit for bit.
 - **Every effect, Off included, has the same delay**, the slowest effect's (Granular's rate conversion; about 5.5 ms in Live and 11 ms in Studio at 48 kHz, whole-block wait included, see [Latency](latency.md)). The part's sound always leaves the part at the same moment, whichever effect is chosen, so changing the effect never moves the sound in time.
 - P1 is the dry/wet **Mix** of every engine, so "Part FX P1" always means dry/wet. The other controls are named by the engine and show "(unused)" and "-" beyond the engine's own controls.
 - **Reset to default in the host** sets each P to one value whatever the *Type*: P1 to P4 50 %, P5 75 %, P6 50 %, P7 to P12 0 %, P13 to P16 50 %. Each engine's own defaults are these values, so resetting never changes an effect from its defaults.
@@ -22,10 +23,10 @@ Engines: **Off**, **Granular**, **Granular Delay**, **Resonator** and **Reverb**
 Each part has a *Part FX Input* setting:
 
 - **Part mix:** the sum of the part's voices goes through the effect.
-- **Input:** only the part's Input (as its Input source routes it: External, Other part or Both) goes through the effect. The part's voices skip the effect and are still heard. They are delayed by the effect's delay so they stay in time with it.
+- **Input:** only the part's Input (as its Input source routes it: External, Other part or Both in EG13 FX; Off or Other part in the instrument, see [Parts and routing](parts-and-routing.md#input-and-input-source)) goes through the effect. The part's voices skip the effect and are still heard. They are delayed by the effect's delay so they stay in time with it.
 - **Part mix + Input:** both go through the effect.
 
-With nothing on the Input (no sidechain, or Other part in Single mode) the effect receives silence in *Input* mode, and the voices are still heard.
+With nothing on the Input (Off in the instrument, nothing connected to EG13 FX, or Other part in Single mode) the effect receives silence in *Input* mode, and the voices are still heard.
 
 The Input is delayed by the voices' own delay before it enters the effect, so the processed Input leaves the part in time with the voices (and, in EG13 FX, with Dry): to the sample for notes, and to within about half a sample where an effect's own rate conversion adds a fraction (measured up to 0.43 of a sample at 44.1 kHz).
 
@@ -57,7 +58,7 @@ Clouds, the granular texture processor, as the VCV Rack port runs it. It records
 - **Freeze** (P9): on (50 % or more), the buffer stops recording and the effect keeps playing what it holds.
 - **Mode** (P10): *Granular*, *Stretch*, *Looping delay* or *Spectral*, in 16 fixed steps (see above).
   - *Granular*: overlapping grains taken from the buffer.
-  - *Stretch*: the buffer played as a continuous stream that can be slowed down, sped up or transposed without the grain texture.
+  - *Stretch*: the buffer played as a continuous stream that can be slowed down, sped up or transposed without the grain texture. (EG13 restores one line of the module code that the newest firmware dropped, which had left this mode silent.)
   - *Looping delay*: a delay with a pitch shifter; with Freeze on it loops what it holds.
   - *Spectral*: the sound's spectrum is captured and resynthesised, smeared, warped and quantised.
 - **Quality** (P11): *16-bit stereo* (the default), *16-bit mono*, *8-bit stereo* or *8-bit mono*, in 16 fixed steps. Mono and 8-bit trade fidelity for a longer buffer: about 1, 2, 4 and 7 seconds respectively. The 8-bit qualities record at half the rate (16 kHz) with a grainy, compressed 8-bit sound; mono mixes left and right before recording.

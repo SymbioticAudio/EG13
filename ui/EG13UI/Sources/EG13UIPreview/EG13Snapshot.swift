@@ -103,6 +103,31 @@ enum EG13Snapshot {
         return ok ? 0 : 1
     }
 
+    /// The M7 design-library requests: each reusable component on its own at 100 % and 200 %, named
+    /// `<component>-100.png` / `<component>-200.png`. The mod animation is a function of the tick count, so a
+    /// rerun draws the same PNGs.
+    static func runDesignRequests(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let core = EG13PreviewCore.modulationDemo()
+        let synth = EG13Synth(core: core, kind: .instrument)
+        for _ in 0..<70 { synth.tick() }
+        synth.selectedPart = 0
+        let voices = core.demoParam("Voices", value: 5, min: 1, max: 8, stepped: true)
+        let engine = core.demoParam("Engine", value: 2, max: 7, stepped: true)
+        var ok = true
+        for (name, scale) in [("100", CGFloat(1)), ("200", CGFloat(2))] {
+            ok = writeFitted(EG13KnobCapSheet(), to: "\(directory)/knob-cap-\(name).png", scale: scale) && ok
+            ok = writeFitted(EG13MarkRequestSheet(), to: "\(directory)/mod-wave-mark-\(name).png", scale: scale) && ok
+            ok = writeFitted(EG13LCDRequestSheet(synth: synth, voices: voices, engine: engine), to: "\(directory)/lcd-readout-\(name).png", scale: scale) && ok
+            ok = writeFitted(EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_MOD1, part: 0, number: 1,
+                                            width: EG13Layout.modCardWidth),
+                             to: "\(directory)/mini-trace-\(name).png", scale: scale) && ok
+            ok = write(EG13RootView(synth: synth), size: EG13Layout.baseSize, zoom: scale,
+                       to: "\(directory)/card-columns-\(name).png") && ok
+        }
+        return ok ? 0 : 1
+    }
+
     /// The matrix editor: the right column on MATRIX at 100 % (Part A, route 3 highlighted as after a
     /// Motion row) and Part B, with the modulation demo's routes. For checking, not for the gate.
     static func runMatrix(into directory: String) -> Int32 {
@@ -256,6 +281,67 @@ enum EG13Snapshot {
         ok = write(EG13RootView(synth: busy), size: base, zoom: 1, to: "\(directory)/editor-busy.png") && ok
         withExtendedLifetime((core, busyCore)) {}
         return ok
+    }
+
+    /// The preset bar design set (M7 gate 5a): the header at 75, 100 and 200 %, the dropdown for the
+    /// instrument and EG13 FX (a drawn copy of the macOS menu), an edited name, a name too long for
+    /// the bar, and Save As with its clash question.
+    static func runPresets(into directory: String) -> Int32 {
+        guard makeDirectory(directory) else { return 1 }
+        let work = FileManager.default.temporaryDirectory.appendingPathComponent("eg13-presets-snapshot-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: work) }
+        func state(_ loaded: [(Int, String, String, String)], edited: Bool = false) -> String {
+            let items = loaded.map { "{\"part\":\($0.0),\"bank\":\"\($0.1)\",\"name\":\"\($0.2)\",\"kind\":\"\($0.3)\"}" }
+            return "{\"version\":1,\"loaded\":[\(items.joined(separator: ","))],\"edited\":\(edited)}"
+        }
+        /// A synth over a preview core with two User presets in a folder of its own.
+        func make(fx: Bool = false, _ browser: String) -> (EG13PreviewCore, EG13Synth)? {
+            let core = EG13PreviewCore.standard()
+            core.fxList = fx
+            core.browser = browser
+            let folder = work.appendingPathComponent(fx ? "fx" : "instrument")
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let files = fx ? [("Warm Wash", nil as Int?), ("Dark Spring", 0)] : [("My Pad", nil), ("Bass test", 1)]
+            for (name, part) in files {
+                let url = folder.appendingPathComponent(name).appendingPathExtension(part == nil ? "eg13perf" : "eg13patch")
+                try? core.savePreset(part: part, name: name).write(to: url, atomically: true, encoding: .utf8)
+            }
+            let synth = EG13Synth(core: core, kind: fx ? .effect : .instrument, presetsFolder: folder)
+            for _ in 0..<12 { synth.tick() }
+            return (core, synth)
+        }
+        let perf = "performance", patch = "patch"
+        guard let (c1, glass) = make(state([(-1, "Bank 1", "Glass Tide", perf)])),
+              let (c2, mine) = make(state([(-1, "User", "My Pad", perf)])),
+              let (c3, fx) = make(fx: true, state([(-1, "FX", "Ring Shimmer", perf)])),
+              let (c4, edited) = make(state([(-1, "Bank 1", "Glass Tide", perf)], edited: true)),
+              let (c5, long) = make(state([(0, "Bank 2", "catnap \u{2014} pluck side", patch),
+                                           (1, "Bank 2", "catnap \u{2014} pad side with a very long extended name", patch)],
+                                          edited: true))
+        else { return 1 }
+        let base = EG13Layout.baseSize
+        let strip = CGSize(width: base.width, height: EG13Layout.headerHeight)
+        var ok = true
+        ok = write(EG13HeaderPreview(synth: glass), size: strip, zoom: 1, to: "\(directory)/header-a.png") && ok
+        ok = write(EG13HeaderPreview(synth: glass), size: strip, zoom: 0.75, to: "\(directory)/header-75.png") && ok
+        ok = write(EG13HeaderPreview(synth: glass), size: strip, zoom: 2, to: "\(directory)/header-200.png") && ok
+        ok = write(EG13HeaderPreview(synth: edited), size: strip, zoom: 1, to: "\(directory)/edited.png") && ok
+        long.selectedPart = 0
+        ok = write(EG13HeaderPreview(synth: long), size: strip, zoom: 1, to: "\(directory)/long-name.png") && ok
+        let sheet = CGSize(width: base.width, height: 640)
+        ok = write(EG13PresetSheet(synth: mine, content: EG13PresetBarSnapshots.menu(mine.presets, openPatch: "Bowed Bells")),
+                   size: sheet, zoom: 1, to: "\(directory)/menu-instrument.png") && ok
+        ok = write(EG13PresetSheet(synth: fx, content: EG13PresetBarSnapshots.menu(fx.presets, openPatch: "Tape Smear")),
+                   size: CGSize(width: base.width, height: 420), zoom: 1, to: "\(directory)/menu-fx.png") && ok
+        let dialogSize = CGSize(width: base.width, height: 250)
+        ok = write(EG13PresetSheet(synth: mine, content: EG13PresetBarSnapshots.saveAs(
+                    mine.presets, name: "Evening Glass", scope: .whole, clash: false)),
+                   size: dialogSize, zoom: 1, to: "\(directory)/save-as.png") && ok
+        ok = write(EG13PresetSheet(synth: mine, content: EG13PresetBarSnapshots.saveAs(
+                    mine.presets, name: "My Pad", scope: .whole, clash: true)),
+                   size: dialogSize, zoom: 1, to: "\(directory)/clash.png") && ok
+        withExtendedLifetime((c1, c2, c3, c4, c5)) {}
+        return ok ? 0 : 1
     }
 
     /// The layout design set: both parts at 100%, Part A at 75%, the header close-up, a contact sheet
@@ -447,6 +533,123 @@ struct EG13MarkSheet: View {
     }
 }
 
+/// The knob cap request: the three sizes in each cap colour at a few values, then the same knobs
+/// with another plugin's colours injected (the layers and proportions are the same; only the slots change).
+struct EG13KnobCapSheet: View {
+    @Environment(\.symbioticTheme) private var theme
+    private let caps: [(String, EG13ParamEmphasis)] = [("white", .plain), ("pink", .pink), ("teal", .teal), ("black", .black)]
+    private let sizes: [EG13KnobSize] = [.large, .medium, .small]
+
+    private func recoloured(_ cap: EG13ParamEmphasis.Cap) -> EG13KnobStyle {
+        var style = EG13Palette.knobStyle(for: .plain)
+        switch cap {
+        case .pink:
+            style.cap = .accent
+            style.accent = Color(red: 0.95, green: 0.62, blue: 0.1)
+            style.accentInk = Color(red: 0.62, green: 0.38, blue: 0.0)
+            style.label = .chip
+        case .teal:
+            style.cap = .accent
+            style.accent = Color(red: 0.3, green: 0.5, blue: 0.95)
+            style.accentInk = Color(red: 0.16, green: 0.3, blue: 0.7)
+            style.label = .chip
+        default: break
+        }
+        return style
+    }
+
+    private func line(_ title: String, style: @escaping (EG13ParamEmphasis) -> EG13KnobStyle) -> some View {
+        VStack(alignment: .leading, spacing: theme.spacing.xs) {
+            Text(title).font(theme.type.caption.font.weight(.bold)).foregroundStyle(theme.text.secondary.color)
+            ForEach(caps, id: \.0) { cap in
+                HStack(spacing: theme.spacing.m) {
+                    ForEach(sizes, id: \.self) { size in
+                        ForEach([0.0, 0.35, 0.8], id: \.self) { value in
+                            let d = EG13Layout.knobDiameter(size)
+                            EG13KnobShape(normalized: value, style: style(cap.1), size: size)
+                                .frame(width: d, height: d)
+                                .frame(width: 52, height: 52)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            line("EG13 colours: rows white, pink, teal, black cap; large, medium, small at 0, 35, 80 %") { EG13Palette.knobStyle(for: $0) }
+            line("Another plugin's colours injected (same geometry): white, amber, blue, black") { emphasis in
+                var style = recoloured(emphasis.cap)
+                if emphasis.cap == .black { style = EG13Palette.knobStyle(for: .black) }
+                return style
+            }
+        }
+        .padding(theme.spacing.m)
+        .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(theme.surface.panel.color))
+    }
+}
+
+/// The modulation wave mark on its own: each cap colour with the pointer up (mark in the bottom third)
+/// and down (mark in the top third), large and medium.
+struct EG13MarkRequestSheet: View {
+    @Environment(\.symbioticTheme) private var theme
+    private let caps: [EG13ParamEmphasis] = [.plain, .pink, .teal, .black]
+    private let values: [(String, Double)] = [("pointer up, 50 %", 0.5), ("up, 75 %", 0.75), ("down, 5 %", 0.05), ("down, 95 %", 0.95)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.xs) {
+            ForEach([EG13KnobSize.large, .medium], id: \.self) { size in
+                let d = EG13Layout.knobDiameter(size) * 1.5
+                HStack(alignment: .top, spacing: theme.spacing.l) {
+                    ForEach(values, id: \.0) { value in
+                        VStack(spacing: theme.spacing.xs) {
+                            HStack(spacing: theme.spacing.s) {
+                                ForEach(caps.indices, id: \.self) { i in
+                                    EG13KnobShape(normalized: value.1, style: EG13Palette.knobStyle(for: caps[i]),
+                                                  size: size, showsModulationMark: true)
+                                        .frame(width: EG13Layout.knobDiameter(size), height: EG13Layout.knobDiameter(size))
+                                }
+                            }
+                            Text(value.0).font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.text.secondary.color)
+                        }
+                    }
+                }
+                .frame(minHeight: d / 1.5)
+            }
+        }
+        .padding(theme.spacing.m)
+        .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(theme.surface.panel.color))
+    }
+}
+
+/// LCD readout and button: value wells, the steppers with minus and plus, the engine menu well, and a
+/// card header with the MOTION n button over its popover list with level bars.
+struct EG13LCDRequestSheet: View {
+    let synth: EG13Synth
+    @Environment(\.symbioticTheme) private var theme
+    let voices: EG13Param
+    let engine: EG13Param
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            HStack(spacing: theme.spacing.m) {
+                EG13LCDText(text: "Value 0.62").frame(width: 88, height: 26)
+                EG13LCDText(text: "Focused", isFocused: true).frame(width: 88, height: 26)
+                EG13Stepped(param: voices)
+                EG13EnginePicker(names: EG13PreviewCore.engineNames, selector: engine,
+                                 selected: 2, accessibilityName: "Engine", wellWidth: EG13Layout.enginePickerWidth)
+            }
+            EG13ModuleCard(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0, width: EG13Layout.slotCardWidth)
+            EG13MotionList(synth: synth, kind: EG13_SLOT_KIND_FILTER, part: 0)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.text.secondary.color.opacity(0.4), lineWidth: 1))
+        }
+        .padding(theme.spacing.m)
+        .background(RoundedRectangle(cornerRadius: theme.radius.s).fill(theme.surface.panel.color))
+    }
+}
+
 /// The Motion list of the Filter card on its own (a popover cannot be rendered to an image), under
 /// the card whose header holds the button.
 struct EG13MotionSheet: View {
@@ -521,6 +724,22 @@ struct EG13ContextMenuSheet: View {
                     }
                 }
             }
+        }
+    }
+}
+
+/// The header with something drawn under the preset bar (a menu or a dialog), on the window grey.
+struct EG13PresetSheet<Content: View>: View {
+    let synth: EG13Synth
+    let content: Content
+    /// Where the bar's left edge is in the header (measured from a header snapshot).
+    var barX: CGFloat { synth.kind == .effect ? 306 : 284 }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            EG13Theme.theme.surface.window.color
+            EG13HeaderPreview(synth: synth)
+            content.offset(x: barX, y: EG13Layout.headerHeight - 12)
         }
     }
 }

@@ -592,7 +592,8 @@ void Part::updatePitchOffset() {
   for (auto& voice : voices_) voice->setPitchOffset(offset);
 }
 
-void Part::updateGains(float level) {
+void Part::updateGains(float position) {
+  const float level = partLevelGain(position);
   if (settings_.mono) {
     gainL_.setTarget(level);
     gainR_.setTarget(level);

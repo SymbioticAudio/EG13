@@ -1,0 +1,21 @@
+{
+  "kind": "performance",
+  "plugin": "effect",
+  "name": "Ladder Sweep",
+  "note": "A resonant ladder low-pass slowly opened and closed by a looping Stages envelope, a long rise and a longer fall. Good on drums and loops.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 11,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "Classic Filters", "params": { "Model": "Vember Ladder Lowpass 24 dB", "Cutoff": 0.45, "Resonance": 0.45 } },
+      "Part FX": { "engine": "Off" },
+      "Mod 1": { "engine": "Envelope", "scope": "per part", "params": { "Mode": "Looping", "Attack": 0.7, "Decay": 0.75 } },
+      "settings": { "Level": 0.5721 },
+      "routes": [
+        { "source": "Mod 1 Envelope", "destination": "Filter: Cutoff", "amount": 0.4 }
+      ]
+    }
+  }
+}

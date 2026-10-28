@@ -1,8 +1,12 @@
 # Known limitations
 
+- **Platforms:** version 1.0 runs on macOS only (14 or later), as AU, VST3 and CLAP plugins. There is no Windows or Linux version, no AU v3 and no iPadOS version yet.
+- **Unsigned download:** unless a release says it is signed and notarised, macOS blocks the plugins until you clear the quarantine (see [Installing EG13](install.md)).
+- **Preset browser:** presets are listed by bank and name; there are no tags and no search yet. A User preset keeps only its name, not a factory preset's note or credit (see [Presets](presets.md)).
 - **Levels:** each voice plays 12 dB lower (Voice Gain) and the Sources are trimmed to similar levels, so an eight-note chord of the init patch peaks around full scale (measured: Macro Oscillator 1.0, Digital Oscillator 0.94, Modal Synth 0.57). The Soft Clip on the outputs keeps louder material within full scale, gently. Some Filter and Shaper settings are still much louder than their input (Classic Filters at full Resonance about +13 dB, the EQ at its extremes, the Ring Mod / Vocoder up to +12 dB at *Fold*); turn the master level down, or let the Soft Clip catch them.
-- **Editor:** Custom envelope shapes cannot be changed; there is no drag-to-assign for modulation, and no way to learn a MIDI CC onto a control. Presets and a colour-blind palette option arrive in M7.
-- **Undo:** Host undo covers route amounts only: in every host, undoing after **Modulate from** sets the amount back but leaves the route in place at 0 %.
+- **Editor:** Custom envelope shapes cannot be changed; there is no drag-to-assign for modulation, and no way to learn a MIDI CC onto a control. There is no colour-blind palette option yet: Part A and Part B are told apart by teal and pink, and by their tabs and labels.
+- **Undo:** Host undo covers route amounts only: in every host, undoing after **Modulate from** sets the amount back but leaves the route in place at 0 %. Changes to a route's source, via or destination cannot be undone in version 1.0; undo for them is planned for a later update.
+- **Typing a value in the host:** EG13 does not turn typed text into a value, so a host's "type a value" field for an EG13 parameter does nothing; set the value with the control instead.
 - **MPE configuration:** EG13 does not read the MPE Configuration Message; set the zones with each part's *MPE* setting. A key held on two channels at once shares one voice.
 - **Note expressions:** of CLAP's per-note expressions, EG13 uses Tuning, Pressure and Brightness; Volume, Pan, Vibrato and Expression are ignored for now.
 - **Resonator velocity:** with Polyphony 2 or 4, a new note's velocity also changes the level of earlier notes still ringing (fading in with a time constant of 5 ms, without a click). A level per string would need a change inside the original module's code.
@@ -16,3 +20,4 @@
 - **Part FX delay with Part FX Off:** every part pays the Part FX delay (263 samples, 5.5 ms in Live; 539, 11 ms in Studio at 48 kHz) even with Part FX Off, so that switching the effect never moves the sound in time. See [Latency](latency.md).
 - **Part FX levels:** each effect is trimmed to about the level of the part without an effect at its default settings (see [Part FX](part-fx.md)); settings away from the defaults change the level as on the modules (Granular's peaks, for one, run up to about 4 dB above the part without an effect even at the defaults).
 - **Classic Filters Model** changes restart the filter and can click on a sounding note.
+- **Modulation display after a note ends:** the wave marks and the Part Level display follow the most recently started voice. After that voice is released and has died away, they keep the last values it showed until the next note starts. Sound is not affected.

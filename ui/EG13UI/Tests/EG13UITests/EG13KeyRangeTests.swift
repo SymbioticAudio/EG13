@@ -60,13 +60,21 @@ struct EG13KeyRangeTests {
         #expect(editor.key(low) == 72)
         editor.move(low, toKey: 30)
         #expect(editor.key(low) == 30)
-        editor.move(low, toKey: 5)  // the left end: open, MIDI 0
+        editor.move(low, toKey: 5)  // past the left end: open, MIDI 0
+        #expect(editor.key(low) == 0)
+        editor.move(low, toKey: EG13KeyMap.lowestKey)  // on the leftmost key: A0
+        #expect(editor.key(low) == EG13KeyMap.lowestKey)
+        editor.move(low, toKey: EG13KeyMap.lowestKey - 1)
         #expect(editor.key(low) == 0)
         editor.end(low)
         editor.begin(high)
         editor.move(high, toKey: 10)  // below the strip, and Low is 0: the lowest key of the strip
         #expect(editor.key(high) == EG13KeyMap.lowestKey)
-        editor.move(high, toKey: 120)  // the right end: open, MIDI 127
+        editor.move(high, toKey: 120)  // past the right end: open, MIDI 127
+        #expect(editor.key(high) == 127)
+        editor.move(high, toKey: EG13KeyMap.highestKey)  // on the rightmost key: C8
+        #expect(editor.key(high) == EG13KeyMap.highestKey)
+        editor.move(high, toKey: EG13KeyMap.highestKey + 1)
         #expect(editor.key(high) == 127)
         editor.end(high)
         editor.begin(.split)
@@ -77,7 +85,7 @@ struct EG13KeyRangeTests {
         #expect(EG13KeyMap.dragged(.high(part: 1), to: 20, low: 30, high: 50) == 30)
     }
 
-    @Test("dragging to the strip end sets 0 or 127")
+    @Test("dragging past the strip end sets 0 or 127, onto the end key sets A0 or C8")
     func dragToEndOpensTheRange() {
         set(EG13ParamID.part(0, .keyLow), 40)
         set(EG13ParamID.part(0, .keyHigh), 72)
@@ -87,13 +95,13 @@ struct EG13KeyRangeTests {
         lowDrag.update(x: -30, width: width, editor: editor)  // past the left end
         #expect(editor.key(low) == 0, "the left end is MIDI 0, not A0")
         lowDrag.update(x: 0.5 * key, width: width, editor: editor)  // on the leftmost key
-        #expect(editor.key(low) == 0)
+        #expect(editor.key(low) == EG13KeyMap.lowestKey, "A0 is reachable by dragging")
         lowDrag.end(editor: editor)
         var highDrag = EG13KeyRangeDrag(handle: high, startX: EG13KeyMap.x(forKey: 72, width: width), editor: editor)
         highDrag.update(x: width + 30, width: width, editor: editor)
         #expect(editor.key(high) == 127, "the right end is MIDI 127, not C8")
-        highDrag.update(x: width - 0.5 * key, width: width, editor: editor)  // on the rightmost key
-        #expect(editor.key(high) == 127)
+        highDrag.update(x: width - 0.6 * key, width: width, editor: editor)  // on the rightmost key
+        #expect(editor.key(high) == EG13KeyMap.highestKey, "C8 is reachable by dragging")
         highDrag.end(editor: editor)
         #expect(editor.range(part: 0) == EG13KeyMap.lowestKey...EG13KeyMap.highestKey, "drawn pinned to the strip")
     }
@@ -108,14 +116,14 @@ struct EG13KeyRangeTests {
         lowDrag.update(x: key, width: width, editor: editor)
         #expect(editor.key(low) == EG13KeyMap.lowestKey + 1)
         #expect(editor.key(high) == 127)
-        lowDrag.update(x: 0, width: width, editor: editor)
+        lowDrag.update(x: -key, width: width, editor: editor)  // back past the end
         lowDrag.end(editor: editor)
         #expect(editor.key(low) == 0)
-        // High: a jiggle that comes back to the end leaves it at 127; a small move left is a key.
+        // High: a small move left is a key; back past the end is 127 again.
         var highDrag = EG13KeyRangeDrag(handle: high, startX: width, editor: editor)
         highDrag.update(x: width - key, width: width, editor: editor)
         #expect(editor.key(high) == EG13KeyMap.highestKey - 1)
-        highDrag.update(x: width, width: width, editor: editor)
+        highDrag.update(x: width + key, width: width, editor: editor)
         highDrag.end(editor: editor)
         #expect(editor.key(high) == 127)
         #expect(editor.key(low) == 0)

@@ -23,9 +23,10 @@ extern "C" void objc_autoreleasePoolPop(void*);
 namespace {
 
 // The editor reads the app-wide settings file; the tests point it at a path that does not exist,
-// so a developer's own settings cannot change the sizes they check.
+// so a developer's own settings cannot change the sizes they check. This is a function of the
+// editor, not an environment variable: release editors read no environment override.
 const bool kSettingsRedirected = [] {
-  setenv("EG13_SETTINGS_PATH", "/nonexistent/eg13-test/settings.json", 1);
+  eg13_ui_set_settings_url_for_testing("/nonexistent/eg13-test/settings.json");
   return true;
 }();
 
@@ -41,7 +42,9 @@ void releaseView(void* view) {
 }
 
 struct Fixture {
-  Fixture() : bridge(synth, {}), ctx{synth, bridge, {}}, api(eg13::makeCoreApi(ctx)) {}
+  Fixture() : bridge(synth, {}), ctx{synth, bridge, {}}, api(eg13::makeCoreApi(ctx)) {
+    eg13::attachFactoryPresets(api);  // as the plugin does
+  }
   eg13::Synth synth{eg13::PluginKind::Instrument};
   eg13::UiBridge bridge;
   eg13::CoreApiContext ctx;
@@ -179,20 +182,12 @@ TEST_CASE("A new editor opens at the settings' default size", "[gui]") {
     std::fputs("{\"schemaVersion\":1,\"defaultWindowPercent\":150,\"modulationDisplay\":true}", file);
     std::fclose(file);
   }
-  // Its own settings path for the test, and the previous one put back after, so the other [gui]
-  // tests in the same process are unaffected.
-  const char* previous = ::getenv("EG13_SETTINGS_PATH");
-  const std::string saved = previous ? previous : "";
-  const bool hadPrevious = previous != nullptr;
+  // Its own settings path for the test, and the nonexistent one put back after, so the other
+  // [gui] tests in the same process are unaffected.
   struct Restore {
-    const std::string& saved;
-    bool had;
-    ~Restore() {
-      if (had) setenv("EG13_SETTINGS_PATH", saved.c_str(), 1);
-      else unsetenv("EG13_SETTINGS_PATH");
-    }
-  } restore{saved, hadPrevious};
-  setenv("EG13_SETTINGS_PATH", path.c_str(), 1);
+    ~Restore() { eg13_ui_set_settings_url_for_testing("/nonexistent/eg13-test/settings.json"); }
+  } restore;
+  eg13_ui_set_settings_url_for_testing(path.c_str());
   CHECK(eg13_ui_default_zoom() == 1.5);
   Fixture f;
   eg13::Gui gui(f.api, 0, f.bridge, {});
@@ -200,7 +195,7 @@ TEST_CASE("A new editor opens at the settings' default size", "[gui]") {
   CHECK(gui.width() == 1800);
   CHECK(gui.height() == 1140);
   gui.destroy();
-  setenv("EG13_SETTINGS_PATH", "/nonexistent/eg13-test/settings.json", 1);
+  eg13_ui_set_settings_url_for_testing("/nonexistent/eg13-test/settings.json");
   std::remove(path.c_str());
   REQUIRE(gui.create());
   CHECK(gui.width() == 1200);  // missing file: 100 %

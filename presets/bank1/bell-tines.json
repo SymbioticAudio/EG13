@@ -1,0 +1,91 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Bell Tines",
+  "note": "After the Rings manual's FM voice: struck tines with a bell edge that grows with velocity, panned side to side like a suitcase piano's tremolo.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 14,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Resonator",
+        "params": {
+          "Model": "FM Voice",
+          "Structure": 0.3,
+          "Brightness": 0.45,
+          "Damping": 0.8,
+          "Position": 0.6,
+          "Exciter": "Internal",
+          "Spread": 0.4,
+          "Polyphony": "4"
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.032,
+          "Resonance": 0.0,
+          "Mode": "HP"
+        }
+      },
+      "Shaper": {
+        "engine": "EQ",
+        "params": {
+          "Low Freq": 0.3,
+          "Low Gain": 0.6,
+          "Mid 1 Freq": 0.62,
+          "Mid 1 Gain": 0.42,
+          "Mid 1 Q": 0.3
+        }
+      },
+      "Part FX": {
+        "engine": "Reverb",
+        "params": {
+          "Amount": 0.25,
+          "Time": 0.6,
+          "Brightness": 0.5
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.6
+        }
+      },
+      "Mod 3": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Range": "Medium",
+          "Frequency": 0.35,
+          "Smoothness": 0.5
+        }
+      },
+      "settings": {
+        "Level": 0.4316
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Velocity",
+          "destination": "Source: Brightness",
+          "amount": 0.3
+        },
+        {
+          "source": "Mod 3 LFO Out 1",
+          "destination": "Pan",
+          "amount": 0.3
+        }
+      ]
+    }
+  }
+}

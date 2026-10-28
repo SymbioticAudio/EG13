@@ -1,0 +1,55 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Belfry",
+  "note": "After the Elements manual's Space control: a hard mallet on a bell-shaped modal resonator, ringing out in the module's own large hall; each strike lands in a slightly different place, and the mod wheel opens the space further.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 24,
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Modal Synth",
+        "params": {
+          "Model": "Modal",
+          "Bow": 0.0,
+          "Blow": 0.0,
+          "Strike": 0.9,
+          "Mallet": 0.75,
+          "Strike Timbre": 0.55,
+          "Geometry": 0.78,
+          "Brightness": 0.6,
+          "Damping": 0.85,
+          "Position": 0.4,
+          "Space": 0.8
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.032,
+          "Resonance": 0.0,
+          "Mode": "HP"
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.72
+        }
+      },
+      "settings": {
+        "Level": 0.335
+      },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Velocity", "destination": "Source: Strike Timbre", "amount": 0.2 },
+        { "source": "Random", "destination": "Source: Position", "amount": 0.12 },
+        { "source": "Mod Wheel", "destination": "Source: Space", "amount": 0.12 }
+      ]
+    }
+  }
+}

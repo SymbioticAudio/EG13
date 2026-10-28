@@ -1,0 +1,27 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "Test Performance",
+  "note": "Fixture for the preset tool tests. Not a factory preset.",
+  "credit": "EG13 tests",
+  "licence": "GPL-3.0-or-later",
+  "order": 10,
+  "master": { "Mode": "Layer", "Dry": 0.0 },
+  "parts": {
+    "A": {
+      "Source": { "engine": "Digital Oscillator", "params": { "Shape": 0.3, "Timbre": 0.55 } },
+      "Filter": { "engine": "State Variable Filter", "params": { "Cutoff": 0.7, "Resonance": 0.25 } },
+      "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Frequency": 0.4 } },
+      "settings": { "Level": 0.8, "Pan": -0.25, "Transpose": 0, "Voice Mode": 0 },
+      "routes": [
+        { "source": "Velocity", "destination": "Filter: Cutoff", "amount": 0.35 },
+        { "source": "Mod Wheel", "via": "Velocity", "destination": "Pitch", "amount": -0.5, "slot": 3 }
+      ]
+    },
+    "B": {
+      "Source": { "engine": "Macro Oscillator", "params": { "Harmonics": 0.4, "Timbre": 0.6 } },
+      "Part FX": { "engine": "Reverb", "params": { "Amount": 0.3 } },
+      "settings": { "Level": 0.6, "Pan": 0.25 }
+    }
+  }
+}

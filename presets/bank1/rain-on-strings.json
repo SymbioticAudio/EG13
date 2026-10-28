@@ -1,0 +1,25 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "Rain on Strings",
+  "note": "After the Elements manual: the blow exciter's flow turned up into scattered particles, ringing a bank of strings like rain.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 2,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Modal Synth", "params": { "Model": "Strings", "Contour": 0.8, "Bow": 0.0, "Blow": 0.85, "Strike": 0.0, "Flow": 0.9, "Blow Timbre": 0.45, "Geometry": 0.4, "Brightness": 0.5, "Damping": 0.35, "Position": 0.4, "Space": 0.55 } },
+      "Filter": { "engine": "State Variable Filter", "params": { "Cutoff": 0.032, "Resonance": 0.0, "Mode": "HP" } },
+      "Part FX": { "engine": "Reverb", "params": { "Amount": 0.35, "Time": 0.75, "Brightness": 0.5 } },
+      "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.45, "Sustain": 1.0, "Release": 0.75 } },
+      "Mod 3": { "engine": "Random / S&H", "scope": "per part", "params": { "T Rate": 0.3, "X Steps": 0.1, "X Spread": 0.6, "X Range": "Full" } },
+      "settings": { "Level": 0.3339 },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 3 Random / S&H X1", "destination": "Source: Flow", "amount": 0.1 },
+        { "source": "Mod 3 Random / S&H X2", "destination": "Source: Geometry", "amount": 0.15 },
+        { "source": "Mod 3 Random / S&H Y", "destination": "Source: Brightness", "amount": 0.15 }
+      ]
+    }
+  }
+}

@@ -8,6 +8,8 @@ The voices of a part are summed and go through the part's **Part FX** ([Part FX]
 
 Σ voices → Part FX → Level / Pan / Mono → the part's Output
 
+**Level** runs from silence to **+12 dB** and shows its gain in dB with one decimal, as the plugin writes it: *-inf dB*, *-6.0 dB*, *0.0 dB*, *+12.0 dB*. Its default is *0.0 dB*, unity, a little under two thirds of the way round (63 %). The knob follows a fader law: the gain is the knob position cubed, scaled so that 63 % is 0 dB, so near 0 dB one percent of travel is about 0.4 dB (fine to set by hand), 50 % is −6 dB, 29 % is −20 dB, and the last 37 % of travel gives the +12 dB of make-up gain a quiet sound (a single bass voice, say) may need. A route into Part Level ([Modulation](modulation.md)) moves this knob position, never past the top, so modulation can never take a part above +12 dB.
+
 The Part FX is always in the chain: with Part FX *Off* the sum passes unchanged, with the same delay as any effect. Anything that takes "the other part's output" (the *Input source* setting's *Other part*, and the Ring Mod / Vocoder's *Other part* signal) gets the other part after its Part FX, level, pan and Mono.
 
 The master **Mode** decides which notes reach which part: *Single* (only A plays), *Layer* (both play every note), *Split* (A below the split note, B from it up) or *Multi* (each part on its own MIDI channel). In Single mode Part B is silent but still runs, so it can feed Part A (see below).
@@ -38,11 +40,13 @@ The voice chain is stereo. A Filter or Shaper runs a second, right-channel copy 
 
 ## Input and Input source
 
-The plugin's audio input (the instrument's sidechain, or EG13 FX's main input) is the **Input**. When nothing is connected, the Input is silent. Each part has an **Input source** setting:
+EG13 FX's audio input (its main input) is the **Input**. When nothing is connected, the Input is silent. Each part has an **Input source** setting:
 
 - *External*: the plugin's Input.
 - *Other part*: the other part's output.
 - *Both*: the two summed.
+
+The instrument (EG13) has no audio input, in any format. To process external audio, use **EG13 FX** on an audio track or bus; you can still play EG13 FX from MIDI (for Logic Pro, see [Install](install.md), Playing EG13 FX in Logic Pro). In the instrument, the parts still feed each other, so its Input Source offers only *Off* (no input) and *Other part*, which works as described here. *Off* is the same setting as *External*, which is silent in the instrument; hosts' generic parameter views still name it *External*. A part saved with *Both* (from EG13 FX or an older project) shows *Other part*, which is what *Both* does in the instrument; stepping down from it gives *Off*. (An instrument with an audio input is silent in hosts that run plugins out of process, such as Logic Pro 12, whenever nothing is connected to that input, which is why EG13 has none.)
 
 Part A runs before Part B. B therefore hears A with no extra delay, while A hears B 64 samples later (or one host block, if the host's blocks are shorter). Every signal fed from one part to the other passes through a soft limiter: it is untouched up to full scale and never exceeds twice full scale, so a loop between the parts cannot run away.
 
@@ -50,9 +54,11 @@ The Ring Mod / Vocoder can also take the part's Input or the other part's output
 
 Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second output) or to *Other part only*. With *Other part only* the part is not heard; it only feeds the other part.
 
-**Dry** mixes the Input into the main output, delayed by the plugin's latency so it lines up with the processed sound.
+**Dry** mixes the Input into the main output, delayed by the plugin's latency so it lines up with the processed sound. Only EG13 FX shows it: the instrument has no Input from outside, so Dry would do nothing there and its editor leaves the knob out (*Other part* signals are not mixed in by Dry). The parameter still exists in the instrument, at its stored value, for hosts and saved projects.
 
 ## Default patches
+
+These are the init sounds (the preset bar's **Init**). A new instance of EG13 itself opens on the Bank 1 preset **First Light** instead (see [Interface](interface.md), Presets); EG13 FX opens on its init sound.
 
 - **EG13:** both parts play the Macro Oscillator through the **State Variable Filter** (low-pass at 70 %, about 2.5 kHz, resonance Q 0.5) and Shaper *Off*, with modulation (see [Modulation](modulation.md)):
   - Mod 1: Envelope (ADSR), per voice, routed to the **Amp**, scaled by velocity, 100 %.

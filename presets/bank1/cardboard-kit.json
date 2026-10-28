@@ -1,0 +1,89 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "Cardboard Kit",
+  "note": "A playable two-piece kit split at C4, after the Plaits manual's analog bass drum and snare models: kicks below C4, snares above; play harder for more punch and rattle, and push the mod wheel to turn the snares into hi-hats.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 21,
+  "master": {
+    "Mode": "Split",
+    "Split Note": "C4"
+  },
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Macro Oscillator",
+        "params": {
+          "Model": "Bass drum",
+          "Harmonics": 0.5,
+          "Timbre": 0.4,
+          "Morph": 0.55
+        }
+      },
+      "Filter": {
+        "engine": "Off"
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.7
+        }
+      },
+      "settings": {
+        "Level": 0.5393,
+        "Transpose": -24
+      },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Velocity", "destination": "Source: Harmonics", "amount": 0.2 },
+        { "source": "Random", "destination": "Source: Timbre", "amount": 0.08 }
+      ]
+    },
+    "B": {
+      "Source": {
+        "engine": "Macro Oscillator",
+        "params": {
+          "Model": "Snare drum",
+          "Harmonics": 0.45,
+          "Timbre": 0.5,
+          "Morph": 0.5
+        }
+      },
+      "Filter": {
+        "engine": "Off"
+      },
+      "Part FX": {
+        "engine": "Reverb",
+        "params": {
+          "Amount": 0.2,
+          "Time": 0.45,
+          "Brightness": 0.55
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.7
+        }
+      },
+      "settings": {
+        "Level": 0.6448,
+        "Pan": 0.1,
+        "Transpose": -12
+      },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Velocity", "destination": "Source: Harmonics", "amount": 0.2 },
+        { "source": "Random", "destination": "Source: Timbre", "amount": 0.15 },
+        { "source": "Mod Wheel", "destination": "Source: Model", "amount": 0.042 }
+      ]
+    }
+  }
+}

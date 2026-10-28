@@ -44,6 +44,20 @@ uint32_t eg13_test_c_walk(const EG13CoreAPI* api) {
     snap.mod_out_min[1][EG13_NUM_MOD_SLOTS - 1][EG13_MAX_MOD_OUTPUTS - 1] = 0.0f;
     snap.mod_out_max[1][EG13_NUM_MOD_SLOTS - 1][EG13_MAX_MOD_OUTPUTS - 1] = 0.0f;
   }
+  {
+    EG13FactoryPreset preset;
+    char message[EG13_TEXT_SIZE];
+    char file[16];
+    if (api->factory_preset_count(api->context) > 0 && api->factory_preset(api->context, 0, &preset))
+      sum += (uint32_t)(preset.kind + (preset.json != 0));
+    sum += (uint32_t)(api->preset_apply(api->context, "{}", -1, message, EG13_TEXT_SIZE) == EG13_PRESET_INVALID);
+    sum += api->preset_save(api->context, -1, "x", file, 0) > 0;
+    api->browser_state_set(api->context, "{}");
+    sum += api->preset_init != 0;
+    sum += api->param_is_setup != 0;
+    if (api->browser_state_get(api->context, message, EG13_TEXT_SIZE)) ++sum;
+    sum += (uint32_t)(EG13_PRESET_OK + EG13_PRESET_WARNINGS);
+  }
   api->request_resize(api->context, 1200, 760);
   return sum;
 }

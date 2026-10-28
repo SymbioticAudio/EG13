@@ -259,6 +259,29 @@ TEST_CASE("Granular matches bare Clouds at 32 kHz in every mode and quality") {
   REQUIRE(out.r == ref.r);
 }
 
+// Upstream's Window::Start() lost its `done_ = false` (eurorack fbb53ba + 0e3756f), which left
+// Stretch silent; third_party/eurorack-patches/clouds/dsp/window.h restores it.
+TEST_CASE("Granular Stretch mode is not silent") {
+  ParamValues p = defaults();
+  p.p[0] = 1.0f;         // Blend 100 %: the processed sound only
+  p.p[9] = option(1);    // Stretch
+  p.p[12] = 0.5f;        // In Gain unity
+  const auto in = sine(32000 * 4, 220.0, 32000.0, 0.5f);
+  CloudsEngine engine;
+  engine.prepare(CloudsEngine::kNativeRate, 256);
+  const Stereo out = run(engine, in, 256, p);
+  const size_t from = 32000, to = in.size();
+  const double db = 20.0 * std::log10(0.5 * (test::rms(out.l, from, to) + test::rms(out.r, from, to)) + 1e-12);
+  INFO("Stretch RMS " << db << " dBFS");
+  REQUIRE(db > -40.0);
+  // The bare module, driven the same way, is the reference (and is audible too).
+  Reference reference;
+  const Stereo ref = reference.run(in, [&](size_t) { return p; }, [](size_t) { return false; });
+  REQUIRE(anyNonZero(ref.l, from));
+  REQUIRE(out.l == ref.l);
+  REQUIRE(out.r == ref.r);
+}
+
 TEST_CASE("Granular follows moving controls like bare Clouds") {
   // Every continuous control and Freeze move every 0.25 s, notes trigger; Mode and Quality stay.
   auto params = [](size_t t) {

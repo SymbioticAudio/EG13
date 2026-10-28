@@ -1,0 +1,165 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "Harbour Lights",
+  "note": "A split: a gliding sub-octave square bass below C4 and a drifting chord pad above it; after the Braids manual's sub-oscillator shapes and the Plaits manual's chord engine.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 11,
+  "master": {
+    "Mode": "Split",
+    "Split Note": "C4"
+  },
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Digital Oscillator",
+        "params": {
+          "Shape": "Square Sub",
+          "Timbre": 0.35,
+          "Color": 0.45
+        }
+      },
+      "Filter": {
+        "engine": "Analog Filter",
+        "params": {
+          "Frequency": 0.42,
+          "Resonance": 0.3,
+          "Mode": "LP4"
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.05,
+          "Decay": 0.5,
+          "Sustain": 0.8,
+          "Release": 0.35
+        }
+      },
+      "Mod 2": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Decay": 0.45,
+          "Sustain": 0.2,
+          "Release": 0.4
+        }
+      },
+      "settings": {
+        "Level": 0.9093,
+        "Pan": -0.05,
+        "Transpose": -12,
+        "Voice Mode": "Legato",
+        "Glide": 0.12
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Mod 2 Envelope",
+          "via": "Velocity",
+          "destination": "Filter: Frequency",
+          "amount": 0.25
+        }
+      ],
+      "Shaper": {
+        "engine": "EQ",
+        "params": {
+          "Low Freq": 0.05,
+          "Low Gain": 0.0,
+          "High Freq": 0.1,
+          "High Gain": 0.5
+        }
+      }
+    },
+    "B": {
+      "Source": {
+        "engine": "Macro Oscillator",
+        "params": {
+          "Model": "Chords",
+          "Harmonics": 0.45,
+          "Timbre": 0.4,
+          "Morph": 0.35
+        }
+      },
+      "Filter": {
+        "engine": "Classic Filters",
+        "params": {
+          "Cutoff": 0.68,
+          "Resonance": 0.2,
+          "Model": "OB-Xd 4-pole Lowpass 24 dB"
+        }
+      },
+      "Part FX": {
+        "engine": "Reverb",
+        "params": {
+          "Amount": 0.4,
+          "Time": 0.8,
+          "Brightness": 0.45
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.6,
+          "Sustain": 1.0,
+          "Release": 0.75
+        }
+      },
+      "Mod 3": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Range": "Low",
+          "Frequency": 0.55,
+          "Smoothness": 0.4
+        }
+      },
+      "Mod 4": {
+        "engine": "Random / S&H",
+        "scope": "per part",
+        "params": {
+          "T Rate": 0.3,
+          "X Steps": 0.1,
+          "X Spread": 0.6,
+          "X Range": "Full"
+        }
+      },
+      "settings": {
+        "Level": 0.8150,
+        "Pan": 0.1
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Mod 3 LFO Out 1",
+          "destination": "Filter: Cutoff",
+          "amount": 0.1
+        },
+        {
+          "source": "Mod 3 LFO Out 2",
+          "destination": "Source: Morph",
+          "amount": 0.25
+        },
+        {
+          "source": "Mod 4 Random / S&H X1",
+          "destination": "Source: Timbre",
+          "amount": 0.2
+        }
+      ]
+    }
+  }
+}

@@ -4,10 +4,12 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "eg13_version.h"
 #include "engine/engine_registry.h"
 #include "mod/mod_routes.h"
+#include "preset/preset.h"
 #include "params/param_ids.h"
 #include "synth/param_table.h"
 #include "synth/ui_snapshot.h"
@@ -243,11 +245,16 @@ bool routeGet(void* context, uint32_t part, uint32_t route, EG13Route* out) noex
 bool routeSet(void* context, uint32_t part, uint32_t route, uint16_t source, uint16_t destination,
               uint16_t via) noexcept {
   if (!validPart(part) || route >= uint32_t(kNumRoutes)) return false;
-  char name[EG13_TEXT_SIZE];
-  if (source != kSrcNone && !sourceName(context, part, source, name, sizeof name)) return false;
-  if (via != kSrcNone && !sourceName(context, part, via, name, sizeof name)) return false;
-  if (destination != kDestNone && !destinationName(context, part, destination, name, sizeof name)) return false;
   CoreApiContext& c = ctx(context);
+  // Only a field that changes is checked: one the current engines hide (a route kept from a
+  // loaded state) can stay as it is while another field of the route is edited.
+  const Route current = c.synth.patch().routes[part][route];
+  char name[EG13_TEXT_SIZE];
+  if (source != current.source && source != kSrcNone && !sourceName(context, part, source, name, sizeof name)) return false;
+  if (via != current.via && via != kSrcNone && !sourceName(context, part, via, name, sizeof name)) return false;
+  if (destination != current.destination && destination != kDestNone &&
+      !destinationName(context, part, destination, name, sizeof name))
+    return false;
   Route r;
   r.source = source;
   r.destination = destination;
@@ -268,7 +275,121 @@ void requestResize(void* context, uint32_t width, uint32_t height) noexcept {
   if (c.requestResize) c.requestResize(width, height);
 }
 
+uint32_t noFactoryPresets(void*) noexcept { return 0; }
+bool noFactoryPreset(void*, uint32_t, EG13FactoryPreset*) noexcept { return false; }
+
+// Merges the preset into the current state and loads the result; result is an EG13_PRESET_ value.
+int32_t applyPreset(PluginKind kind, const std::function<std::string()>& save,
+                    const std::function<int(const std::string&)>& load, const std::string& json,
+                    int targetPart, std::string& message) {
+  preset::ApplyResult applied;
+  const std::string merged = preset::mergeForApply(save(), json, kind, targetPart, applied);
+  if (merged.empty()) {
+    message = applied.message;
+    return EG13_PRESET_INVALID;
+  }
+  const int result = load(merged);
+  if (result == int(state::LoadResult::Invalid)) {
+    message = "The preset could not be applied.";
+    return EG13_PRESET_INVALID;
+  }
+  return result == int(state::LoadResult::OkWithWarnings) ? EG13_PRESET_WARNINGS : EG13_PRESET_OK;
+}
+
+int32_t presetApply(void* context, const char* json, int32_t targetPart, char* message,
+                    uint32_t size) noexcept {
+  CoreApiContext& c = ctx(context);
+  std::string text;
+  int32_t result = EG13_PRESET_INVALID;
+  try {
+    if (!c.loadState || !c.saveState || !json) {
+      text = "Presets are not available here.";
+    } else {
+      result = applyPreset(c.synth.kind(), c.saveState, c.loadState, json, int(targetPart), text);
+      if (result != EG13_PRESET_INVALID && c.markDirty) c.markDirty();
+    }
+  } catch (...) {
+    result = EG13_PRESET_INVALID;
+    text = "The preset could not be applied.";
+  }
+  copyText(text.c_str(), message, size);
+  return result;
+}
+
+int32_t presetInit(void* context, char* message, uint32_t size) noexcept {
+  CoreApiContext& c = ctx(context);
+  std::string text;
+  int32_t result = EG13_PRESET_INVALID;
+  try {
+    if (!c.loadState || !c.saveState) {
+      text = "Presets are not available here.";
+    } else {
+      // A fresh Synth of this kind holds the init state; saved as a Performance it resets everything
+      // a preset carries, and the merge keeps the setup fields.
+      Synth fresh(c.synth.kind());
+      preset::Meta meta;
+      meta.name = "Init";
+      const std::string file = preset::save(fresh, state::StateStore(), meta, -1);
+      result = applyPreset(c.synth.kind(), c.saveState, c.loadState, file, -1, text);
+      if (result != EG13_PRESET_INVALID && c.markDirty) c.markDirty();
+    }
+  } catch (...) {
+    result = EG13_PRESET_INVALID;
+    text = "Init could not be loaded.";
+  }
+  copyText(text.c_str(), message, size);
+  return result;
+}
+
+uint32_t presetSave(void* context, int32_t part, const char* name, char* buffer, uint32_t size) noexcept {
+  try {
+    preset::Meta meta;
+    meta.name = name ? name : "";
+    meta.bank = "User";
+    // The preset holds sound only, so the unknown data a project's store preserves is not needed.
+    const std::string file = preset::save(ctx(context).synth, state::StateStore(), meta, int(part));
+    if (file.empty()) return 0;
+    const uint32_t needed = uint32_t(file.size()) + 1;
+    if (buffer && size >= needed) std::memcpy(buffer, file.c_str(), needed);
+    return needed;
+  } catch (...) {
+    return 0;
+  }
+}
+
+bool paramIsSetup(void*, uint32_t id) noexcept { return preset::isSetupParam(id); }
+
+bool browserStateGet(void* context, char* buffer, uint32_t size) noexcept {
+  try {
+    const std::string value = ctx(context).getBrowser ? ctx(context).getBrowser() : std::string();
+    if (!buffer || size < value.size() + 1) return false;
+    std::memcpy(buffer, value.c_str(), value.size() + 1);
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+void browserStateSet(void* context, const char* json) noexcept {
+  CoreApiContext& c = ctx(context);
+  try {
+    if (!c.setBrowser) return;
+    const std::string value = json ? json : "";
+    // The editor writes its state on every open; an unchanged value must not dirty the project.
+    if (c.getBrowser && c.getBrowser() == value) return;
+    c.setBrowser(value);
+    if (c.markDirty) c.markDirty();
+  } catch (...) {
+  }
+}
+
 }  // namespace
+
+int32_t applyPresetJson(PluginKind kind, const std::function<std::string()>& save,
+                        const std::function<int(const std::string&)>& load, const std::string& json,
+                        int targetPart, std::string& message) {
+  return applyPreset(kind, save, load, json, targetPart, message);
+}
 
 EG13CoreAPI makeCoreApi(CoreApiContext& context) {
   EG13CoreAPI api{};
@@ -293,6 +414,14 @@ EG13CoreAPI makeCoreApi(CoreApiContext& context) {
   api.destination_for_param = destinationForParam;
   api.version = version;
   api.request_resize = requestResize;
+  api.factory_preset_count = noFactoryPresets;  // attachFactoryPresets (core_api_factory.cpp) fills these in
+  api.factory_preset = noFactoryPreset;
+  api.preset_apply = presetApply;
+  api.preset_save = presetSave;
+  api.preset_init = presetInit;
+  api.browser_state_get = browserStateGet;
+  api.browser_state_set = browserStateSet;
+  api.param_is_setup = paramIsSetup;
   return api;
 }
 

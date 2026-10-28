@@ -1,0 +1,172 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "Comb Choir",
+  "note": "Part A is a grain cloud through a keyboard-tracked comb filter that sings like a breathy choir, its resonance drifting on Peaks-style random; part B is a dark sub-octave drone stretched by a granular buffer.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 20,
+  "master": {
+    "Mode": "Layer"
+  },
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Macro Oscillator",
+        "params": {
+          "Model": "Granular cloud",
+          "Harmonics": 0.6,
+          "Timbre": 0.5,
+          "Morph": 0.7
+        }
+      },
+      "Filter": {
+        "engine": "Classic Filters",
+        "params": {
+          "Cutoff": 0.372,
+          "Resonance": 0.85,
+          "Model": "Comb Positive Feedback, Variable Mix"
+        }
+      },
+      "Part FX": {
+        "engine": "Reverb",
+        "params": {
+          "Amount": 0.45,
+          "Time": 0.8,
+          "Brightness": 0.45
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.6,
+          "Sustain": 1.0,
+          "Release": 0.72
+        }
+      },
+      "Mod 3": {
+        "engine": "Function Generator",
+        "scope": "per voice",
+        "params": {
+          "Mode": "Random",
+          "Rate": 0.2,
+          "Smoothness": 0.85
+        }
+      },
+      "Mod 4": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Range": "Low",
+          "Frequency": 0.5
+        }
+      },
+      "settings": {
+        "Level": 0.5123,
+        "Pan": -0.2
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Note",
+          "destination": "Filter: Cutoff",
+          "amount": 1.0
+        },
+        {
+          "source": "Mod 3 Function Generator",
+          "destination": "Filter: Resonance",
+          "amount": 0.08
+        },
+        {
+          "source": "Mod 4 LFO Out 1",
+          "destination": "Source: Morph",
+          "amount": 0.25
+        },
+        {
+          "source": "Mod 4 LFO Out 2",
+          "destination": "Source: Harmonics",
+          "amount": 0.2
+        }
+      ]
+    },
+    "B": {
+      "Source": {
+        "engine": "Macro Oscillator",
+        "params": {
+          "Model": "Harmonic",
+          "Harmonics": 0.25,
+          "Timbre": 0.1,
+          "Morph": 0.4
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.6,
+          "Resonance": 0.0
+        }
+      },
+      "Part FX": {
+        "engine": "Granular",
+        "params": {
+          "Mode": "Stretch",
+          "Blend": 0.45,
+          "Position": 0.5,
+          "Size": 0.7,
+          "Density": 0.6,
+          "Texture": 0.3,
+          "Feedback": 0.35,
+          "Reverb": 0.55,
+          "In Gain": 0.75
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.7,
+          "Sustain": 1.0,
+          "Release": 0.75
+        }
+      },
+      "Mod 3": {
+        "engine": "Function Generator",
+        "scope": "per part",
+        "params": {
+          "Mode": "Random",
+          "Rate": 0.15,
+          "Smoothness": 0.9
+        }
+      },
+      "settings": {
+        "Level": 0.6114,
+        "Pan": 0.2,
+        "Transpose": -12
+      },
+      "routes": [
+        {
+          "source": "Mod 1 Envelope",
+          "via": "Velocity",
+          "destination": "Amp",
+          "amount": 1.0
+        },
+        {
+          "source": "Mod 3 Function Generator",
+          "destination": "Part FX: Position",
+          "amount": 0.2
+        },
+        {
+          "source": "Mod 3 Function Generator",
+          "destination": "Source: Morph",
+          "amount": 0.2
+        }
+      ]
+    }
+  }
+}

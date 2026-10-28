@@ -52,6 +52,11 @@ public func eg13UIDefaultZoom() -> Double {
     }
 }
 
+@_cdecl("eg13_ui_set_settings_url_for_testing")
+public func eg13UISetSettingsURLForTesting(_ path: UnsafePointer<CChar>?) {
+    EG13SettingsLocation.testingURL = path.map { URL(fileURLWithPath: String(cString: $0)) }
+}
+
 @_cdecl("eg13_ui_destroy")
 public func eg13UIDestroy(_ handle: UnsafeMutableRawPointer?) {
     guard let handle else { return }

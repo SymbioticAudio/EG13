@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
 
 #include "eg13/core_api.h"
 #include "synth/synth.h"
@@ -17,9 +18,35 @@ struct CoreApiContext {
   UiBridge& bridge;
   std::function<void(uint32_t width, uint32_t height)> requestResize;  // may be empty
   std::function<void()> markDirty;                                     // may be empty
+  // Presets: the plugin's stateLoad path (store.load, params rescan, restart request; the int is a
+  // state::LoadResult) and the current state JSON. A preset is merged into saveState() and applied
+  // through loadState. Both may be empty, in which case preset_apply refuses.
+  std::function<int(const std::string& stateJson)> loadState;
+  std::function<std::string()> saveState;
+  // The StateStore's browser string (get / set); may be empty.
+  std::function<std::string()> getBrowser;
+  std::function<void(const std::string&)> setBrowser;
 };
 
 // The function table over ctx. Its `context` points at ctx.
 EG13CoreAPI makeCoreApi(CoreApiContext& ctx);
+
+// The function table's factory-preset members, which makeCoreApi leaves empty (no presets): the
+// factory table needs the preset tool, which needs makeCoreApi. Linked as eg13_core_api_factory.
+void attachFactoryPresets(EG13CoreAPI& api);
+
+// Merges a preset file into save() and loads the result: preset_apply without the dirty mark.
+// Returns an EG13_PRESET_ value; message is set when it is EG13_PRESET_INVALID.
+int32_t applyPresetJson(PluginKind kind, const std::function<std::string()>& save,
+                        const std::function<int(const std::string&)>& load, const std::string& json,
+                        int targetPart, std::string& message);
+
+// New instrument instances open on the factory preset marked firstLoad, applied like preset_apply
+// (merge into save(), then load); EG13 FX, and an instrument with no such preset, keep the init
+// state. True if a preset was applied.
+// setBrowser (may be empty) receives the UI's browser string naming that preset.
+bool applyFirstLoadPreset(PluginKind kind, const std::function<std::string()>& save,
+                          const std::function<int(const std::string&)>& load,
+                          const std::function<void(const std::string&)>& setBrowser = {});
 
 }  // namespace eg13

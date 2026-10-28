@@ -1,0 +1,941 @@
+#include "preset_lib.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <sstream>
+#include <stdexcept>
+#include <string_view>
+
+#include <nlohmann/json.hpp>
+
+#include "common/engine_names.h"
+#include "engine/shared_random.h"
+#include "core_api.h"
+#include "mod/mod_routes.h"
+#include "params/param_ids.h"
+#include "state/state.h"
+#include "synth/param_table.h"
+#include "synth/synth.h"
+#include "synth/ui_snapshot.h"
+#include "ui_bridge.h"
+
+namespace eg13::presettool {
+namespace {
+
+using json = nlohmann::json;
+using ojson = nlohmann::ordered_json;
+namespace fs = std::filesystem;
+
+// Raised inside the compiler and decompiler, caught at their entry points.
+struct Fail : std::runtime_error {
+  using std::runtime_error::runtime_error;
+};
+
+[[noreturn]] void fail(const std::string& file, const std::string& where, const std::string& what) {
+  throw Fail(file + ": " + (where.empty() ? "" : where + ": ") + what);
+}
+
+struct SlotName {
+  const char* key;
+  SlotKind kind;
+};
+const SlotName kSlots[] = {{"Source", SlotKind::Source}, {"Filter", SlotKind::Filter},
+                           {"Shaper", SlotKind::Shaper}, {"Part FX", SlotKind::PartFx},
+                           {"Mod 1", SlotKind::Mod1},    {"Mod 2", SlotKind::Mod2},
+                           {"Mod 3", SlotKind::Mod3},    {"Mod 4", SlotKind::Mod4}};
+const char* const kPartKeys[kNumParts] = {"A", "B"};
+
+// The route names the editor shows, for one part of one synth, through the C API's own functions
+// so the tool can never name things differently from the editor. Built after the slots are set:
+// mod outputs and destination labels follow the part's engines.
+class RouteNames {
+ public:
+  explicit RouteNames(Synth& synth)
+      : bridge_(synth, {}), context_{synth, bridge_, {}, {}, {}, {}, {}, {}}, api_(makeCoreApi(context_)) {}
+
+  std::string source(int part, uint16_t code) const { return name(part, code, true); }
+  std::string destination(int part, uint16_t code) const { return name(part, code, false); }
+
+  // Code of the named source or destination, or -1.
+  int find(int part, const std::string& wanted, bool isSource) const {
+    const uint16_t count = isSource ? uint16_t(kNumSources) : uint16_t(kNumDestinations);
+    for (uint16_t code = 1; code < count; ++code) {
+      const std::string n = name(part, code, isSource);
+      if (!n.empty() && tools::sameName(wanted, n.c_str())) return code;
+    }
+    return -1;
+  }
+
+ private:
+  std::string name(int part, uint16_t code, bool isSource) const {
+    char buffer[EG13_TEXT_SIZE] = {};
+    const bool ok = isSource ? api_.source_name(api_.context, uint32_t(part), code, buffer, sizeof buffer)
+                             : api_.destination_name(api_.context, uint32_t(part), code, buffer, sizeof buffer);
+    return ok ? buffer : std::string();
+  }
+  UiBridge bridge_;
+  CoreApiContext context_;
+  EG13CoreAPI api_;
+};
+
+std::string text(const json& j, const char* key) {
+  const auto it = j.find(key);
+  return it != j.end() && it->is_string() ? it->get<std::string>() : std::string();
+}
+
+void onlyKeys(const json& object, std::initializer_list<const char*> allowed, const std::string& file,
+              const std::string& where) {
+  for (auto it = object.begin(); it != object.end(); ++it) {
+    bool known = false;
+    for (const char* key : allowed) known = known || it.key() == key;
+    if (!known) fail(file, where, "unknown key \"" + it.key() + "\"");
+  }
+}
+
+// string_view parameters: a const std::string& here would let callers pass temporaries to a function
+// that returns a reference (GCC 13 -Wdangling-reference).
+const json& object(const json& parent, const char* key, std::string_view file, std::string_view where) {
+  const json& value = parent.at(key);
+  if (!value.is_object()) fail(std::string(file), std::string(where), std::string("\"") + key + "\" must be an object");
+  return value;
+}
+
+// ---- compile -----------------------------------------------------------------------------
+
+// A slot P's value: a number 0..1, or the option it shows.
+double engineValue(const json& value, const EngineParamInfo& param, const std::string& file,
+                   const std::string& where, const std::string& name) {
+  if (value.is_number()) {
+    const double v = value.get<double>();
+    if (!(v >= 0.0 && v <= 1.0)) fail(file, where, "\"" + name + "\" must be 0..1, not " + value.dump());
+    return v;
+  }
+  if (value.is_string()) {
+    float v = 0.0f;
+    if (!tools::valueForOption(param, value.get<std::string>(), &v)) {
+      fail(file, where, "unknown option " + value.dump() + " for \"" + name + "\"");
+    }
+    return double(v);
+  }
+  fail(file, where, "\"" + name + "\" must be a number or an option name");
+}
+
+// A part or master setting, in its own units; stepped ones also by option name.
+double settingValue(const json& value, size_t index, const std::string& file, const std::string& where,
+                    const std::string& name) {
+  const ParamSpec& spec = paramSpec(index);
+  if (value.is_number()) {
+    const double v = value.get<double>();
+    if (!(v >= double(spec.minValue) && v <= double(spec.maxValue))) {
+      fail(file, where, "\"" + name + "\" must be " + std::to_string(int(spec.minValue)) + ".." +
+                            std::to_string(int(spec.maxValue)) + " (or a fraction for a continuous setting), not " +
+                            value.dump());
+    }
+    return v;
+  }
+  if (value.is_string() && spec.stepped) {
+    for (int v = int(spec.minValue); v <= int(spec.maxValue); ++v) {
+      char buffer[64] = {};
+      formatParam(index, double(v), buffer, sizeof buffer);
+      if (tools::sameName(value.get<std::string>(), buffer)) return double(v);
+    }
+    fail(file, where, "unknown option " + value.dump() + " for \"" + name + "\"");
+  }
+  fail(file, where, "\"" + name + "\" must be a number" + std::string(spec.stepped ? " or an option name" : ""));
+}
+
+void applySettings(Synth& synth, const json& settings, int part, const std::string& file, const std::string& where) {
+  for (auto it = settings.begin(); it != settings.end(); ++it) {
+    bool found = false;
+    for (size_t i = 0; i < kPartParamCount && !found; ++i) {
+      const size_t index = partParamIndex(part, PartParam(i + 1));
+      if (!tools::sameName(it.key(), paramSpec(index).name)) continue;
+      found = true;
+      synth.setParam(paramSpec(index).id, settingValue(it.value(), index, file, where, it.key()));
+    }
+    if (!found) fail(file, where, "unknown setting \"" + it.key() + "\"");
+  }
+}
+
+void applySlot(Synth& synth, const json& slot, SlotKind kind, int part, const std::string& file,
+               const std::string& where) {
+  if (!slot.is_object()) fail(file, where, "must be an object");
+  onlyKeys(slot, {"engine", "scope", "params"}, file, where);
+  int engine = synth.engine(kind, part);
+  if (slot.contains("engine")) {
+    if (!slot["engine"].is_string()) fail(file, where, "\"engine\" must be a name");
+    engine = tools::engineByName(kind, slot["engine"].get<std::string>());
+    if (engine < 0) fail(file, where, "unknown engine " + slot["engine"].dump());
+    synth.setParam(paramSpec(slotEngineParamIndex(kind, part)).id, double(engine));
+  }
+  const EngineInfo& info = slotEngineInfo(kind, engine);
+  if (slot.contains("params")) {
+    const json& params = object(slot, "params", file, where);
+    for (auto it = params.begin(); it != params.end(); ++it) {
+      const int p = tools::paramByName(info, it.key());
+      if (p < 0) fail(file, where, "engine \"" + std::string(info.displayName) + "\" has no parameter \"" + it.key() + "\"");
+      synth.setParam(paramSpec(slotParamIndex(kind, part, p)).id,
+                     engineValue(it.value(), info.params[p], file, where + " " + info.displayName, it.key()));
+    }
+  }
+  if (slot.contains("scope")) {
+    if (!isModSlot(kind)) fail(file, where, "only a mod slot has a scope");
+    const size_t index = modScopeParamIndex(part, modSlotIndex(kind));
+    synth.setParam(paramSpec(index).id, settingValue(slot["scope"], index, file, where, "scope"));
+  }
+}
+
+void applyRoutes(Synth& synth, const json& routes, int part, const std::string& file, const std::string& where) {
+  if (!routes.is_array()) fail(file, where, "\"routes\" must be a list");
+  for (int r = 0; r < kNumRoutes; ++r) {
+    synth.setRoute(part, r, Route{});
+    synth.setParam(paramSpec(routeAmountParamIndex(part, r)).id, 0.0);
+  }
+  const RouteNames names(synth);
+  int next = 0;
+  for (const json& entry : routes) {
+    if (!entry.is_object()) fail(file, where, "a route must be an object");
+    onlyKeys(entry, {"source", "via", "destination", "amount", "slot"}, file, where + " route");
+    for (const char* required : {"source", "destination", "amount"}) {
+      if (!entry.contains(required)) fail(file, where, std::string("a route needs \"") + required + "\"");
+    }
+    int slot = next;
+    if (entry.contains("slot")) {
+      if (!entry["slot"].is_number_integer()) fail(file, where, "\"slot\" must be 1..12");
+      slot = entry["slot"].get<int>() - 1;
+    }
+    if (slot < 0 || slot >= kNumRoutes) fail(file, where, "more routes than the 12 slots, or a bad \"slot\"");
+    next = slot + 1;
+    Route route;
+    auto resolve = [&](const char* key, bool isSource, bool optional) -> uint16_t {
+      if (!entry.contains(key)) return 0;
+      const std::string wanted = entry[key].is_string() ? entry[key].get<std::string>() : std::string();
+      if (optional && wanted.empty()) return 0;
+      const int code = wanted.empty() ? -1 : names.find(part, wanted, isSource);
+      if (code < 0) fail(file, where, std::string("unknown route ") + key + " " + entry[key].dump());
+      return uint16_t(code);
+    };
+    route.source = resolve("source", true, false);
+    route.via = resolve("via", true, true);
+    route.destination = resolve("destination", false, false);
+    if (!entry["amount"].is_number()) fail(file, where, "a route's \"amount\" must be a number, -1..1");
+    const double amount = entry["amount"].get<double>();
+    if (!(amount >= -1.0 && amount <= 1.0)) fail(file, where, "a route's \"amount\" must be -1..1");
+    synth.setRoute(part, slot, route);
+    synth.setParam(paramSpec(routeAmountParamIndex(part, slot)).id, amount);
+  }
+}
+
+// ---- render ------------------------------------------------------------------------------
+
+
+double dbOf(double meanSquare) { return meanSquare > 1e-12 ? 10.0 * std::log10(meanSquare) : -120.0; }
+
+std::string slurp(const std::string& path, std::string& error) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    error = "cannot read " + path;
+    return {};
+  }
+  std::ostringstream out;
+  out << in.rdbuf();
+  return out.str();
+}
+
+std::string bankName(const std::string& dir) {
+  std::string base = fs::path(dir).filename().string();
+  if (base.empty()) base = fs::path(dir).parent_path().filename().string();
+  if (base == "bank1") return "Bank 1";
+  if (base == "bank2-catnap") return "Bank 2";
+  if (base == "fx") return "FX";
+  return base;
+}
+
+std::string cString(const std::string& s) {
+  std::string out = "\"";
+  for (const char c : s) {
+    const unsigned char u = static_cast<unsigned char>(c);
+    if (c == '"') out += "\\\"";
+    else if (c == '\\') out += "\\\\";
+    else if (u >= 0x20 && u < 0x7f && c != '?') out += c;  // '?' avoids trigraphs
+    else {
+      char buf[8];
+      std::snprintf(buf, sizeof buf, "\\%03o", unsigned(u));
+      out += buf;
+    }
+  }
+  return out + "\"";
+}
+
+// A long literal as adjacent pieces, so no compiler meets a huge single token.
+std::string longString(const std::string& s) {
+  constexpr size_t kPiece = 2000;
+  if (s.size() <= kPiece) return cString(s);
+  std::string out;
+  for (size_t at = 0; at < s.size(); at += kPiece) out += (at ? "\n      " : "") + cString(s.substr(at, kPiece));
+  return out;
+}
+
+}  // namespace
+
+bool compileSource(const std::string& textIn, const std::string& file, const std::string& bank, Compiled& out,
+                   std::string& error) {
+  try {
+    json root = json::parse(textIn, nullptr, false);
+    if (!root.is_object()) fail(file, "", "not a JSON object");
+    onlyKeys(root, {"kind", "plugin", "name", "note", "credit", "licence", "order", "firstLoad", "master", "parts"},
+             file, "");
+    const std::string kind = text(root, "kind");
+    const std::string plugin = text(root, "plugin");
+    if (kind != "performance" && kind != "patch") fail(file, "", "\"kind\" must be \"performance\" or \"patch\"");
+    if (plugin != "instrument" && plugin != "effect") fail(file, "", "\"plugin\" must be \"instrument\" or \"effect\"");
+    const bool isPatch = kind == "patch";
+    Compiled result;
+    result.meta.kind = isPatch ? preset::Kind::Patch : preset::Kind::Performance;
+    result.meta.plugin = plugin == "effect" ? PluginKind::Effect : PluginKind::Instrument;
+    result.meta.name = text(root, "name");
+    result.meta.bank = bank;
+    result.meta.note = text(root, "note");
+    result.meta.credit = text(root, "credit");
+    result.meta.licence = text(root, "licence");
+    if (result.meta.name.empty()) fail(file, "", "\"name\" is missing");
+    if (root.contains("order")) {
+      if (!root["order"].is_number_integer()) fail(file, "", "\"order\" must be an integer");
+      result.order = root["order"].get<int>();
+    }
+    if (root.contains("firstLoad")) {
+      if (!root["firstLoad"].is_boolean()) fail(file, "", "\"firstLoad\" must be true or false");
+      result.firstLoad = root["firstLoad"].get<bool>();
+    }
+
+    Synth synth(result.meta.plugin);
+    if (root.contains("master")) {
+      if (isPatch) fail(file, "master", "a patch has no master settings");
+      const json& master = object(root, "master", file, "master");
+      for (auto it = master.begin(); it != master.end(); ++it) {
+        bool found = false;
+        for (size_t i = 0; i < kMasterParamCount && !found; ++i) {
+          const size_t index = masterParamIndex(MasterParam(i));
+          if (!tools::sameName(it.key(), paramSpec(index).name)) continue;
+          found = true;
+          synth.setParam(paramSpec(index).id, settingValue(it.value(), index, file, "master", it.key()));
+        }
+        if (!found) fail(file, "master", "unknown setting \"" + it.key() + "\"");
+      }
+    }
+    if (root.contains("parts")) {
+      const json& parts = object(root, "parts", file, "parts");
+      for (auto it = parts.begin(); it != parts.end(); ++it) {
+        int part = -1;
+        for (int p = 0; p < kNumParts; ++p) {
+          if (it.key() == kPartKeys[p]) part = p;
+        }
+        if (part < 0 || (isPatch && part != 0)) {
+          fail(file, "parts", "unknown part \"" + it.key() + "\"" + (isPatch ? " (a patch has only part A)" : ""));
+        }
+        const std::string where = "part " + it.key();
+        if (!it.value().is_object()) fail(file, where, "must be an object");
+        onlyKeys(it.value(), {"Source", "Filter", "Shaper", "Part FX", "Mod 1", "Mod 2", "Mod 3", "Mod 4", "settings",
+                              "routes"},
+                 file, where);
+        for (const SlotName& slot : kSlots) {
+          if (it.value().contains(slot.key)) {
+            applySlot(synth, it.value()[slot.key], slot.kind, part, file, where + " " + slot.key);
+          }
+        }
+        if (it.value().contains("settings")) {
+          applySettings(synth, object(it.value(), "settings", file, where), part, file, where + " settings");
+        }
+        if (it.value().contains("routes")) applyRoutes(synth, it.value()["routes"], part, file, where);
+      }
+    }
+    result.json = preset::save(synth, state::StateStore{}, result.meta, isPatch ? 0 : -1);
+    if (result.json.empty()) fail(file, "", "the core refused to save this preset");
+    out = std::move(result);
+    return true;
+  } catch (const Fail& f) {
+    error = f.what();
+  } catch (const std::exception& e) {
+    error = file + ": " + e.what();
+  }
+  return false;
+}
+
+// ---- decompile ---------------------------------------------------------------------------
+
+namespace {
+
+// The shortest decimal that reads back as the same float (JSON numbers are doubles here, so a bare
+// float would print as 0.30000001192092896).
+double shortFloat(double value) {
+  const float f = float(value);
+  char buffer[32];
+  for (int digits = 1; digits <= 9; ++digits) {
+    std::snprintf(buffer, sizeof buffer, "%.*g", digits, double(f));
+    if (std::strtof(buffer, nullptr) == f) break;
+  }
+  return std::strtod(buffer, nullptr);
+}
+
+// A setting as the source writes it: the option name when it has one, else the number.
+ojson settingJson(size_t index, double value) {
+  const ParamSpec& spec = paramSpec(index);
+  if (spec.stepped) {
+    char buffer[64] = {};
+    formatParam(index, value, buffer, sizeof buffer);
+    // Only a name that maps back to exactly this value stands for it.
+    if (buffer[0] != '\0') {
+      for (int v = int(spec.minValue); v <= int(spec.maxValue); ++v) {
+        char other[64] = {};
+        formatParam(index, double(v), other, sizeof other);
+        if (v != int(value) && std::string(other) == buffer) return ojson(int(value));
+      }
+      return ojson(std::string(buffer));
+    }
+    return ojson(int(value));
+  }
+  return ojson(shortFloat(value));
+}
+
+}  // namespace
+
+bool decompile(const std::string& presetJson, std::string& sourceText, std::string& error) {
+  try {
+    const auto meta = preset::readMeta(presetJson);
+    if (!meta) fail("preset", "", "not a preset this version can read");
+    Synth synth(meta->plugin);
+    state::StateStore store;
+    preset::ApplyResult applied;
+    const std::string merged = preset::mergeForApply(store.save(synth), presetJson, meta->plugin, 0, applied);
+    if (merged.empty() || store.load(synth, merged) == state::LoadResult::Invalid) {
+      fail("preset", "", applied.message.empty() ? "cannot apply" : applied.message);
+    }
+    const bool isPatch = meta->kind == preset::Kind::Patch;
+
+    ojson root = ojson::object();
+    root["kind"] = isPatch ? "patch" : "performance";
+    root["plugin"] = meta->plugin == PluginKind::Effect ? "effect" : "instrument";
+    root["name"] = meta->name;
+    root["note"] = meta->note;
+    root["credit"] = meta->credit;
+    root["licence"] = meta->licence;
+    root["order"] = 0;
+    if (!isPatch) {
+      ojson master = ojson::object();
+      for (size_t i = 0; i < kMasterParamCount; ++i) {
+        const size_t index = masterParamIndex(MasterParam(i));
+        master[paramSpec(index).name] = settingJson(index, synth.param(paramSpec(index).id));
+      }
+      root["master"] = master;
+    }
+    const RouteNames names(synth);
+    ojson parts = ojson::object();
+    for (int part = 0; part < (isPatch ? 1 : kNumParts); ++part) {
+      ojson out = ojson::object();
+      for (const SlotName& slot : kSlots) {
+        const int engine = synth.engine(slot.kind, part);
+        const EngineInfo& info = slotEngineInfo(slot.kind, engine);
+        ojson s = ojson::object();
+        s["engine"] = info.displayName;
+        if (isModSlot(slot.kind)) {
+          const size_t index = modScopeParamIndex(part, modSlotIndex(slot.kind));
+          s["scope"] = settingJson(index, synth.param(paramSpec(index).id));
+        }
+        if (info.paramCount > 0) {
+          ojson params = ojson::object();
+          for (int p = 0; p < info.paramCount; ++p) {
+            if (tools::isUnusedParam(info.params[p])) continue;
+            params[info.params[p].name] = shortFloat(synth.param(paramSpec(slotParamIndex(slot.kind, part, p)).id));
+          }
+          s["params"] = params;
+        }
+        out[slot.key] = s;
+      }
+      ojson settings = ojson::object();
+      for (size_t i = 0; i < kPartParamCount; ++i) {
+        const size_t index = partParamIndex(part, PartParam(i + 1));
+        settings[paramSpec(index).name] = settingJson(index, synth.param(paramSpec(index).id));
+      }
+      out["settings"] = settings;
+      ojson routes = ojson::array();
+      int next = 0;
+      for (int r = 0; r < kNumRoutes; ++r) {
+        const Route route = synth.patch().routes[size_t(part)][size_t(r)];
+        if (route.source == kSrcNone && route.destination == kDestNone) continue;
+        ojson entry = ojson::object();
+        if (r != next) entry["slot"] = r + 1;
+        const std::string source = names.source(part, route.source);
+        const std::string destination = names.destination(part, route.destination);
+        const std::string via = route.via == kSrcNone ? std::string() : names.source(part, route.via);
+        if (source.empty() || destination.empty() || (route.via != kSrcNone && via.empty())) {
+          fail("preset", "part " + std::string(kPartKeys[part]), "route " + std::to_string(r + 1) + " uses a code this tool cannot name");
+        }
+        entry["source"] = source;
+        if (!via.empty()) entry["via"] = via;
+        entry["destination"] = destination;
+        entry["amount"] = shortFloat(synth.param(paramSpec(routeAmountParamIndex(part, r)).id));
+        routes.push_back(entry);
+        next = r + 1;
+      }
+      out["routes"] = routes;
+      parts[kPartKeys[part]] = out;
+    }
+    root["parts"] = parts;
+    sourceText = root.dump(2) + "\n";
+    return true;
+  } catch (const Fail& f) {
+    error = f.what();
+  } catch (const std::exception& e) {
+    error = e.what();
+  }
+  return false;
+}
+
+NoteScript noteScript(double seconds) { return {{48, 55, 62, 69}, 100.0f / 127.0f, 8.0, seconds}; }
+
+NoteScript stressScript() { return {{36, 43, 48, 52, 55, 59, 62, 67}, 1.0f, 6.0, 7.0, false, 6.0}; }
+
+NoteScript extremesScript() { return {{36, 48, 55, 64, 72, 79, 84, 96}, 1.0f, 6.0, 7.0, true, 6.0}; }
+
+Audio fxTestLoop() {
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kBeat = 0.5;  // 120 BPM
+  const size_t n = size_t(8.0 * kSampleRate);
+  std::vector<double> l(n, 0.0), r(n, 0.0);
+  uint32_t state = 0x5eed1234u;  // one fixed generator for every random value below
+  auto noise = [&] {
+    state = state * 1664525u + 1013904223u;
+    return double(state >> 8) / double(1u << 24) - 0.5;
+  };
+  auto at = [](double seconds) { return size_t(seconds * kSampleRate + 0.5); };
+
+  // Kick on every beat: a sine falling from about 155 Hz to 45 Hz, 0.4 s.
+  for (int beat = 0; beat < 16; ++beat) {
+    double phase = 0.0;
+    for (size_t i = 0, start = at(beat * kBeat); i < at(0.4) && start + i < n; ++i) {
+      const double t = double(i) / kSampleRate;
+      phase += 2.0 * kPi * (45.0 + 110.0 * std::exp(-t / 0.03)) / kSampleRate;
+      const double v = std::sin(phase) * std::exp(-t / 0.12) * std::min(1.0, t / 0.001);
+      l[start + i] += v;
+      r[start + i] += v;
+    }
+  }
+  // Closed hat on every off-beat: twice-differenced noise, 30 ms decay, a little right.
+  for (int beat = 0; beat < 16; ++beat) {
+    double x1 = 0.0, d1 = 0.0;
+    for (size_t i = 0, start = at(beat * kBeat + kBeat / 2.0); i < at(0.08) && start + i < n; ++i) {
+      const double x = noise();
+      const double d = x - x1;
+      const double v = (d - d1) * std::exp(-double(i) / kSampleRate / 0.03);
+      x1 = x;
+      d1 = d;
+      l[start + i] += 0.14 * v;
+      r[start + i] += 0.2 * v;
+    }
+  }
+  // A plucked phrase (Karplus-Strong) in A minor pentatonic, 16th-note steps, two bars played
+  // twice with a different ending, a little left.
+  struct Step {
+    int step, note;
+  };
+  const Step phrase[] = {{0, 57},  {3, 60},  {6, 64},  {8, 62},  {10, 69}, {12, 67}, {14, 64}, {16, 62},
+                         {19, 64}, {22, 67}, {24, 69}, {28, 72}, {32, 57}, {35, 60}, {38, 64}, {40, 62},
+                         {42, 69}, {44, 67}, {46, 64}, {48, 62}, {51, 60}, {54, 57}, {56, 52}, {60, 55}};
+  for (const Step& s : phrase) {
+    const double hz = 440.0 * std::pow(2.0, (s.note - 69) / 12.0);
+    std::vector<double> line(size_t(kSampleRate / hz + 0.5));
+    for (double& v : line) v = noise();
+    double previous = 0.0;
+    const size_t start = at(s.step * kBeat / 4.0);
+    const size_t length = std::min(at(1.2), n - start);  // the last notes fade out before the loop ends
+    for (size_t i = 0, k = 0; i < length; ++i, k = (k + 1) % line.size()) {
+      const double v = line[k];
+      line[k] = 0.996 * 0.5 * (v + previous);
+      previous = v;
+      const double fade = i + at(0.05) > length ? double(length - i) / double(at(0.05)) : 1.0;
+      l[start + i] += 0.9 * v * fade;
+      r[start + i] += 0.6 * v * fade;
+    }
+  }
+  // Sustained A2 + E3 (110 and 165 Hz, whole cycles in 8 s, so it loops without a seam): eight
+  // harmonics falling as 1/k, swelling gently once a bar.
+  for (size_t i = 0; i < n; ++i) {
+    const double t = double(i) / kSampleRate;
+    double v = 0.0;
+    for (int k = 1; k <= 8; ++k) v += (std::sin(2.0 * kPi * 110.0 * k * t) + 0.7 * std::sin(2.0 * kPi * 165.0 * k * t)) / k;
+    v *= 0.07 * (0.8 + 0.2 * std::sin(2.0 * kPi * t / (4.0 * kBeat)));
+    l[i] += v;
+    r[i] += v;
+  }
+
+  // The kicks leave a small offset: a 10 Hz one-pole high-pass takes it out, run round the loop
+  // twice so its state at the start is the one it has at the end (no step where the loop repeats).
+  const double coefficient = std::exp(-2.0 * kPi * 10.0 / kSampleRate);
+  for (std::vector<double>* channel : {&l, &r}) {
+    std::vector<double>& x = *channel;
+    std::vector<double> y(n);
+    double previousIn = x[n - 1], previousOut = 0.0;
+    for (int pass = 0; pass < 2; ++pass) {
+      for (size_t i = 0; i < n; ++i) {
+        previousOut = coefficient * (previousOut + x[i] - previousIn);
+        previousIn = x[i];
+        y[i] = previousOut;
+      }
+    }
+    x = y;
+  }
+
+  double peak = 0.0;
+  for (size_t i = 0; i < n; ++i) peak = std::max({peak, std::fabs(l[i]), std::fabs(r[i])});
+  Audio out;
+  out.left.resize(n);
+  out.right.resize(n);
+  for (size_t i = 0; i < n; ++i) {
+    out.left[i] = float(l[i] / peak);
+    out.right[i] = float(r[i] / peak);
+  }
+  return out;
+}
+
+bool render(const std::string& presetJson, int part, double seconds, Audio& out, std::string& error,
+            RenderOptions* options) {
+  return renderScript(presetJson, part, noteScript(seconds), out, error, options);
+}
+
+bool renderScript(const std::string& presetJson, int part, const NoteScript& script, Audio& out, std::string& error,
+                  RenderOptions* options) {
+  const auto meta = preset::readMeta(presetJson);
+  if (!meta) {
+    error = "not a preset this version can read";
+    return false;
+  }
+  if (part < 0 || part >= kNumParts) {
+    error = "part must be A or B";
+    return false;
+  }
+  // Every render starts the shared generators afresh: the same preset and script give the same
+  // samples alone or after other renders, in the CLI and in every ctest (table order no longer
+  // matters).
+  reseedSharedRandom();
+  Synth synth(meta->plugin);
+  state::StateStore store;
+  preset::ApplyResult applied;
+  const std::string merged = preset::mergeForApply(store.save(synth), presetJson, meta->plugin, part, applied);
+  if (merged.empty() || store.load(synth, merged) == state::LoadResult::Invalid) {
+    error = applied.message.empty() ? "cannot apply the preset" : applied.message;
+    return false;
+  }
+  if (meta->kind == preset::Kind::Patch && part == 1) {
+    // Both parts hear every note, and the Init sound in A is muted, so only the patch is heard.
+    synth.setParam(paramSpec(masterParamIndex(MasterParam::Mode)).id, double(PartMode::Layer));
+    synth.setParam(paramSpec(partParamIndex(0, PartParam::Level)).id, 0.0);
+  }
+  if (options != nullptr && !options->softClip) {
+    synth.setParam(paramSpec(masterParamIndex(MasterParam::SoftClip)).id, 0.0);
+  }
+  synth.prepare(kSampleRate, kBlock);
+
+  const size_t total = size_t(script.seconds * kSampleRate);
+  const size_t hold = size_t(script.holdSeconds * kSampleRate);
+  out.left.assign(total, 0.0f);
+  out.right.assign(total, 0.0f);
+  // An effect plays no notes (EG13 FX runs on its input alone): the input, the test loop unless
+  // the caller gives one, plays for the hold (looped if shorter) at the script's input level, then
+  // silence for the tail.
+  std::vector<float> inL, inR;
+  const bool effect = meta->plugin == PluginKind::Effect;
+  if (effect) {
+    const Audio loop = options != nullptr && options->input != nullptr ? Audio() : fxTestLoop();
+    const Audio& input = options != nullptr && options->input != nullptr ? *options->input : loop;
+    inL.assign(total, 0.0f);
+    inR.assign(total, 0.0f);
+    const float gain = float(std::pow(10.0, script.inputDb / 20.0));
+    const size_t length = std::min(input.left.size(), input.right.size());
+    for (size_t i = 0; length > 0 && i < std::min(total, hold); ++i) {
+      inL[i] = gain * input.left[i % length];
+      inR[i] = gain * input.right[i % length];
+    }
+  }
+  if (script.expressionMax) {
+    synth.controlChange(0, 1, 127);
+    synth.controlChange(0, 74, 127);
+    synth.channelPressure(0, 1.0f);
+  }
+  const std::vector<int> notes = effect ? std::vector<int>() : script.notes;
+  for (const int note : notes) {
+    synth.noteOn(0, note, script.velocity);
+    if (script.expressionMax) synth.polyPressure(0, note, 1.0f);
+  }
+  bool released = false;
+  for (size_t at = 0; at < total;) {
+    if (!released && at >= hold) {
+      for (const int note : notes) synth.noteOff(0, note);
+      released = true;
+    }
+    size_t n = std::min<size_t>(size_t(kBlock), total - at);
+    if (!released && at + n > hold) n = hold - at;  // the release lands on a block edge
+    float* o[2] = {out.left.data() + at, out.right.data() + at};
+    const float* in[2] = {effect ? inL.data() + at : nullptr, effect ? inR.data() + at : nullptr};
+    synth.process(effect ? in : nullptr, o, nullptr, int(n));
+    at += n;
+  }
+  if (options != nullptr) {
+    UiSnapshot snap;
+    synth.uiSnapshot(&snap);  // peaks held since the synth was made: the whole render
+    for (int p = 0; p < kNumParts; ++p) options->partPeaks[p] = std::max(snap.partPeak[p][0], snap.partPeak[p][1]);
+  }
+  return true;
+}
+
+double rmsDb(const Audio& audio, double from, double to) {
+  const size_t a = std::min(audio.left.size(), size_t(std::max(0.0, from) * kSampleRate));
+  const size_t b = std::min(audio.left.size(), size_t(std::max(0.0, to) * kSampleRate));
+  double sum = 0.0;
+  for (size_t i = a; i < b; ++i) {
+    sum += double(audio.left[i]) * double(audio.left[i]) + double(audio.right[i]) * double(audio.right[i]);
+  }
+  return b > a ? dbOf(sum / (2.0 * double(b - a))) : -120.0;
+}
+
+std::vector<double> levelEnvelope(const Audio& audio) {
+  constexpr size_t kFrame = size_t(kSampleRate / 4);
+  std::vector<double> out;
+  for (size_t from = 0; from + kFrame <= audio.left.size(); from += kFrame) {
+    double sum = 0.0;
+    for (size_t i = from; i < from + kFrame; ++i) {
+      sum += double(audio.left[i]) * double(audio.left[i]) + double(audio.right[i]) * double(audio.right[i]);
+    }
+    out.push_back(dbOf(sum / (2.0 * double(kFrame))));
+  }
+  return out;
+}
+
+bool envelopesMatch(const std::vector<double>& expected, const std::vector<double>& actual, std::string& why) {
+  if (expected.size() != actual.size()) {
+    why = "envelope length " + std::to_string(actual.size()) + " frames, golden has " + std::to_string(expected.size());
+    return false;
+  }
+  for (size_t i = 0; i < expected.size(); ++i) {
+    if (expected[i] <= kGoldenFloorDb && actual[i] <= kGoldenFloorDb) continue;
+    if (std::fabs(expected[i] - actual[i]) > kGoldenToleranceDb) {
+      char buffer[160];
+      std::snprintf(buffer, sizeof buffer, "at %.2f s: %.1f dB, golden %.1f dB", double(i) * 0.25, actual[i], expected[i]);
+      why = buffer;
+      return false;
+    }
+  }
+  return true;
+}
+
+bool writeWav(const std::string& path, const Audio& audio, std::string& error) {
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out) {
+    error = "cannot write " + path;
+    return false;
+  }
+  const uint32_t frames = uint32_t(audio.left.size());
+  const uint32_t dataBytes = frames * 4;
+  auto u32 = [&](uint32_t v) { for (int i = 0; i < 4; ++i) out.put(char((v >> (8 * i)) & 0xFF)); };
+  auto u16 = [&](uint16_t v) { for (int i = 0; i < 2; ++i) out.put(char((v >> (8 * i)) & 0xFF)); };
+  out.write("RIFF", 4);
+  u32(36 + dataBytes);
+  out.write("WAVEfmt ", 8);
+  u32(16);
+  u16(1);  // PCM
+  u16(2);
+  u32(uint32_t(kSampleRate));
+  u32(uint32_t(kSampleRate) * 4);
+  u16(4);
+  u16(16);
+  out.write("data", 4);
+  u32(dataBytes);
+  auto sample = [&](float v) {
+    const float clipped = std::max(-1.0f, std::min(1.0f, v));
+    u16(uint16_t(int16_t(std::lround(clipped * 32767.0f))));
+  };
+  for (uint32_t i = 0; i < frames; ++i) {
+    sample(audio.left[i]);
+    sample(audio.right[i]);
+  }
+  out.flush();
+  if (!out) {
+    error = "cannot write " + path;
+    return false;
+  }
+  return true;
+}
+
+bool readWav(const std::string& path, Audio& audio, std::string& error) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    error = "cannot read " + path;
+    return false;
+  }
+  const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto u16 = [&](size_t at) { return uint32_t(uint8_t(bytes[at])) | uint32_t(uint8_t(bytes[at + 1])) << 8; };
+  auto u32 = [&](size_t at) { return u16(at) | u16(at + 2) << 16; };
+  if (bytes.size() < 12 || bytes.compare(0, 4, "RIFF") != 0 || bytes.compare(8, 4, "WAVE") != 0) {
+    error = path + ": not a WAV file";
+    return false;
+  }
+  uint32_t format = 0, channels = 0, rate = 0, bits = 0;
+  size_t data = 0, dataBytes = 0;
+  for (size_t at = 12; at + 8 <= bytes.size();) {
+    const std::string id = bytes.substr(at, 4);
+    const size_t size = u32(at + 4);
+    if (id == "fmt " && size >= 16 && at + 24 <= bytes.size()) {
+      format = u16(at + 8);
+      channels = u16(at + 10);
+      rate = u32(at + 12);
+      bits = u16(at + 22);
+      if (format == 0xFFFE && size >= 40 && at + 34 <= bytes.size()) format = u16(at + 32);  // extensible
+    } else if (id == "data") {
+      data = at + 8;
+      dataBytes = std::min(size, bytes.size() - data);
+    }
+    at += 8 + size + (size & 1);
+  }
+  const bool pcm = format == 1 && (bits == 16 || bits == 24);
+  const bool fl = format == 3 && bits == 32;
+  if (data == 0 || channels == 0 || !(pcm || fl)) {
+    error = path + ": only 16- or 24-bit PCM and 32-bit float WAVs are read";
+    return false;
+  }
+  if (rate != uint32_t(kSampleRate)) {
+    error = path + ": " + std::to_string(rate) + " Hz; renders run at 48000 Hz and the input is not resampled";
+    return false;
+  }
+  const size_t width = bits / 8, frames = dataBytes / (width * channels);
+  auto sample = [&](size_t at) -> float {
+    if (fl) {
+      const uint32_t v = u32(at);
+      float f;
+      std::memcpy(&f, &v, sizeof f);
+      return f;
+    }
+    if (bits == 16) return float(int16_t(u16(at))) / 32767.0f;
+    const int32_t v = int32_t((u16(at) | uint32_t(uint8_t(bytes[at + 2])) << 16) << 8) >> 8;
+    return float(v) / 8388607.0f;
+  };
+  audio.left.resize(frames);
+  audio.right.resize(frames);
+  for (size_t f = 0; f < frames; ++f) {
+    const size_t at = data + f * width * channels;
+    audio.left[f] = sample(at);
+    audio.right[f] = channels > 1 ? sample(at + width) : audio.left[f];
+  }
+  return true;
+}
+
+bool collect(const std::vector<std::string>& dirs, std::vector<Entry>& out, std::string& error) {
+  out.clear();
+  std::vector<std::string> bankOrder;
+  for (const std::string& dir : dirs) {
+    bankOrder.push_back(bankName(dir));
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec)) continue;
+    std::vector<fs::path> files;
+    for (const auto& item : fs::directory_iterator(dir, ec)) {
+      if (item.is_regular_file() && item.path().extension() == ".json") files.push_back(item.path());
+    }
+    std::sort(files.begin(), files.end());
+    for (const fs::path& path : files) {
+      std::string readError;
+      const std::string source = slurp(path.string(), readError);
+      if (!readError.empty()) {
+        error = readError;
+        return false;
+      }
+      Entry entry;
+      entry.bank = bankName(dir);
+      entry.file = path.string();
+      if (!compileSource(source, entry.file, entry.bank, entry.compiled, error)) return false;
+      out.push_back(std::move(entry));
+    }
+  }
+  auto bankIndex = [&](const Entry& e) {
+    return std::find(bankOrder.begin(), bankOrder.end(), e.bank) - bankOrder.begin();
+  };
+  std::stable_sort(out.begin(), out.end(), [&](const Entry& a, const Entry& b) {
+    if (bankIndex(a) != bankIndex(b)) return bankIndex(a) < bankIndex(b);
+    if (a.compiled.order != b.compiled.order) return a.compiled.order < b.compiled.order;
+    return a.compiled.meta.name < b.compiled.meta.name;
+  });
+  for (size_t i = 0; i < out.size(); ++i) {
+    for (size_t j = i + 1; j < out.size(); ++j) {
+      if (out[i].bank == out[j].bank && out[i].compiled.meta.name == out[j].compiled.meta.name) {
+        error = out[j].file + ": the name \"" + out[j].compiled.meta.name + "\" is already used by " + out[i].file;
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+std::string tableSource(const std::vector<Entry>& entries) {
+  std::ostringstream out;
+  out << "// Generated by eg13_preset table from presets/. Do not edit.\n"
+         "#include \"preset/factory.h\"\n\n"
+         "namespace eg13::preset {\n\n";
+  if (!entries.empty()) {
+    out << "namespace {\n\nconst FactoryPreset kTable[] = {\n";
+    for (const Entry& e : entries) {
+      const Compiled& c = e.compiled;
+      out << "    {" << cString(e.bank) << ", " << cString(c.meta.name) << ", " << cString(c.meta.note) << ", "
+          << cString(c.meta.credit) << ", " << cString(c.meta.licence) << ", "
+          << (c.meta.kind == preset::Kind::Patch ? "Kind::Patch" : "Kind::Performance") << ", "
+          << (c.meta.plugin == PluginKind::Effect ? "PluginKind::Effect" : "PluginKind::Instrument") << ", "
+          << (c.firstLoad ? "true" : "false") << ", " << c.order << ",\n     " << longString(json::parse(c.json).dump()) << "},\n";
+    }
+    out << "};\n\n}  // namespace\n\n";
+  }
+  out << "const FactoryPreset* generatedFactoryPresets(size_t& count) {\n  count = " << entries.size() << ";\n  return "
+      << (entries.empty() ? "nullptr" : "kTable") << ";\n}\n\n}  // namespace eg13::preset\n";
+  return out.str();
+}
+
+bool goldenFor(const std::vector<Entry>& entries, std::string& jsonText, std::string& error) {
+  json root;
+  root["version"] = 1;
+  root["presets"] = json::object();
+  for (const Entry& e : entries) {
+    Audio audio;
+    if (!render(e.compiled.json, 0, kDefaultSeconds, audio, error)) {
+      error = e.file + ": " + error;
+      return false;
+    }
+    json envelope = json::array();
+    for (const double db : levelEnvelope(audio)) envelope.push_back(std::round(db * 100.0) / 100.0);
+    root["presets"][e.bank + "/" + e.compiled.meta.name] = {{"envelope", envelope}};
+  }
+  jsonText = root.dump(1) + "\n";
+  return true;
+}
+
+bool presetInfo(const std::string& text, std::string& lines, std::string& error) {
+  const json root = json::parse(text, nullptr, false);
+  if (!root.is_object()) {
+    error = "not a JSON object";
+    return false;
+  }
+  auto field = [&](const char* key) {
+    std::string v = root.contains(key) && root[key].is_string() ? root[key].get<std::string>() : "";
+    for (char& c : v)
+      if (static_cast<unsigned char>(c) < 0x20) c = ' ';
+    return v;
+  };
+  const long order = root.contains("order") && root["order"].is_number() ? root["order"].get<long>() : 0;
+  lines.clear();
+  for (const char* key : {"name", "note", "credit", "plugin", "kind"}) lines += std::string(key) + "=" + field(key) + "\n";
+  lines += "order=" + std::to_string(order) + "\n";
+  return true;
+}
+
+}  // namespace eg13::presettool

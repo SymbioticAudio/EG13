@@ -1,10 +1,12 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <vector>
 
 #include "engine/native_rate_wrapper.h"
 #include "engine/stereo_link.h"
+#include "util/dc_blocker.h"
 #include "voice/source_factory.h"
 
 namespace eg13 {
@@ -54,6 +56,11 @@ class ProcessorSlot {
   // belong to the requested engine, as the host already shows them.
   void setEngine(int engine);
 
+  // An engine whose SourceSpec asks for it (dcBlock: the Shaper's and Part FX's engines but Off) has its output
+  // run through its own DC filter, after its gain and before the crossfade, so a type change
+  // fades between the filtered and the unfiltered sound; the filter starts from rest whenever the
+  // engine does (reset, restart, a switch to it).
+
   // Main thread: scales one engine's output, before the crossfade (default: its SourceSpec's
   // outputGain). The Part FX slot mutes Off this way: its bypass line carries the part mix.
   void setOutputGain(int engine, float gain);
@@ -76,6 +83,8 @@ class ProcessorSlot {
 
   std::vector<std::unique_ptr<NativeRateWrapper>> engines_;
   std::vector<float> outputGain_;  // per engine
+  std::vector<bool> dcBlock_;      // per engine
+  std::vector<std::array<DcBlocker, 2>> dc_;  // per engine, per channel
   int current_ = 0;
   int previous_ = -1;
   int pending_ = -1;

@@ -261,13 +261,13 @@ TEST_CASE("Drain asks for one pump while a backlog remains") {
   REQUIRE(pumpRequests == 1);
   FakeOut fake;
   bridge.drain(&fake.out);
-  CHECK(pumpRequests == 2);  // one request for the drain
+  CHECK(pumpRequests == 1);  // push's request is still outstanding: the drain does not repeat it
   bridge.drain(&fake.out);
-  CHECK(pumpRequests == 2);  // flag already consumed: no repeat
+  CHECK(pumpRequests == 1);
   bridge.pump();
-  CHECK(pumpRequests == 2);  // pump never asks
+  CHECK(pumpRequests == 1);  // pump never asks
   bridge.drain(&fake.out);
-  CHECK(pumpRequests == 3);  // pump left a backlog (3000 > 2 queues), so this drain asks again
+  CHECK(pumpRequests == 2);  // pump left a backlog (3000 > 2 queues), so this drain asks again
   bridge.pump();
   bridge.drain(&fake.out);
   bridge.pump();
@@ -302,4 +302,30 @@ TEST_CASE("A detached bridge asks the host for nothing, even when gestures close
   for (int i = 0; i < 2000; ++i) bridge.edit(a, 0.0);  // overflow would ask for a pump
   CHECK(flushes == before);
   CHECK(pumps == 0);
+}
+
+TEST_CASE("A P edit that follows an engine change through the bridge is not sent back to the host") {
+  eg13::Synth synth(eg13::PluginKind::Instrument);
+  synth.prepare(48000.0, 256);
+  synth.setActive(true);
+  UiBridge bridge(synth, {});
+  const uint32_t engine = eg13::paramSpec(eg13::sourceEngineParamIndex(0)).id;
+  const uint32_t p3 = eg13::paramSpec(eg13::sourceParamIndex(0, 2)).id;
+  const uint32_t p4 = eg13::paramSpec(eg13::sourceParamIndex(0, 3)).id;
+  bridge.edit(engine, 3.0);  // Resonator: queues every P for the host
+  bridge.edit(p3, 0.66);     // the user's own value for P3, already known to the host
+  synth.beginBlock();
+  FakeOut fake;
+  bridge.drain(&fake.out);
+  eg13::HostUpdate updates[2 * eg13::kSourceParamCount];
+  const int count = synth.takeHostUpdates(updates, int(2 * eg13::kSourceParamCount));
+  const auto has = [&](uint32_t id) {
+    for (int i = 0; i < count; ++i)
+      if (updates[i].id == id) return true;
+    return false;
+  };
+  REQUIRE(count == int(eg13::kSourceParamCount) - 1);
+  REQUIRE(has(p4));
+  REQUIRE_FALSE(has(p3));
+  synth.setActive(false);
 }

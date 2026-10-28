@@ -1,0 +1,31 @@
+{
+  "kind": "performance",
+  "plugin": "effect",
+  "name": "Chord Vocoder",
+  "note": "A vocoder: the input is the modulator, and part B, a minor chord from the Plaits chord model stepping at random through A minor, is the carrier, so the input's rhythm and formants play the chords.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 12,
+  "master": { "Mode": "Single" },
+  "parts": {
+    "A": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "Off" },
+      "Shaper": { "engine": "Ring Mod / Vocoder", "params": { "Algorithm": "Vocoder", "Carrier": "Other part", "Modulator": "Voice", "Mod Level": 0.85, "Carrier Level": 0.55 } },
+      "Part FX": { "engine": "Reverb", "params": { "Amount": 0.25, "Time": 0.5 } },
+      "settings": { "Level": 0.4302 },
+      "routes": []
+    },
+    "B": {
+      "Source": { "engine": "Macro Oscillator", "params": { "Model": "Chords", "Harmonics": 0.32, "Timbre": 0.4, "Morph": 0.5 } },
+      "Filter": { "engine": "Off" },
+      "Mod 1": { "engine": "Random / S&H", "scope": "per part", "params": { "T Rate": 0.3, "X Range": "Positive", "X Spread": 0.2, "X Bias": 0.4, "X Steps": 1.0, "X Scale": "Minor" } },
+      "settings": { "Level": 0.8, "Trigger": "Always on", "Base Note": "A2" },
+      "routes": [
+        { "source": "Mod 1 Random / S&H X1", "destination": "Pitch", "amount": 1.0 },
+        { "source": "Mod 1 Random / S&H X1", "destination": "Pitch", "amount": 1.0 },
+        { "source": "Mod 1 Random / S&H X1", "destination": "Pitch", "amount": 0.5 }
+      ]
+    }
+  }
+}

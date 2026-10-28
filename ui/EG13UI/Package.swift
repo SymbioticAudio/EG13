@@ -12,9 +12,15 @@ let withBrand = Context.environment["EG13_NO_BRAND"] == nil
 // one name (spec §2.2). Sources keep
 // importing the original module names; scripts/check-objc-prefix.sh verifies the result.
 let aliases = ["SymbioticIcons": "EG13SymbioticIcons", "SymbioticTokens": "EG13SymbioticTokens"]
-let icons: Target.Dependency = withBrand
-    ? .product(name: "SymbioticBrand", package: "symbiotic-design", moduleAliases: aliases)
-    : .product(name: "SymbioticIcons", package: "symbiotic-design", moduleAliases: aliases)
+let tokens: Target.Dependency =
+    .product(name: "SymbioticTokens", package: "symbiotic-design", moduleAliases: aliases)
+// The editor imports SymbioticTokens and SymbioticIcons (and SymbioticBrand when present). Without
+// the brand, the SymbioticIcons product brings SymbioticTokens with it, and naming the tokens
+// product as well leaves SymbioticTokens unresolved (SwiftPM 6.4 module aliasing); with the brand,
+// the tokens product must be named.
+let design: [Target.Dependency] = withBrand
+    ? [tokens, .product(name: "SymbioticBrand", package: "symbiotic-design", moduleAliases: aliases)]
+    : [.product(name: "SymbioticIcons", package: "symbiotic-design", moduleAliases: aliases)]
 
 let package = Package(
     name: "EG13UI",
@@ -33,11 +39,7 @@ let package = Package(
         .systemLibrary(name: "EG13CBridge"),
         .target(
             name: "EG13UI",
-            dependencies: [
-                "EG13CBridge",
-                .product(name: "SymbioticTokens", package: "symbiotic-design", moduleAliases: aliases),
-                icons,
-            ]),
+            dependencies: ["EG13CBridge"] + design),
         // The engine tables generated from the core (tools/ui_tables), for the preview and the
         // tests only. It has resources, so it must never be a dependency of EG13UI: the static
         // library the plugin links would then need its bundle (scripts/build-ui.sh checks).

@@ -88,7 +88,7 @@ final class EG13PreviewCore: EG13Core {
             for route in 0..<EG13ParamID.routeCount {
                 add(EG13ParamID.routeAmount(part, route), "Route \(route + 1)", -1, 1, route < 3 ? [1, 0.3, 0.1][route] : 0)
             }
-            add(EG13ParamID.part(part, .level), "Level", 0, 1, 1)
+            add(EG13ParamID.part(part, .level), "Level", 0, 1, Self.partLevelUnity)
             add(EG13ParamID.part(part, .pan), "Pan", -1, 1, 0)
             add(EG13ParamID.part(part, .glide), "Glide", 0, 1, 0)
             add(EG13ParamID.part(part, .transpose), "Transpose", -24, 24, 0, stepped: true)
@@ -169,6 +169,17 @@ final class EG13PreviewCore: EG13Core {
         return p <= engine.params.count ? engine.params[p - 1] : "(unused)"
     }
 
+    /// Part Level as the core shows it (core/part/part_level.h): the knob position, gain
+    /// (v / unity)^3, from silence to +12 dB, 0 dB at the default.
+    static let partLevelUnity = 0.63095734
+    static func partLevelText(_ value: Double) -> String {
+        let ratio = min(max(value, 0), 1) / partLevelUnity
+        let gain = ratio * ratio * ratio
+        guard gain > 0 else { return "-inf dB" }
+        let db = 20 * log10(gain)
+        return abs(db) < 0.05 ? "0.0 dB" : String(format: "%+.1f dB", db)
+    }
+
     func paramText(at index: Int, value: Double) -> String {
         let d = descriptors[index]
         let i = Int(value.rounded())
@@ -198,6 +209,7 @@ final class EG13PreviewCore: EG13Core {
             if isPart(.midiChannel) { return i == 0 ? "Omni" : "\(i)" }
             if isPart(.transpose) { return String(format: "%+d st", i) }
             if isPart(.bendRange) || isPart(.mpeBendRange) { return "+/-\(i) st" }
+            if isPart(.level) { return Self.partLevelText(value) }
             if [.ccA, .ccB, .ccC, .ccD].contains(where: isPart) { return "CC \(i)" }
             if isPart(.baseNote) || isPart(.keyLow) || isPart(.keyHigh) {
                 let note = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][i % 12]
@@ -441,4 +453,37 @@ final class EG13PreviewCore: EG13Core {
     }
 
     func version() -> String { "preview" }
+
+    // MARK: Presets (made-up names for the screenshots; nothing is loaded)
+
+    var browser = ""
+    /// The list EG13 FX shows (an FX bank) instead of the instrument's two banks.
+    var fxList = false
+    func factoryPresets() -> [EG13PresetEntry] {
+        let list: [(String, String, EG13PresetEntry.Kind)] = fxList
+            ? [("FX", "Granular Wash", .performance), ("FX", "Ring Shimmer", .performance),
+               ("FX", "Tape Smear", .patch), ("FX", "Frozen Room", .performance), ("FX", "Metal Rain", .patch)]
+            : [("Bank 1", "Glass Tide", .performance), ("Bank 1", "Slow Ring Garden", .performance),
+               ("Bank 1", "Warm Drift", .patch), ("Bank 1", "Bowed Bells", .patch),
+               ("Bank 1", "Dusk Choir", .performance), ("Bank 1", "Grain Fog", .patch),
+               ("Bank 1", "Sub Pulse", .patch), ("Bank 1", "Hollow Reed", .patch),
+               ("Bank 1", "Ring Mist", .performance),
+               ("Bank 2", "catnap \u{2014} full rebuild", .performance), ("Bank 2", "catnap \u{2014} pad side", .patch),
+               ("Bank 2", "catnap \u{2014} pluck side", .patch), ("Bank 2", "catnap \u{2014} drone", .performance)]
+        return list.enumerated().map { EG13PresetEntry(bank: $1.0, name: $1.1, kind: $1.2, source: .factory($0)) }
+    }
+    func applyPreset(json: String, target: EG13PresetTarget) -> EG13PresetApplyResult {
+        EG13PresetApplyResult(status: .ok)
+    }
+    func applyInit() -> EG13PresetApplyResult { EG13PresetApplyResult(status: .ok) }
+    func savePreset(part: Int?, name: String) -> String {
+        let root: [String: Any] = [
+            "eg13Preset": 1, "kind": part == nil ? "performance" : "patch", "plugin": fxList ? "effect" : "instrument",
+            "name": name, "bank": "User", "state": ["schemaVersion": 6, "params": [String: Double]()],
+        ]
+        return String(decoding: (try? JSONSerialization.data(withJSONObject: root)) ?? Data(), as: UTF8.self)
+    }
+    func browserState() -> String { browser }
+    func setBrowserState(_ state: String) { browser = state }
+    func isSetupParam(_ id: UInt32) -> Bool { false }
 }

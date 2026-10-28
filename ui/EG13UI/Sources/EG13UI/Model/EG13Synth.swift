@@ -1,3 +1,4 @@
+import Foundation
 import EG13CBridge
 import Observation
 import QuartzCore
@@ -37,8 +38,8 @@ public final class EG13Synth {
     public private(set) var activeVoices = [0, 0]
     /// The part the window shows (A/B tabs). Editor state only, not saved.
     public var selectedPart = 0
-    /// Patch name; presets arrive in M7.
-    public let patchName = "Init"
+    /// The preset list and what is loaded (the header's name and edited mark).
+    public let presets: EG13PresetBrowser
 
     /// The matrix, per part: codes and names as the core reports them (amounts are read live from
     /// the amount parameters). Reloaded on an engine generation change and after `setRoute`.
@@ -87,9 +88,12 @@ public final class EG13Synth {
 
     /// clock: seconds, monotonic. Tests pass their own so meter timing needs no sleeps.
     /// settings: the app-wide settings; the default keeps them in memory, the editor passes the shared store.
+    /// presetsFolder: the User preset folder; nil (the default) lists and writes none.
     public init(core: any EG13Core, kind: Kind, settings: EG13SettingsStore = EG13SettingsStore(url: nil),
-                clock: @escaping () -> Double = { CACurrentMediaTime() }) {
+                presetsFolder: URL? = nil, clock: @escaping () -> Double = { CACurrentMediaTime() }) {
         self.core = core
+        let presets = EG13PresetBrowser(core: core, kind: kind, folder: presetsFolder)
+        self.presets = presets
         self.settings = settings
         self.kind = kind
         self.clock = clock
@@ -119,6 +123,7 @@ public final class EG13Synth {
             paramByDestination[part][destination] = param
         }
         reloadRoutes()
+        presets.shownPart = { [unowned self] in selectedPart }
     }
 
     // MARK: Values
@@ -153,6 +158,8 @@ public final class EG13Synth {
         guard openGestures.insert(id).inserted else { return }
         paramByID[id]?.setHeld(nil)
         heldIDs.remove(id)
+        // A setup control (Level, Voice Gain, MIDI channel, ...) is not part of any preset.
+        if !core.isSetupParam(id) { presets.markEdited() }
         core.beginEdit(id)
     }
 
@@ -220,6 +227,7 @@ public final class EG13Synth {
             engineGeneration = frame.engineGeneration
             reloadDescriptors()
             reloadRoutes()
+            presets.refreshFromHost()  // the host may have loaded a project or an undo step
         }
         // Only a parameter whose value changed is written, so only its controls are invalidated.
         for index in 0..<min(paramByIndex.count, frame.values.count) {
@@ -372,6 +380,7 @@ public final class EG13Synth {
                                destination: destination ?? (current.destinationHidden ? 0 : current.destination),
                                via: via ?? (current.viaHidden ? 0 : current.via))
         reloadRoutes()
+        if ok { presets.markEdited() }
         return ok
     }
 
@@ -464,10 +473,22 @@ public final class EG13Synth {
         if push { resetPending() }
     }
 
+    /// Clears the pending ranges in place (it runs at 15 Hz); allocates only the first time.
     private func resetPending() {
         let slots = Int(EG13_NUM_MOD_SLOTS), outputs = EG13ModTrace.outputCount
-        let low = [Float](repeating: .infinity, count: outputs), high = [Float](repeating: -.infinity, count: outputs)
-        pendingMin = Array(repeating: Array(repeating: low, count: slots), count: EG13ParamID.parts)
-        pendingMax = Array(repeating: Array(repeating: high, count: slots), count: EG13ParamID.parts)
+        if pendingMin.isEmpty {
+            let low = [Float](repeating: .infinity, count: outputs), high = [Float](repeating: -.infinity, count: outputs)
+            pendingMin = Array(repeating: Array(repeating: low, count: slots), count: EG13ParamID.parts)
+            pendingMax = Array(repeating: Array(repeating: high, count: slots), count: EG13ParamID.parts)
+            return
+        }
+        for part in pendingMin.indices {
+            for slot in pendingMin[part].indices {
+                for output in pendingMin[part][slot].indices {
+                    pendingMin[part][slot][output] = .infinity
+                    pendingMax[part][slot][output] = -.infinity
+                }
+            }
+        }
     }
 }

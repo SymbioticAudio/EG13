@@ -1,0 +1,23 @@
+{
+  "kind": "performance",
+  "plugin": "effect",
+  "name": "Glass Spectrum",
+  "note": "Clouds' spectral mode: the input's spectrum is captured, quantised and resynthesised into glassy tones. A slow LFO moves the quantising, and the buffer freezes and thaws at random.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 3,
+  "parts": {
+    "A": {
+      "Source": { "engine": "Audio Input" },
+      "Filter": { "engine": "Off" },
+      "Part FX": { "engine": "Granular", "params": { "Mode": "Spectral", "Blend": 0.65, "Position": 0.5, "Size": 0.6, "Density": 0.62, "Texture": 0.7, "Reverb": 0.5 } },
+      "Mod 1": { "engine": "Random / S&H", "scope": "per part", "params": { "T Rate": 0.45, "X Range": "Narrow", "X Spread": 0.5, "X Bias": 0.5, "X Steps": 0.5 } },
+      "Mod 2": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.5 } },
+      "settings": { "Level": 0.5819 },
+      "routes": [
+        { "source": "Mod 1 Random / S&H Y", "destination": "Part FX: Freeze", "amount": 1.0 },
+        { "source": "Mod 2 LFO Out 1", "destination": "Part FX: Texture", "amount": 0.2 }
+      ]
+    }
+  }
+}

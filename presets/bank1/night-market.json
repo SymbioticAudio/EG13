@@ -1,0 +1,135 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "Night Market",
+  "note": "A groove on a held chord: part A is tuned noise ticking in sixteenths, opened into longer hats by the Marbles manual's Drums gate pattern; part B skanks the chord on the off-beats through a band-pass, after the Tides manual's clocked slopes, into a dirty-tape dub echo.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 27,
+  "master": {
+    "Mode": "Layer"
+  },
+  "parts": {
+    "A": {
+      "Source": {
+        "engine": "Macro Oscillator",
+        "params": {
+          "Model": "Filtered noise",
+          "Harmonics": 0.85,
+          "Timbre": 0.8,
+          "Morph": 0.55
+        }
+      },
+      "Filter": {
+        "engine": "State Variable Filter",
+        "params": {
+          "Cutoff": 0.72,
+          "Resonance": 0.1,
+          "Mode": "HP"
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.3
+        }
+      },
+      "Mod 3": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Mode": "AD",
+          "Sync": "On",
+          "Frequency": 0.823,
+          "Slope": 0.02,
+          "Shape": 0.15
+        }
+      },
+      "Mod 4": {
+        "engine": "Random / S&H",
+        "scope": "per part",
+        "params": {
+          "Sync": "On",
+          "T Model": "Drums",
+          "T Rate": 0.9,
+          "T Deja Vu": "On",
+          "Deja Vu": 0.5,
+          "Length": 1.0
+        }
+      },
+      "settings": {
+        "Level": 1.0,
+        "Pan": -0.2,
+        "Transpose": 24
+      },
+      "routes": [
+        { "source": "Mod 3 LFO Out 1", "via": "Mod 1 Envelope", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 4 Random / S&H T1", "destination": "Mod 3: Shape", "amount": 0.45 },
+        { "source": "Mod 4 Random / S&H T1", "destination": "Filter: Cutoff", "amount": -0.08 },
+        { "source": "Mod 4 Random / S&H T3", "destination": "Pan", "amount": 0.25 }
+      ]
+    },
+    "B": {
+      "Source": {
+        "engine": "Digital Oscillator",
+        "params": {
+          "Shape": "Triple Square",
+          "Timbre": 0.4,
+          "Color": 0.45
+        }
+      },
+      "Filter": {
+        "engine": "Classic Filters",
+        "params": {
+          "Cutoff": 0.6,
+          "Resonance": 0.35,
+          "Model": "OB-Xd Xpander Bandpass 12 dB"
+        }
+      },
+      "Part FX": {
+        "engine": "Granular Delay",
+        "params": {
+          "Dry/Wet": 0.35,
+          "Time": 0.375,
+          "Size": 1.0,
+          "Feedback": 0.55,
+          "Reverb": 0.3,
+          "Quality": "Dirty tape",
+          "Density": 0.5
+        }
+      },
+      "Mod 1": {
+        "engine": "Envelope",
+        "scope": "per voice",
+        "params": {
+          "Attack": 0.0,
+          "Sustain": 1.0,
+          "Release": 0.35
+        }
+      },
+      "Mod 3": {
+        "engine": "LFO",
+        "scope": "per part",
+        "params": {
+          "Mode": "Cycle",
+          "Sync": "On",
+          "Frequency": 0.5,
+          "Slope": 0.03,
+          "Shape": 0.45
+        }
+      },
+      "settings": {
+        "Level": 0.8414,
+        "Pan": 0.15
+      },
+      "routes": [
+        { "source": "Mod 3 LFO Out 3", "via": "Mod 1 Envelope", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 3 LFO Out 3", "destination": "Filter: Cutoff", "amount": 0.08 },
+        { "source": "Velocity", "destination": "Filter: Cutoff", "amount": 0.1 }
+      ]
+    }
+  }
+}

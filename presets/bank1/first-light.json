@@ -1,0 +1,46 @@
+{
+  "kind": "performance",
+  "plugin": "instrument",
+  "name": "First Light",
+  "note": "A ring-modulated pad that blooms and recedes on a slow tide, over a bowed string scattered into octave-up grains; after the Warps manual's ring modulator and the Clouds manual's granular textures, moved by slow random and LFO voltages.",
+  "credit": "EG13 factory",
+  "licence": "GPL-3.0-or-later",
+  "order": 1,
+  "firstLoad": true,
+  "master": { "Mode": "Layer" },
+  "parts": {
+    "A": {
+      "Source": { "engine": "Macro Oscillator", "params": { "Model": "Harmonic", "Harmonics": 0.35, "Timbre": 0.4, "Morph": 0.45 } },
+      "Filter": { "engine": "State Variable Filter", "params": { "Cutoff": 0.52, "Resonance": 0.15 } },
+      "Shaper": { "engine": "Ring Mod / Vocoder", "params": { "Algorithm": 0.31, "Timbre": 0.65, "Mod Level": 0.7, "Carrier": "Internal Osc", "Modulator": "Voice", "Osc Pitch": 0.75, "Osc Shape": "Sine / Saw" } },
+      "Part FX": { "engine": "Reverb", "params": { "Amount": 0.4, "Time": 0.75, "Brightness": 0.45 } },
+      "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.65, "Sustain": 1.0, "Release": 0.75 } },
+      "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.5, "Shape": 0.5, "Slope": 0.5, "Smoothness": 0.3 } },
+      "Mod 4": { "engine": "Random / S&H", "scope": "per part", "params": { "T Rate": 0.2, "X Steps": 0.1, "X Spread": 0.6, "X Range": "Full" } },
+      "settings": { "Level": 0.3971, "Pan": -0.2 },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 3 LFO Out 1", "destination": "Shaper: Algorithm", "amount": 0.06 },
+        { "source": "Mod 3 LFO Out 2", "destination": "Filter: Cutoff", "amount": 0.12 },
+        { "source": "Mod 4 Random / S&H X1", "destination": "Shaper: Timbre", "amount": 0.15 },
+        { "source": "Mod 4 Random / S&H Y", "destination": "Source: Morph", "amount": 0.3 }
+      ]
+    },
+    "B": {
+      "Source": { "engine": "Modal Synth", "params": { "Model": "String", "Bow": 1.0, "Blow": 0.3, "Strike": 0.0, "Geometry": 0.35, "Brightness": 0.65, "Damping": 0.3, "Position": 0.3, "Space": 0.35 } },
+      "Filter": { "engine": "State Variable Filter", "params": { "Cutoff": 0.032, "Resonance": 0.0, "Mode": "HP" } },
+      "Part FX": { "engine": "Granular", "params": { "Blend": 0.65, "Position": 0.35, "Size": 0.55, "Pitch": 0.75, "Density": 0.82, "Texture": 0.6, "Feedback": 0.3, "Reverb": 0.65, "Spread": 0.5, "In Gain": 0.7 } },
+      "Mod 1": { "engine": "Envelope", "scope": "per voice", "params": { "Attack": 0.7, "Sustain": 1.0, "Release": 0.75 } },
+      "Mod 3": { "engine": "LFO", "scope": "per part", "params": { "Range": "Low", "Frequency": 0.45, "Slope": 0.3, "Smoothness": 0.4 } },
+      "Mod 4": { "engine": "Random / S&H", "scope": "per part", "params": { "T Rate": 0.25, "X Steps": 0.1, "X Spread": 0.6, "X Range": "Full" } },
+      "settings": { "Level": 0.5124, "Pan": 0.2 },
+      "routes": [
+        { "source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0 },
+        { "source": "Mod 3 LFO Out 1", "destination": "Part FX: Position", "amount": 0.25 },
+        { "source": "Mod 3 LFO Out 3", "destination": "Source: Geometry", "amount": 0.2 },
+        { "source": "Mod 4 Random / S&H X1", "destination": "Part FX: Size", "amount": 0.2 },
+        { "source": "Mod 4 Random / S&H X2", "destination": "Source: Bow Timbre", "amount": 0.3 }
+      ]
+    }
+  }
+}

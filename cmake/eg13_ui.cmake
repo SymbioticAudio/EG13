@@ -22,11 +22,28 @@ file(GLOB_RECURSE EG13_UI_SOURCES CONFIGURE_DEPENDS
 set(EG13_UI_INPUTS ${EG13_UI_SOURCES} ${EG13_UI_PACKAGE}/Package.swift
   ${CMAKE_SOURCE_DIR}/core-api/include/eg13/core_api.h)
 
+# Release builds leave out the all-rights-reserved SymbioticBrand artwork (Package.swift reads
+# EG13_NO_BRAND). Defaults to ON when EG13_NO_BRAND is set in the environment at the first configure.
+if(DEFINED ENV{EG13_NO_BRAND})
+  set(EG13_NO_BRAND_DEFAULT ON)
+else()
+  set(EG13_NO_BRAND_DEFAULT OFF)
+endif()
+option(EG13_NO_BRAND "Build the editor without the SymbioticBrand artwork (release builds)"
+  ${EG13_NO_BRAND_DEFAULT})
+if(EG13_NO_BRAND)
+  set(EG13_UI_ENV ${CMAKE_COMMAND} -E env EG13_NO_BRAND=1)
+else()
+  set(EG13_UI_ENV ${CMAKE_COMMAND} -E env --unset=EG13_NO_BRAND)
+endif()
+# Rewritten only when the setting changes, so switching it rebuilds the library.
+file(CONFIGURE OUTPUT ${EG13_UI_OUT_DIR}/brand.stamp CONTENT "EG13_NO_BRAND=${EG13_NO_BRAND}\n")
+
 set(EG13_UI_ARCHS "${CMAKE_OSX_ARCHITECTURES}")
 add_custom_command(OUTPUT ${EG13_UI_LIB}
-  COMMAND ${CMAKE_SOURCE_DIR}/scripts/build-ui.sh
+  COMMAND ${EG13_UI_ENV} ${CMAKE_SOURCE_DIR}/scripts/build-ui.sh
     "$<IF:$<CONFIG:Debug>,debug,release>" "${EG13_UI_ARCHS}" ${EG13_UI_OUT_DIR}
-  DEPENDS ${EG13_UI_INPUTS}
+  DEPENDS ${EG13_UI_INPUTS} ${EG13_UI_OUT_DIR}/brand.stamp
   COMMENT "Building the SwiftUI editor (ui/EG13UI)"
   VERBATIM)
 add_custom_target(eg13_ui DEPENDS ${EG13_UI_LIB})
