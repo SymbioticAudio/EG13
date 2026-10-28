@@ -70,9 +70,11 @@ const EngineInfo kInfo = {"braids", "Digital Oscillator", 7, kParams, false};
 struct BraidsEngine::Impl {
   braids::MacroOscillator osc;
   braids::SignatureWaveshaper waveshaper;
-  uint8_t sync[kNativeBlock];
-  int16_t buffer[kNativeBlock];
+  uint8_t sync[kNativeBlock + 1];
+  int16_t buffer[kNativeBlock + 1];  // + 1: the carried sample (see renderBlock)
   int16_t held;
+  int16_t carry;
+  bool hasCarry;
 };
 
 BraidsEngine::BraidsEngine() : impl_(std::make_unique<Impl>()) { reset(); }
@@ -100,7 +102,9 @@ void BraidsEngine::reset() {
   impl_->waveshaper.Init(0x0000);
   std::memset(impl_->sync, 0, sizeof(impl_->sync));
   impl_->held = 0;
-  gate_ = false;
+  impl_->carry = 0;
+  impl_->hasCarry = false;
+  open_ = false;
   strike_ = false;
   gain_ = 0.0f;
   phase_ = 0;
@@ -109,11 +113,13 @@ void BraidsEngine::reset() {
 void BraidsEngine::noteOn(float note, float velocity) {
   note_ = note;
   velocity_ = clamp01(velocity);
-  gate_ = true;
+  open_ = true;
   strike_ = true;
 }
 
-void BraidsEngine::noteOff() { gate_ = false; }
+// The level stays open at key-up: the voice's Amp shapes the release, as with the
+// other Sources. reset() closes it.
+void BraidsEngine::noteOff() {}
 
 void BraidsEngine::process(const float* const*, float* const* out, const ParamValues& p, int n) {
   for (int done = 0; done < n;) {
@@ -133,13 +139,31 @@ void BraidsEngine::renderBlock(const ParamValues& p, float* const* out, int offs
     s.osc.Strike();
     strike_ = false;
   }
-  s.osc.Render(s.sync, s.buffer, size_t(count));
+  // Many upstream shapes render two samples per loop step and run past the
+  // buffer on an odd size. With no resampler (a 96 kHz host) an odd host block
+  // reaches here, so an odd remainder renders one sample more and keeps it for
+  // the next call. Even-sized calls never carry, so they render as before.
+  int start = 0;
+  if (s.hasCarry) {
+    s.buffer[0] = s.carry;
+    s.hasCarry = false;
+    start = 1;
+  }
+  const int need = count - start;
+  if (need > 0) {
+    const int rendered = need + (need & 1);
+    s.osc.Render(s.sync, s.buffer + start, size_t(rendered));
+    if (rendered > need) {
+      s.carry = s.buffer[count];
+      s.hasCarry = true;
+    }
+  }
 
   const uint16_t mask = kBitMasks[bitDepthIndex(p.p[5])];
   const int decimation = kDecimation[sampleRateIndex(p.p[6])];
   const float sig = clamp01(p.p[4]) * 4.0f;
   const uint16_t signature = uint16_t(std::min(65535.0f, sig * sig * 4095.0f));
-  const float target = gate_ ? velocity_ : 0.0f;
+  const float target = open_ ? velocity_ : 0.0f;
   // Firmware order (braids/braids.cc:287-291): VCA, then the signature
   // waveshaper, so the level sets how hard it is driven. The waveshaper maps 0
   // to a non-zero level; subtract it so a closed VCA is silent and the voice

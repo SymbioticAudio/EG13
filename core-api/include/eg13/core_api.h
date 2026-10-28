@@ -141,7 +141,7 @@ typedef struct EG13CoreAPI {
   bool (*destination_name)(void* context, uint32_t part, uint16_t code, char* buffer, uint32_t size);
   /* The destination code of a P parameter ID (Source, Filter, Shaper, Part FX or mod P), else 0. */
   uint16_t (*destination_for_param)(void* context, uint32_t id);
-  /* "0.6.0 (abc1234)": CMake project version and git short hash ("unknown" outside git). */
+  /* "1.0.0 (abc1234)": CMake project version and git short hash ("unknown" outside git). */
   bool (*version)(void* context, char* buffer, uint32_t size);
   /* Ask the host to resize the editor to width x height logical points. */
   void (*request_resize)(void* context, uint32_t width, uint32_t height);

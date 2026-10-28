@@ -39,7 +39,7 @@ class BraidsEngine final : public VoiceEngine {
   float pitchOffset_ = 0.0f;
   float note_ = 60.0f;
   float velocity_ = 0.0f;
-  bool gate_ = false;
+  bool open_ = false;  // level open: from a note-on until reset()
   bool strike_ = false;
   float gain_ = 0.0f;
   int phase_ = 0;  // sample-rate reduction phase, kept across process calls

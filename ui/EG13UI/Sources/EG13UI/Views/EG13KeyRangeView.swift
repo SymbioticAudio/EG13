@@ -27,6 +27,13 @@ struct EG13KeyRangeEditor {
 
     var mode: EG13Mode { synth.mode }
 
+    /// The keys Part `part` plays (EG13KeyMap.playedRange): in Split, its range on its side of the
+    /// split note. Nil when it plays none of the strip.
+    func playedRange(part: Int) -> ClosedRange<Int>? {
+        EG13KeyMap.playedRange(part: part, low: key(.low(part: part)), high: key(.high(part: part)),
+                               mode: mode, split: key(.split))
+    }
+
     /// The value a drag of `handle` to `key` sets: the strip's ends are MIDI 0 and 127, and the
     /// other end's own value (not clamped to the strip) bounds it.
     func target(_ handle: EG13KeyMap.Handle, key: Int) -> Int {
@@ -125,8 +132,8 @@ struct EG13KeyRangeDrag {
 }
 
 /// A non-playing 88-key strip, A0 to C8 (the owner's decision: EG13 has no keyboard to play). Part
-/// A's key range is a teal band and Part B's a pink one; the split note is a marker, in Split mode
-/// only; Part B's band is there only when Part B can sound. Dragging a band end or the marker edits
+/// A's key range is a teal band and Part B's a pink one, bright where the part plays (in Split, its
+/// side of the split note) and faint beyond; the split note is a marker, in Split mode only; Part B's band is there only when Part B can sound. Dragging a band end or the marker edits
 /// Key Low, Key High or Split Note.
 ///
 /// One gesture serves the whole strip and picks its handle at mouse-down (EG13KeyMap.hitTarget): a
@@ -212,22 +219,34 @@ struct EG13KeyRangeView: View {
         .allowsHitTesting(false)
     }
 
+    /// The part's Key Low to Key High range is a faint band with the drag handles at its ends; the
+    /// keys the part actually plays (in Split, only its side of the split note) are the bright band
+    /// and the tint over the keys. Outside Split the two are the same.
     private func band(part: Int, width: Double, editor: EG13KeyRangeEditor) -> some View {
         let range = editor.range(part: part)
         let x0 = CGFloat(EG13KeyMap.x(forKey: range.lowerBound, width: width))
         let x1 = CGFloat(EG13KeyMap.trailingX(forKey: range.upperBound, width: width))
+        let played = editor.playedRange(part: part)
+        let p0 = played.map { CGFloat(EG13KeyMap.x(forKey: $0.lowerBound, width: width)) } ?? 0
+        let p1 = played.map { CGFloat(EG13KeyMap.trailingX(forKey: $0.upperBound, width: width)) } ?? 0
         let colors = EG13Palette.part(part)
         let y = Self.laneHeight * CGFloat(part)
         return ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 2).fill(colors.bright.color.opacity(0.85))
+            RoundedRectangle(cornerRadius: 2).fill(colors.bright.color.opacity(0.25))
                 .frame(width: max(x1 - x0, 1), height: Self.laneHeight - 2)
                 .offset(x: x0, y: y + 1)
                 .accessibilityHidden(true)
-            // The band spans the keys too, as a tint, so which keys it covers reads at once.
-            Rectangle().fill(colors.bright.color.opacity(0.22))
-                .frame(width: max(x1 - x0, 1), height: Self.keyHeight)
-                .offset(x: x0, y: Self.laneHeight * CGFloat(EG13ParamID.parts))
-                .accessibilityHidden(true)
+            if played != nil {
+                RoundedRectangle(cornerRadius: 2).fill(colors.bright.color.opacity(0.85))
+                    .frame(width: max(p1 - p0, 1), height: Self.laneHeight - 2)
+                    .offset(x: p0, y: y + 1)
+                    .accessibilityHidden(true)
+                // The played keys get a tint too, so which keys the part plays reads at once.
+                Rectangle().fill(colors.bright.color.opacity(0.22))
+                    .frame(width: max(p1 - p0, 1), height: Self.keyHeight)
+                    .offset(x: p0, y: Self.laneHeight * CGFloat(EG13ParamID.parts))
+                    .accessibilityHidden(true)
+            }
             handle(.low(part: part), at: x0, y: y, color: colors.ink.color, editor: editor)
             handle(.high(part: part), at: x1, y: y, color: colors.ink.color, editor: editor)
         }

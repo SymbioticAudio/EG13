@@ -4,12 +4,15 @@ import CoreGraphics
 /// sizes from here; view models never do, so the arrangement can change without touching them.
 ///
 /// The root is drawn at `baseSize` and scaled 75-200 % (plugin/src/gui_size.h). Top to bottom:
-/// header, the card strip (horizontal module cards, one under another, and the right-hand column
+/// header, the part name strip, the card strip (horizontal module cards, one under another, and the right-hand column
 /// with the Mods or the matrix), the bottom bar.
 public enum EG13Layout {
     public static let baseSize = CGSize(width: 1200, height: 760)
 
     public static let headerHeight: CGFloat = 56
+    /// The strip under the header row that names what is loaded into each part (header v2 round 2).
+    /// The window keeps its size: the card strip gives up this height.
+    public static let nameStripHeight: CGFloat = 24
     public static let bottomBarHeight: CGFloat = 78
     public static let outerPadding: CGFloat = 12
     public static let gap: CGFloat = 8
@@ -65,7 +68,7 @@ public enum EG13Layout {
 
     /// Height left for the card strip.
     public static var stripHeight: CGFloat {
-        baseSize.height - headerHeight - bottomBarHeight - 3 * gap
+        baseSize.height - headerHeight - nameStripHeight - bottomBarHeight - 3 * gap
     }
 
     /// The gap between stacked cards of `heights` justified over `columnHeight`, the height of the taller

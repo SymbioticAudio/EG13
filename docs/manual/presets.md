@@ -1,22 +1,24 @@
 # Presets
 
-EG13's presets are chosen from the preset bar in the editor's header, `◀ [ name ▾ ] ▶` (see [Interface](interface.md) for the bar itself). This page covers what the presets are, what loading one changes, your own presets, and where the factory presets come from.
+EG13's presets are chosen from the **Presets** button in the editor's header, `Presets ▾`, and the name strip under the header names what is loaded into each part (see [Interface](interface.md) for the header itself). This page covers what the presets are, what loading one changes, your own presets, and where the factory presets come from.
 
 ## Two kinds of preset
 
 - A **Performance** (kind mark **A+B**, file extension `.eg13perf`) holds both parts and the master settings that belong to the sound. Loading one replaces both parts.
 - A **Patch** (kind mark **A|B**, file extension `.eg13patch`) holds one part's sound. It loads into Part A or Part B, as you choose, and leaves the other part alone.
 
-To load a Patch from the dropdown, open its row's submenu and choose **Load into A** or **Load into B**; clicking the row itself does not load anything. The ◀ and ▶ arrows load a Patch into the part the window shows (the A or B tab). A Performance loads when you choose its row.
+To load a Patch from the dropdown, open its row's submenu and choose **Load into A** or **Load into B**; clicking the row itself does not load anything. A Performance loads when you choose its row. There are no previous and next arrows: a Patch only ever goes into the part you name.
 
 ## What the header shows
 
-- After a Performance: its name, for example `First Light`.
-- After Patches: the name for each part that came from a preset, for example `A: Rain on Strings`. When the two parts came from different presets the bar shows both, `A: Rain on Strings / B: Teak Mallets`. Loading a Patch into one part of a Performance gives `A: First Light / B: Teak Mallets`.
-- **Init** after choosing Init from the dropdown.
-- A `*` after the name is the **edited mark**: you have changed the sound in EG13's editor since it was loaded (a knob, an engine, a setting or a route). The setup controls are the exception, because a preset never carries them: master Level, Voice Gain, Latency Mode, and each part's MIDI channel, Output, MPE mode and bend range and CC A to D do not set the mark. Saving, or loading a preset or Init, clears it. Changes the host makes (automation, an undo step, loading a project) do not set it: EG13 cannot tell automation apart from an edit you make in the host.
+The name strip under the header shows, for each part, the name of what is loaded into it:
 
-The project remembers which preset is loaded and whether it was edited, so the bar shows the same name when you reopen the project. Loading a preset marks the project as changed in the host, and so does a change to the loaded preset's name or edited mark; setting them to what they already are, and opening the editor alone, do not.
+- After a Performance: its name and the part letter for each part, `First Light·A` and `First Light·B`.
+- After a Patch: the Patch's name for that part only, for example `Rain on Strings` for Part A. With a Patch in each part the strip reads `Rain on Strings` and `Teak Mallets`. Loading a Patch into Part B after a Performance gives `First Light·A` and `Teak Mallets`.
+- **Init** on a part nothing has been loaded into, and on both after choosing Init from the menu.
+- A `*` after a part's name is that part's **edited mark**: you have changed that part in EG13's editor since its sound was loaded (a knob, an engine, a setting or a route of that part). A master setting that belongs to the sound (Mode, Split Note, Soft Clip, Dry) marks both parts. The setup controls are the exception, because a preset never carries them: master Level, Voice Gain, Latency Mode, and each part's MIDI channel, Output, MPE mode and bend range and CC A to D do not set the mark. Loading a Performance or Init, or saving the whole instrument, clears both marks; loading or saving a Patch clears that part's. Changes the host makes (automation, an undo step, loading a project) do not set it: EG13 cannot tell automation apart from an edit you make in the host.
+
+The project remembers what each part was loaded from and whether it was edited, so the strip shows the same names when you reopen the project. Loading a preset marks the project as changed in the host, and so does a change to a part's name or edited mark; setting them to what they already are, and opening the editor alone, do not.
 
 ## What a preset changes, and what it keeps
 
@@ -45,7 +47,7 @@ So a preset never moves a part to another MIDI channel or output bus, never chan
 
 **A new instance** of EG13 (the instrument) opens on Bank 1's first preset, **First Light**. A new instance of EG13 FX opens on its init sound. A project you reopen keeps its own sound.
 
-If a preset cannot be loaded (a damaged file, or a preset for the other plugin), the sound and the name stay as they were and a message under the bar says why. Loading never stops the audio.
+If a preset cannot be loaded (a damaged file, or a preset for the other plugin), the sound and the name stay as they were and a message under the Presets button says why. Loading never stops the audio.
 
 ## Factory banks
 
@@ -72,7 +74,7 @@ Seven presets rebuilt from a VCV Rack patch shared under a Creative Commons lice
 - **catnap — tides** (Patch): a variation: the patch's slow filter swell made into a pad, with the chords held as you play them; the mod wheel speeds the swell up and aftertouch opens the filter.
 - **catnap — night** (Performance): a variation: the whole patch, slower and darker. Like **catnap**, it starts droning as soon as it is loaded, with no note held (its Part B is set to Trigger *Always on*).
 
-Loading a Bank 2 preset shows its credit and licence under the bar for four seconds; hovering over its row in the dropdown shows them too.
+Loading a Bank 2 preset shows its credit and licence under the Presets button for four seconds (and when you hover over its name in the name strip); hovering over its row in the dropdown shows them too.
 
 ### FX (EG13 FX)
 
@@ -97,8 +99,8 @@ User presets are files in
 
 and EG13 FX's in the `FX` folder inside it. (In Finder, choose Go > Go to Folder and paste the path.) One file holds one preset. The User bank lists them by name, ignoring case.
 
-- **File names:** the file is named after the preset. Characters that cannot be in a file name on some systems (`/ \ : * ? " < > |` and control characters) become `-`, leading dots and surrounding spaces go, and the name is cut at 80 characters. The preset keeps the name exactly as you typed it, and that is the name the bar shows.
-- **Sharing:** send the `.eg13perf` or `.eg13patch` file; the person receiving it drops it into their Presets folder (EG13 FX presets into `FX`). The folder is read again each time the pointer reaches the preset bar, so the file appears without restarting the host.
+- **File names:** the file is named after the preset. Characters that cannot be in a file name on some systems (`/ \ : * ? " < > |` and control characters) become `-`, leading dots and surrounding spaces go, and the name is cut at 80 characters. The preset keeps the name exactly as you typed it, and that is the name the name strip shows.
+- **Sharing:** send the `.eg13perf` or `.eg13patch` file; the person receiving it drops it into their Presets folder (EG13 FX presets into `FX`). The folder is read again each time the pointer reaches the Presets button, so the file appears without restarting the host.
 - **Files that cannot be listed** are skipped, and a message names them (up to three, then a count): a file that is not an EG13 preset or cannot be read, a preset from a newer version of EG13, or a preset for the other plugin (an EG13 FX preset in the instrument's folder, or the other way round). The other presets still list.
 
 ## Credits

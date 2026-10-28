@@ -2,15 +2,18 @@ import Foundation
 import Observation
 
 /// The preset browser behind the header: the list (factory presets, then the User folder), the
-/// name shown, the edited mark, and load, step, save, rename and delete (M7 design §4.3).
+/// name the name strip shows for each part, the per-part edited marks, and load, save, rename and
+/// delete (M7 design §4.3, owner redesign 2026-10-27/28: no arrows; a strip under the header names
+/// each part's sound).
 ///
 /// What is loaded is kept as the "browser string" the plugin saves in the project (the format is
 /// owned here; the plugin only stores it, and seeds it with the first-load preset on a new
 /// instrument):
 ///
-///     {"version":1,"loaded":[{"part":-1|0|1,"bank":"…","name":"…","kind":"performance"|"patch"}],"edited":false}
+///     {"version":2,"loaded":[{"part":-1|0|1,"bank":"…","name":"…","kind":"performance"|"patch"}],"edited":[false,false]}
 ///
-/// It is written after every load, save and change of the edited mark.
+/// `edited` has one flag per part (A, B). Any other version, or a string that does not read, is
+/// Init for both parts. It is written after every load, save and change of an edited mark.
 @MainActor
 @Observable
 public final class EG13PresetBrowser {
@@ -23,32 +26,49 @@ public final class EG13PresetBrowser {
     }
 
     private struct Persisted: Codable {
-        var version = 1
+        static let currentVersion = 2
+        var version = currentVersion
         var loaded: [Loaded] = []
-        var edited = false
+        var edited: [Bool] = Array(repeating: false, count: EG13ParamID.parts)
     }
+
+    private static var clean: [Bool] { Array(repeating: false, count: EG13ParamID.parts) }
 
     /// The list in order: Bank 1, Bank 2 (or FX for EG13 FX) as the plugin lists them, then the
     /// User presets by name, ignoring case.
     public private(set) var entries: [EG13PresetEntry] = []
     /// What the parts' sounds came from; empty is Init.
     private(set) var loaded: [Loaded] = []
-    public private(set) var isEdited = false
+    /// Per part (A, B): edited in the editor since its sound was loaded.
+    private(set) var edited: [Bool] = EG13PresetBrowser.clean
     /// The last problem or warning (a preset refused, files skipped, a save that failed), the
     /// credit and licence of a credited preset just loaded, or nil.
     public private(set) var message: String?
 
-    /// The name the header shows:
-    /// - nothing loaded, or an unreadable browser string: "Init";
-    /// - a Performance (one entry for both parts): its name;
-    /// - otherwise one "A: name" and/or "B: name" per part that has a preset, joined with " / ".
-    ///   Loading a Patch into one part after a Performance turns the Performance into a name per
-    ///   part first, so the result is "A: Performance / B: Patch".
-    public var displayName: String {
-        guard !loaded.isEmpty else { return "Init" }
-        if loaded.count == 1, loaded[0].part < 0 { return loaded[0].name }
-        return loaded.sorted { $0.part < $1.part }
-            .map { "\($0.part == 0 ? "A" : "B"): \($0.name)" }.joined(separator: " / ")
+    /// The name the name strip shows for part `part` (without the edited mark):
+    /// - nothing loaded into it, or an unreadable browser string: "Init";
+    /// - a Patch: its name;
+    /// - a Performance: its name, a middle dot and the part letter ("Harbour Lights·A"), so the two
+    ///   halves read as one preset. Loading a Patch into one part later replaces only that part's name.
+    public func partName(_ part: Int) -> String {
+        guard let info = loadedInfo(part: part) else { return "Init" }
+        return info.kind == .performance ? "\(info.name)\u{00B7}\(EG13PartName.letter(part))" : info.name
+    }
+
+    /// The part's edited mark (the name strip shows "*").
+    public func isEdited(part: Int) -> Bool { edited.indices.contains(part) && edited[part] }
+
+    /// The help of the part's tab and name-strip half: the full name, and on a second line the credit and licence of a credited preset.
+    public func partHelp(_ part: Int) -> String {
+        let name = partName(part)
+        guard let info = loadedInfo(part: part),
+              let credit = entries.first(where: { $0.matches(info) })?.attribution else { return name }
+        return "\(name)\n\(credit)"
+    }
+
+    /// What the part's sound came from: its own entry, else a Performance for both.
+    private func loadedInfo(part: Int) -> Loaded? {
+        loaded.first { $0.part == part } ?? loaded.first { $0.part < 0 }
     }
 
     /// The part a Patch loads into when no part is named: the editor's shown part (set by EG13Synth).
@@ -149,32 +169,14 @@ public final class EG13PresetBrowser {
         // A warning comes first; otherwise a credited preset shows its credit and licence.
         message = result.status == .warnings && !result.message.isEmpty ? result.message : entry.attribution
         record(Loaded(part: Int(resolved.cPart), bank: entry.bank, name: entry.name, kind: entry.kind))
-        isEdited = false
+        clearEdited(Int(resolved.cPart))
         persist()
-    }
-
-    /// Steps through the list in order, across bank boundaries, wrapping from the last to the
-    /// first. A Patch loads into the shown part. From Init, or a name no longer in the list, forward
-    /// goes to the first preset and back to the last.
-    public func step(_ delta: Int) {
-        guard !entries.isEmpty else { return }
-        let count = entries.count
-        let next: Int
-        if let current = currentIndex() {
-            next = ((current + delta) % count + count) % count
-        } else {
-            next = delta >= 0 ? 0 : count - 1
-        }
-        load(entries[next], into: nil)
     }
 
     /// The list position of what the shown part came from.
     private func currentIndex() -> Int? {
-        let shown = shownPart()
-        guard let info = loaded.first(where: { $0.part == shown }) ?? loaded.first(where: { $0.part < 0 }) else {
-            return nil
-        }
-        return entries.firstIndex { $0.bank == info.bank && $0.name == info.name && $0.kind == info.kind }
+        guard let info = loadedInfo(part: shownPart()) else { return nil }
+        return entries.firstIndex { $0.matches(info) }
     }
 
     /// Loads the Init sound into both parts (the plugin builds it) and shows "Init".
@@ -186,7 +188,7 @@ public final class EG13PresetBrowser {
         }
         message = nil
         loaded = []
-        isEdited = false
+        edited = Self.clean
         persist()
     }
 
@@ -199,12 +201,20 @@ public final class EG13PresetBrowser {
 
     // MARK: Edited mark
 
-    /// An editor edit (a knob or route change by the user) happened. Host value changes seen in
-    /// snapshots never call this.
-    public func markEdited() {
-        guard !isEdited else { return }
-        isEdited = true
+    /// An editor edit (a knob or route change by the user) happened in `part`; nil (a master
+    /// control that is part of the sound, such as Mode) marks every part. Host value changes seen
+    /// in snapshots never call this.
+    public func markEdited(part: Int?) {
+        var next = edited
+        for index in next.indices where part == nil || part == index { next[index] = true }
+        guard next != edited else { return }
+        edited = next
         persist()
+    }
+
+    /// part -1 (a Performance, Init) clears both marks, 0 or 1 only that part's.
+    private func clearEdited(_ part: Int) {
+        for index in edited.indices where part < 0 || part == index { edited[index] = false }
     }
 
     // MARK: Save
@@ -255,7 +265,7 @@ public final class EG13PresetBrowser {
             return refuse("Could not write \(url.lastPathComponent): \(error.localizedDescription)")
         }
         record(Loaded(part: part ?? -1, bank: "User", name: name, kind: part == nil ? .performance : .patch))
-        isEdited = false
+        clearEdited(part ?? -1)
         persist()
         reloadUserFolder()
         return .saved
@@ -334,21 +344,29 @@ public final class EG13PresetBrowser {
     }
 
     private func persist() {
-        let state = Persisted(loaded: loaded, edited: isEdited)
+        let state = Persisted(loaded: loaded, edited: edited)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(state) else { return }
         core.setBrowserState(String(decoding: data, as: UTF8.self))
     }
 
-    /// Reads the project's browser string; an empty, unreadable or newer one is Init.
+    /// Reads the project's browser string; an empty, unreadable, older or newer one is Init.
     private func restore(_ text: String) {
-        guard let state = try? JSONDecoder().decode(Persisted.self, from: Data(text.utf8)), state.version == 1 else {
+        guard let state = try? JSONDecoder().decode(Persisted.self, from: Data(text.utf8)),
+              state.version == Persisted.currentVersion, state.edited.count == EG13ParamID.parts else {
             loaded = []
-            isEdited = false
+            edited = Self.clean
             return
         }
         loaded = state.loaded.filter { (-1...1).contains($0.part) }
-        isEdited = state.edited
+        edited = state.edited
+    }
+}
+
+extension EG13PresetEntry {
+    /// This entry is the one a loaded record names (bank, name and kind).
+    func matches(_ info: EG13PresetBrowser.Loaded) -> Bool {
+        bank == info.bank && name == info.name && kind == info.kind
     }
 }

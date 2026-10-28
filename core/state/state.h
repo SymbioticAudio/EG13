@@ -24,7 +24,7 @@ class StateStore {
   // Invalid leaves the synth and the preserved data unchanged.
   LoadResult load(Synth& synth, const std::string& json);
 
-  // The UI's browser state: an opaque string it owns (loaded preset names, edited flag), saved as
+  // The UI's browser state: an opaque string it owns (loaded preset names, per-part edited marks), saved as
   // the "browser" key and restored by load; empty when the state has none.
   // Guarded by a small mutex (never taken on the audio thread): a host may save from another thread
   // (an AU's ClassInfo) while the editor, on the main thread, sets it.

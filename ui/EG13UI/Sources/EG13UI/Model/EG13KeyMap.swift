@@ -94,6 +94,20 @@ public enum EG13KeyMap {
     /// Part B's band shows only when Part B can sound: not in Single.
     public static func showsBand(part: Int, mode: EG13Mode) -> Bool { part == 0 || mode != .single }
 
+    /// The keys a part plays, clamped to the strip, or nil when it plays none there: its Key Low
+    /// to Key High range (ordered, as the core reads it), and in Split mode only its side of the
+    /// split note (Part A below it, Part B from it up). Part B plays nothing in Single.
+    public static func playedRange(part: Int, low: Int, high: Int, mode: EG13Mode, split: Int) -> ClosedRange<Int>? {
+        guard showsBand(part: part, mode: mode) else { return nil }
+        var from = min(low, high), to = max(low, high)
+        if mode == .split {
+            if part == 0 { to = min(to, split - 1) } else { from = max(from, split) }
+        }
+        from = max(from, lowestKey)
+        to = min(to, highestKey)
+        return from <= to ? from...to : nil
+    }
+
     /// The split marker shows only in Split mode.
     public static func showsSplitMarker(mode: EG13Mode) -> Bool { mode == .split }
 

@@ -9,7 +9,7 @@ This manual describes how EG13 behaves, including the choices it makes where the
 - [Presets](presets.md): Performances and Patches, the factory banks, what a preset changes and keeps, your own presets, and credits.
 - [Engines](engines.md): every Source, Filter and Shaper engine and its controls.
 - [Modulation](modulation.md): mod slots, their engines, the matrix, MPE, tempo sync and gain staging.
-- [Parts and routing](parts-and-routing.md): parts, voices, the engine slots, the Input source, engine switching and the default patches.
+- [Parts and routing](parts-and-routing.md): parts, voices, Glide, the engine slots, the Input source, engine switching and the default patches.
 - [Part FX](part-fx.md): the effect slot after the voices: Granular, Granular Delay, Resonator and Reverb, the Input setting and how notes reach the effect.
 - [Latency](latency.md): how much delay EG13 reports and why.
 - [Smoothing](smoothing.md): how each engine reacts when you move a control.

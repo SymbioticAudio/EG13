@@ -7,7 +7,7 @@ struct EG13PresetMenu: Equatable {
         var entry: EG13PresetEntry
         /// "A+B" for a Performance (both parts), "A|B" for a Patch (one part, loaded into A or B).
         var mark: String
-        /// The shown part's sound came from this entry.
+        /// Part A's or part B's sound came from this entry (a Performance in both is one tick).
         var ticked: Bool
         var id: String { entry.id }
         /// The row's help (tooltip): the credit and licence of a credited preset, else nil.
@@ -39,7 +39,7 @@ extension EG13PresetBrowser {
         var groups: [EG13PresetMenu.Group] = []
         for entry in entries {
             let row = EG13PresetMenu.Row(entry: entry, mark: EG13PresetMenu.mark(for: entry.kind),
-                                         ticked: entry.id == current?.id)
+                                         ticked: loaded.contains { entry.matches($0) })
             if let index = groups.firstIndex(where: { $0.title == entry.bank }) {
                 groups[index].rows.append(row)
             } else {
