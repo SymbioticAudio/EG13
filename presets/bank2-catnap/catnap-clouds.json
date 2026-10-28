@@ -2,7 +2,7 @@
   "kind": "patch",
   "plugin": "instrument",
   "name": "catnap — clouds",
-  "note": "A variation by EG13, not part of the patch: its Clouds stage brought forward and switched to Stretch, so your notes play the Plaits chords (with the slow Tides swell on the Ripples low-pass) into a smeared, octave-up stretched cloud that each note restarts. It freezes and thaws at random as in the patch; push the mod wheel past half-way to hold it frozen. The patch's Marbles sequence and Plateau reverb are left out.",
+  "note": "A variation by EG13, not part of the patch: its Clouds stage brought forward, so your notes play the Plaits chords (with the slow Tides swell on the Ripples low-pass) into a dense, wide, octave-up cloud of long, soft, diffused grains taken from further back in the buffer. It freezes and thaws at random as in the patch; push the mod wheel past half-way to hold it frozen. The patch's Marbles sequence and Plateau reverb are left out.",
   "credit": "~zero-g:catnap by plantay (patchstorage.com/zero-gcatnap-vcv-rack-jam)",
   "licence": "CC BY 4.0",
   "order": 5,
@@ -10,7 +10,7 @@
     "A": {
       "Source": {"engine": "Macro Oscillator", "params": {"Model": "Chords", "Harmonics": 0.719, "Timbre": 0.208, "Morph": 0.670, "Frequency": 0.0, "Decay": 0.5, "LPG Colour": 0.5}},
       "Filter": {"engine": "Analog Filter", "params": {"Frequency": 0.582, "Resonance": 0.084, "Mode": "LP4"}},
-      "Part FX": {"engine": "Granular", "params": {"Mode": "Stretch", "Quality": "16-bit stereo", "Blend": 0.8, "Position": 0.6, "Size": 0.82, "Pitch": 0.75, "Density": 0.62, "Texture": 0.42, "Feedback": 0.4, "Reverb": 0.62, "Spread": 0.289, "In Gain": 0.5, "Freeze": 0.0}},
+      "Part FX": {"engine": "Granular", "params": {"Mode": "Granular", "Quality": "16-bit stereo", "Blend": 0.8, "Position": 0.7, "Size": 0.9, "Pitch": 0.75, "Density": 0.85, "Texture": 0.9, "Feedback": 0.4, "Reverb": 0.62, "Spread": 0.6, "In Gain": 0.5, "Freeze": 0.0}},
       "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.35, "Sustain": 1.0, "Release": 0.7}},
       "Mod 2": {"engine": "Random / S&H", "scope": "per part", "params": {"T Model": "Coin Toss", "T Rate": 0.454, "T Bias": 0.5, "T Jitter": 0.806, "T Range": "1x", "X Range": "Narrow", "X Spread": 0.5, "X Bias": 0.5, "X Steps": 0.5}},
       "Mod 3": {"engine": "LFO", "scope": "per part", "params": {"Mode": "Cycle", "Range": "Medium", "Frequency": 0.094, "Shape": 0.823, "Slope": 0.953, "Shift": 0.5, "Smoothness": 0.5, "Output": "Gates"}},
