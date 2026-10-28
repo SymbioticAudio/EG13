@@ -1,0 +1,27 @@
+{
+  "kind": "patch",
+  "plugin": "instrument",
+  "name": "catnap — tides",
+  "note": "A variation by EG13, not part of the patch: its slow Tides swell (about 4.8 s) made into a playable pad. Your notes fade in the Plaits chords, held as you play them, and the swell opens the Ripples low-pass wider than in the patch, then snaps it shut with a ring of resonance; the mod wheel speeds the swell up and aftertouch opens the filter. Clouds keeps the patch's octave-up grains, mixed lower and never frozen. The patch's Marbles sequence and Plateau reverb are left out.",
+  "credit": "~zero-g:catnap by plantay (patchstorage.com/zero-gcatnap-vcv-rack-jam)",
+  "licence": "CC BY 4.0",
+  "order": 6,
+  "parts": {
+    "A": {
+      "Source": {"engine": "Macro Oscillator", "params": {"Model": "Chords", "Harmonics": 0.719, "Timbre": 0.208, "Morph": 0.670, "Frequency": 0.0, "Decay": 0.5, "LPG Colour": 0.5}},
+      "Filter": {"engine": "Analog Filter", "params": {"Frequency": 0.42, "Resonance": 0.2, "Mode": "LP4"}},
+      "Part FX": {"engine": "Granular", "params": {"Mode": "Granular", "Quality": "16-bit stereo", "Blend": 0.35, "Position": 0.493, "Size": 0.714, "Pitch": 0.75, "Density": 0.758, "Texture": 0.829, "Feedback": 0.311, "Reverb": 0.516, "Spread": 0.289, "In Gain": 0.5, "Freeze": 0.0}},
+      "Mod 1": {"engine": "Envelope", "scope": "per voice", "params": {"Attack": 0.55, "Sustain": 1.0, "Release": 0.75}},
+      "Mod 3": {"engine": "LFO", "scope": "per part", "params": {"Mode": "Cycle", "Range": "Medium", "Frequency": 0.094, "Shape": 0.823, "Slope": 0.953, "Shift": 0.5, "Smoothness": 0.5, "Output": "Gates"}},
+      "settings": {"Level": 0.85},
+      "routes": [
+        {"source": "Mod 1 Envelope", "via": "Velocity", "destination": "Amp", "amount": 1.0},
+        {"source": "Mod 3 LFO Out 2", "destination": "Filter: Frequency", "amount": 0.7},
+        {"source": "Mod 3 LFO Out 3", "destination": "Source: Timbre", "amount": 0.104},
+        {"source": "Mod 3 LFO Out 4", "destination": "Filter: Resonance", "amount": 0.6},
+        {"source": "Mod Wheel", "destination": "Mod 3: Frequency", "amount": 0.3},
+        {"source": "Pressure", "destination": "Filter: Frequency", "amount": 0.2}
+      ]
+    }
+  }
+}

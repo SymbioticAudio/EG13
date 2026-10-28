@@ -10,7 +10,7 @@ EG13 1.0 is the first release of EG13: a free, open-source two-part synthesizer 
 ## Highlights
 
 - **A first sound that moves:** a new instance opens on **First Light**, a two-part ambient patch with a ring-modulated pad and a bowed string scattered into granular texture. Hold a chord and let it evolve.
-- **Presets:** Bank 1 holds 40 presets made for EG13 (13 two-part Performances and 27 one-part Patches), Bank 2 four rebuilds of the VCV Rack patch "~zero-g:catnap" by plantay (CC BY 4.0), and EG13 FX has its own bank of 12 effect presets.
+- **Presets:** Bank 1 holds 40 presets made for EG13 (13 two-part Performances and 27 one-part Patches), Bank 2 seven presets rebuilt from the VCV Rack patch "~zero-g:catnap" by plantay (CC BY 4.0): the patch, three of its parts and three variations, and EG13 FX has its own bank of 12 effect presets.
 - **Preset browser** in the header: previous and next arrows and a dropdown grouped by bank. Load a Patch into Part A or Part B, save your own sounds into the User bank, and share them as files.
 - **A preset changes the sound, not your setup:** MIDI channels, output buses, MPE settings, CC assignments, Voice Gain, master level and Latency Mode stay as you set them.
 - **Modulation you can see:** a wave mark on every modulated knob, a live trace on each mod card, and a full matrix editor.

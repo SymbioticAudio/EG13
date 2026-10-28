@@ -62,12 +62,15 @@ Several presets respond to the mod wheel, aftertouch or MPE pressure and slide (
 
 ### Bank 2: catnap (the instrument)
 
-Four presets rebuilt from a VCV Rack patch shared under a Creative Commons licence (credits below):
+Seven presets rebuilt from a VCV Rack patch shared under a Creative Commons licence (credits below): the whole patch, three of its parts, and three variations by EG13 that are not in the patch.
 
 - **catnap** (Performance): the whole patch. It starts droning as soon as it is loaded, with no note held, because its Part B is set to Trigger *Always on*, as the patch's oscillator runs untriggered. Part B is heard only through Part A (the mode is *Single*). Your notes strike the bell in Part A.
 - **catnap — plaits** (Patch): the chord-drone side, played from the keys.
 - **catnap — rings** (Patch): the bell side, one strike per note.
 - **catnap — warps** (Performance): the ring-modulator corner of the patch, which the patch itself keeps turned down, brought up.
+- **catnap — clouds** (Patch): a variation: the patch's Clouds stage in its *Stretch* mode, a smeared, octave-up cloud of the chord side that each note restarts; the mod wheel past half-way holds it frozen.
+- **catnap — tides** (Patch): a variation: the patch's slow filter swell made into a pad, with the chords held as you play them; the mod wheel speeds the swell up and aftertouch opens the filter.
+- **catnap — night** (Performance): a variation: the whole patch, slower and darker. Like **catnap**, it starts droning as soon as it is loaded, with no note held (its Part B is set to Trigger *Always on*).
 
 Loading a Bank 2 preset shows its credit and licence under the bar for four seconds; hovering over its row in the dropdown shows them too.
 
@@ -119,5 +122,6 @@ The presets are changed from the patch:
 - The Tides swell is not reset by Branches; it cycles freely.
 - In "catnap — warps", the ring modulator's modulator is the Plaits drone from Part B; in the patch it is Clouds' output, which carries that drone, and EG13 cannot feed a part's Part FX output back into its Shaper.
 - The full rebuild drones as soon as it loads, because Part B is *Always on*, as the patch's untriggered oscillator is.
+- "catnap — clouds", "catnap — tides" and "catnap — night" are variations by EG13, not part of the patch. "clouds" puts Clouds in *Stretch* mode (the patch uses *Granular*) with longer, wetter settings and adds a mod-wheel freeze; "tides" plays the chords from the keys without the Marbles sequence, sweeps the low-pass wider and darker, mixes Clouds lower without freezing it, and adds mod-wheel and aftertouch routes; "night" slows the Marbles clock, the Tides swell (about 8 s instead of 4.8 s) and the freezing, lowers the Ripples cutoff, dulls and lengthens the bell, and makes the Clouds grains longer, sparser and more reverberant.
 
 Each preset's note gives the details. The full notice is in `THIRD-PARTY-NOTICES.md`.

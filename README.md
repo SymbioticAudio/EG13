@@ -19,7 +19,7 @@ Get the latest version from the [Releases page](https://github.com/SymbioticAudi
 - **Two parts, A and B**, of up to eight voices each, played as one part, layered, split across the keyboard, or on separate MIDI channels.
 - **Each voice** runs a Source, a Filter, a Shaper and an Amp. **Each part** has four mod slots (envelope, LFO, random and function generator engines), a 12-route modulation matrix, and a Part FX slot: granular, granular delay, resonator or reverb.
 - **Expression:** MPE, mod wheel, aftertouch, four assignable CCs, and tempo sync to the host.
-- **Presets:** a new instance opens on **First Light**, a slowly evolving two-part ambient patch. Bank 1 holds 40 presets made for EG13, Bank 2 four rebuilds of a CC BY-licensed VCV Rack patch, and EG13 FX has 12 effect presets of its own. Save your own into the User bank and share them as files.
+- **Presets:** a new instance opens on **First Light**, a slowly evolving two-part ambient patch. Bank 1 holds 40 presets made for EG13, Bank 2 seven presets rebuilt from a CC BY-licensed VCV Rack patch (the patch, three of its parts and three variations), and EG13 FX has 12 effect presets of its own. Save your own into the User bank and share them as files.
 - **EG13 FX** runs the same parts on an audio track, so the filters, ring modulator, granular and reverb engines process any sound. The instrument has no audio input: to process external audio, use EG13 FX on an audio track or bus (you can still play it from MIDI).
 
 The [manual](docs/manual/index.md) covers every engine and setting; [Presets](docs/manual/presets.md) covers the banks and your own presets; [Known limitations](docs/manual/limitations.md) lists what version 1.0 does not do yet.

@@ -142,7 +142,7 @@ TEST_CASE("Every Bank 2 preset carries the catnap credit and CC BY 4.0") {
     REQUIRE(meta->credit == table[i].credit);
     REQUIRE(meta->licence == table[i].licence);
   }
-  REQUIRE(bank2 >= 4);  // the full rebuild and at least three variations
+  REQUIRE(bank2 == 7);  // the full rebuild and six variations
 }
 
 TEST_CASE("Exactly one instrument preset is marked firstLoad") {
