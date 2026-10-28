@@ -31,14 +31,18 @@ target_include_directories(eg13_ui_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plu
 target_link_libraries(eg13_ui_bridge PUBLIC clap eg13_core)
 target_compile_options(eg13_ui_bridge PRIVATE -Wall -Wextra)
 
-# Version text for the About screen: the project version and the git short hash, fixed at configure
-# time ("unknown" outside git).
-execute_process(COMMAND git rev-parse --short HEAD WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  OUTPUT_VARIABLE EG13_GIT_HASH OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET RESULT_VARIABLE EG13_GIT_RESULT)
-if(NOT EG13_GIT_RESULT EQUAL 0 OR EG13_GIT_HASH STREQUAL "")
-  set(EG13_GIT_HASH "unknown")
-endif()
-configure_file(cmake/eg13_version.h.in ${CMAKE_BINARY_DIR}/generated/eg13_version.h @ONLY)
+# Version text for the About screen: the project version and the git short hash ("unknown" outside
+# git). Written at configure time and refreshed on every build, so it follows HEAD without a
+# reconfigure (cmake/eg13_version.cmake rewrites the header only when the text changes).
+set(EG13_VERSION_ARGS -DEG13_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+  -DEG13_VERSION_IN=${CMAKE_SOURCE_DIR}/cmake/eg13_version.h.in
+  -DEG13_VERSION_OUT=${CMAKE_BINARY_DIR}/generated/eg13_version.h -DPROJECT_VERSION=${PROJECT_VERSION})
+execute_process(COMMAND ${CMAKE_COMMAND} ${EG13_VERSION_ARGS} -P ${CMAKE_SOURCE_DIR}/cmake/eg13_version.cmake)
+add_custom_target(eg13_version
+  COMMAND ${CMAKE_COMMAND} ${EG13_VERSION_ARGS} -P ${CMAKE_SOURCE_DIR}/cmake/eg13_version.cmake
+  BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/eg13_version.h
+  COMMENT "Updating the About-box git hash"
+  VERBATIM)
 
 # The C function table the editors use (core-api/include is the pure-C public header).
 add_library(eg13_core_api STATIC plugin/src/core_api.cpp)
@@ -47,6 +51,7 @@ target_include_directories(eg13_core_api PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plug
 target_include_directories(eg13_core_api PRIVATE ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(eg13_core_api PUBLIC eg13_ui_bridge eg13_core)
 target_compile_options(eg13_core_api PRIVATE -Wall -Wextra)
+add_dependencies(eg13_core_api eg13_version)
 # The factory-preset functions of the table, apart from eg13_core_api because the generated factory
 # table (below) needs the preset tool, and the tool uses eg13_core_api.
 add_library(eg13_core_api_factory STATIC plugin/src/core_api_factory.cpp)
