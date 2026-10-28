@@ -175,22 +175,23 @@ void handleEvent(Plugin* plugin, const clap_event_header_t* hdr) {
 // ---- audio ports --------------------------------------------------------------
 
 uint32_t audioPortsCount(const clap_plugin_t* p, bool isInput) {
+  // The instrument has no audio input: an out-of-process AU host (Logic Pro 12) fails every render
+  // while an input bus is unconnected, so a sidechain made it silent. External audio goes through
+  // EG13 FX; the instrument's parts still feed each other inside the core (Input source Other part).
   const bool instrument = self(p)->kind == PluginKind::Instrument;
-  if (isInput) return 1;                 // instrument: sidechain; FX: main input
-  return instrument ? 2 : 1;             // instrument: main + Bus 2
+  if (isInput) return instrument ? 0 : 1;  // FX: main input
+  return instrument ? 2 : 1;               // instrument: main + Bus 2
 }
 
 bool audioPortsGet(const clap_plugin_t* p, uint32_t index, bool isInput,
                    clap_audio_port_info_t* info) {
   if (index >= audioPortsCount(p, isInput)) return false;
-  const bool instrument = self(p)->kind == PluginKind::Instrument;
   const char* name = "Output";
   uint32_t flags = CLAP_AUDIO_PORT_IS_MAIN;
   clap_id id = 1;
-  if (isInput) {
+  if (isInput) {  // EG13 FX only
     id = 0;
-    name = instrument ? "Sidechain" : "Input";
-    flags = instrument ? 0u : uint32_t(CLAP_AUDIO_PORT_IS_MAIN);
+    name = "Input";
   } else if (index == 1) {
     id = 2;
     name = "Bus 2";
@@ -479,9 +480,10 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
     bus2[1] = b.channel_count > 1 ? b.data32[1] : b.data32[0];
   }
 
-  // Input: the FX's main input or the instrument's sidechain (port 0 for both).
+  // Input: the FX's main input (the instrument has none, so its Input is silent).
   const float* in[2] = {nullptr, nullptr};
-  const bool hasInput = proc->audio_inputs_count > 0 && proc->audio_inputs[0].data32 != nullptr &&
+  const bool hasInput = plugin->kind == PluginKind::Effect && proc->audio_inputs_count > 0 &&
+                        proc->audio_inputs[0].data32 != nullptr &&
                         proc->audio_inputs[0].channel_count > 0;
   if (hasInput) {
     const clap_audio_buffer_t& inBuf = proc->audio_inputs[0];

@@ -4,7 +4,7 @@ EG13 1.0 is the first release of EG13: a free, open-source two-part synthesizer 
 ## What it is
 
 - **EG13**, the instrument: two parts, A and B, of up to eight voices each, played alone, layered, split across the keyboard or on separate MIDI channels. Each voice runs a Source, a Filter, a Shaper and an Amp; each part adds four mod slots, a 12-route modulation matrix and a Part FX slot.
-- **EG13 FX**, the audio effect: the same two parts on an audio track, so the filters, the ring modulator and vocoder, and the granular, resonator and reverb effects process any sound.
+- **EG13 FX**, the audio effect: the same two parts on an audio track, so the filters, the ring modulator and vocoder, and the granular, resonator and reverb effects process any sound. To process external audio, use EG13 FX: the instrument has no audio input. You can still play EG13 FX from MIDI.
 - **Engines:** Macro Oscillator, Digital Oscillator, Modal Synth, Resonator and Audio Input as Sources; Analog Filter, Classic Filters and State Variable Filter; Ring Mod / Vocoder and EQ as Shapers; Envelope, LFO, Random / S&H and Function Generator in the mod slots; Granular, Granular Delay, Resonator and Reverb as Part FX.
 
 ## Highlights

@@ -43,7 +43,7 @@ All 16 panel controls: **Model** (Modal, String, Strings), **Contour**, **Bow**,
   - *Strike* excites the resonator directly, with or without a note.
 - The output is stereo; Space sets its width.
 - Controls are smoothed as in the firmware, so some move slowly: Space and Position take about half a second to settle after a jump ([Smoothing](smoothing.md)).
-- In the instrument, sound excited by the Input arrives up to about 6 ms after the Dry signal ([Latency](latency.md)).
+- In the instrument, the Input can only come from the other part (the instrument has no audio input; see [Parts and routing](parts-and-routing.md#input-and-input-source)).
 
 ### Resonator (based on Rings)
 
@@ -62,7 +62,7 @@ Controls: **Model** (Modal, Sympathetic, String, FM Voice, Sympathetic Q, String
 
 ### Audio Input
 
-Plays the part's Input through each voice: notes open a gate with **Attack** (1 ms to 2 s) and **Release** (5 ms to 5 s); **Gain** sets the level (−24 to +12 dB). The Input is stereo when the host sends stereo.
+Plays the part's Input through each voice: notes open a gate with **Attack** (1 ms to 2 s) and **Release** (5 ms to 5 s); **Gain** sets the level (−24 to +12 dB). The Input is stereo when the host sends stereo. In the instrument, which has no audio input, it plays the other part (Input source *Other part*); to gate external audio with notes, use it in EG13 FX and play EG13 FX from MIDI.
 
 Fed from the other part (the *Input source* setting's *Other part*), each voice plays that part's sound at the −12 dB **Voice Gain**, divided by the number of sounding Audio Input voices (see [Levels](modulation.md#levels)), so it arrives well below the other part's own level; raise **Gain** to make up for it.
 
@@ -115,7 +115,7 @@ Warps combines two signals, a **carrier** and a **modulator**, in one of its alg
   - *Other part*: the other part's output.
 - **Modulator**: *Voice* (default), *Source AUX*, *Input* or *Other part*, with the same meanings. Voice into the modulator with the internal oscillator as carrier is the classic way to play Warps; for example, the vocoder then puts the voice's formants on the oscillator. Voice into both inputs is allowed: it is self-modulation.
 - The routing and its defaults are provisional. They may be revisited when patching arrives in a later version. New options are only ever added at the end of each list, so a saved patch keeps its routing. A change of default would apply to new patches only.
-- If a chosen signal isn't there (no sidechain, a silent part), that input is silent.
+- If a chosen signal isn't there (the instrument's *External* Input, nothing connected to EG13 FX, a silent part), that input is silent.
 - The side signals are time-aligned with the voice: *Source AUX* and *Input* reach Warps at the same moment as the voice's own sound (the Input is delayed by the Source's latency, as the voice is). *Other part* is the other part's finished output (whether or not that part is heard, see Parts and routing), so it arrives one Shaper latency behind the voice (plus the 64-sample feed from Part B to Part A).
 - **Algorithm** is Warps' big knob. The display names nine positions, after what the module does there: *Crossfade*, *Fold*, *Analog RM*, *Digital RM*, *XOR*, *Compare*, then the vocoder: *Vocoder*, *Vocoder (long release)* and *Vocoder (frozen)*. Turning clockwise through the vocoder lengthens the release of its envelope followers, and fully clockwise it freezes the modulator's formants. Starting a note at *Vocoder (frozen)*, the vocoder is silent, as on the module: it freezes the formants it has, and from a reset it has none. The default is *Analog RM*, the ring modulator the engine is named after. **Timbre** is the algorithm's own control. At its very top (and the frequency shifter's phase shift at Algorithm's top) EG13 stops a hair short of 100 % (by 0.0015 %, inaudible): at exactly 100 % the original firmware reads one value past the end of a table.
 - The knob is continuous and the display shows the nearest position. Between positions the sound blends: neighbouring cross-modulations crossfade, the stretch from *Compare* to *Vocoder* passes through the plain Modulator signal, and the vocoder's release changes gradually (it freezes only in the last few percent).

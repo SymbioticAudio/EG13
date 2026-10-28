@@ -40,11 +40,13 @@ The voice chain is stereo. A Filter or Shaper runs a second, right-channel copy 
 
 ## Input and Input source
 
-The plugin's audio input (the instrument's sidechain, or EG13 FX's main input) is the **Input**. When nothing is connected, the Input is silent. Each part has an **Input source** setting:
+EG13 FX's audio input (its main input) is the **Input**. When nothing is connected, the Input is silent. Each part has an **Input source** setting:
 
 - *External*: the plugin's Input.
 - *Other part*: the other part's output.
 - *Both*: the two summed.
+
+The instrument (EG13) has no audio input, in any format. To process external audio, use **EG13 FX** on an audio track or bus; you can still play EG13 FX from MIDI. In the instrument, the parts still feed each other: *Other part* works as described here, *External* is silent, and *Both* is the same as *Other part*. (An instrument with an audio input is silent in hosts that run plugins out of process, such as Logic Pro 12, whenever nothing is connected to that input, which is why EG13 has none.)
 
 Part A runs before Part B. B therefore hears A with no extra delay, while A hears B 64 samples later (or one host block, if the host's blocks are shorter). Every signal fed from one part to the other passes through a soft limiter: it is untouched up to full scale and never exceeds twice full scale, so a loop between the parts cannot run away.
 
@@ -52,7 +54,7 @@ The Ring Mod / Vocoder can also take the part's Input or the other part's output
 
 Each part's **Output** goes to *Main*, to *Bus 2* (the instrument's second output) or to *Other part only*. With *Other part only* the part is not heard; it only feeds the other part.
 
-**Dry** mixes the Input into the main output, delayed by the plugin's latency so it lines up with the processed sound.
+**Dry** mixes the Input into the main output, delayed by the plugin's latency so it lines up with the processed sound. It does nothing in the instrument, which has no Input from outside (*Other part* signals are not mixed in by Dry).
 
 ## Default patches
 

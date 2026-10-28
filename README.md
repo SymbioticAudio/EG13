@@ -20,7 +20,7 @@ Get the latest version from the [Releases page](https://github.com/SymbioticAudi
 - **Each voice** runs a Source, a Filter, a Shaper and an Amp. **Each part** has four mod slots (envelope, LFO, random and function generator engines), a 12-route modulation matrix, and a Part FX slot: granular, granular delay, resonator or reverb.
 - **Expression:** MPE, mod wheel, aftertouch, four assignable CCs, and tempo sync to the host.
 - **Presets:** a new instance opens on **First Light**, a slowly evolving two-part ambient patch. Bank 1 holds 40 presets made for EG13, Bank 2 four rebuilds of a CC BY-licensed VCV Rack patch, and EG13 FX has 12 effect presets of its own. Save your own into the User bank and share them as files.
-- **EG13 FX** runs the same parts on an audio track, so the filters, ring modulator, granular and reverb engines process any sound.
+- **EG13 FX** runs the same parts on an audio track, so the filters, ring modulator, granular and reverb engines process any sound. The instrument has no audio input: to process external audio, use EG13 FX on an audio track or bus (you can still play it from MIDI).
 
 The [manual](docs/manual/index.md) covers every engine and setting; [Presets](docs/manual/presets.md) covers the banks and your own presets; [Known limitations](docs/manual/limitations.md) lists what version 1.0 does not do yet.
 
@@ -32,7 +32,7 @@ The editor uses its own names; the module each engine is based on is listed for 
 - **Digital Oscillator** — based on Braids
 - **Modal Synth** — based on Elements
 - **Resonator** — based on Rings
-- **Audio Input** — the plugin input through a per-voice gate
+- **Audio Input** — EG13 FX's input (or, in the instrument, the other part) through a per-voice gate
 - **Analog Filter** — the VCV model of Ripples
 - **Classic Filters** — sst-filters (Surge's filters)
 - **State Variable Filter** — the SVF from the Eurorack DSP library
@@ -56,7 +56,7 @@ brew install cmake ninja
 cmake --preset mac
 cmake --build --preset mac --target EG13_all eg13_tests
 ctest --preset mac
-scripts/validate.sh            # clap-validator, auval, pluginval
+scripts/validate.sh            # clap-validator, auval, out-of-process AU render, pluginval
 ```
 
 The SwiftUI editor (`ui/EG13UI`) is built into the plugins by default on macOS. It needs
@@ -95,7 +95,7 @@ EG13 has a **Latency Mode** (Live or Studio; see `docs/manual/latency.md`). The 
 | Studio | EG13 | 918 samples (20.82 ms) | 1060 samples (22.08 ms) | 1578 samples (16.44 ms) |
 | Studio | EG13 FX | 1194 samples (27.07 ms) | 1330 samples (27.71 ms) | 2118 samples (22.06 ms) |
 
-The Modal Synth's 32 kHz engine, the Ring Mod / Vocoder's 96 kHz engine and the Part FX Granular's 32 kHz engine set it, and every engine is padded to it so changing engines never shifts timing. The Part FX slot takes 263 samples (5.48 ms) in Live and 539 (11.23 ms) in Studio at 48 kHz, whole-block wait included, and every part pays it even with Part FX Off (otherwise switching an effect would move the sound in time). Processed input lines up with Dry in EG13 FX; hosts compensate automatically. In the instrument, note onsets are aligned: sidechain input that excites the Resonator or Modal Synth arrives up to about 6 ms after Dry.
+The Modal Synth's 32 kHz engine, the Ring Mod / Vocoder's 96 kHz engine and the Part FX Granular's 32 kHz engine set it, and every engine is padded to it so changing engines never shifts timing. The Part FX slot takes 263 samples (5.48 ms) in Live and 539 (11.23 ms) in Studio at 48 kHz, whole-block wait included, and every part pays it even with Part FX Off (otherwise switching an effect would move the sound in time). Processed input lines up with Dry in EG13 FX; hosts compensate automatically. In the instrument, note onsets are aligned.
 
 CPU, Apple M1 (base), 48 kHz, 128-sample blocks, 2 × 8 voices, no modulation (5 s per figure; repeats vary by about one point):
 

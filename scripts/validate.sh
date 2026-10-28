@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Runs clap-validator, auval (instrument + FX) and pluginval on a mac build.
+# Runs clap-validator, auval (instrument + FX), an out-of-process AU render check and pluginval on a
+# mac build.
 # Installs the AU component into ~/Library/Audio/Plug-Ins/Components so auval can find it.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -80,6 +81,18 @@ killall -9 AudioComponentRegistrar 2>/dev/null || true
 auval -a | grep -E "Symb" || true
 auval -v aumu EG13 Symb
 auval -v aumf EGfx Symb
+
+echo "== out-of-process AU render check"
+# auval hosts in process. Logic Pro 12 hosts AUs out of process, where an unconnected input bus fails
+# every render (the instrument once had a sidechain input and was silent there), so render both
+# units out of process too: the instrument with no input connected, EG13 FX fed a tone. Prints SKIP
+# (and passes) only where out-of-process hosting itself is unavailable.
+AU_OOP_CHECK="$BUILD/tools/au_oop_check"
+mkdir -p "$(dirname "$AU_OOP_CHECK")"
+clang++ -std=c++17 -fobjc-arc -O1 -Wall -Werror -framework AudioToolbox -framework Foundation \
+  "$ROOT/tools/au_oop_check/au_oop_check.mm" -o "$AU_OOP_CHECK"
+"$AU_OOP_CHECK" aumu EG13 Symb
+"$AU_OOP_CHECK" aumf EGfx Symb --tone
 
 echo "== pluginval: $VST3"
 codesign --verify --strict "$VST3" 2>/dev/null || codesign --force --deep --sign - "$VST3"
