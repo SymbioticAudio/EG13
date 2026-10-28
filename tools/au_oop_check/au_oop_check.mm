@@ -13,7 +13,11 @@
 //   (Apple's DLSMusicDevice cannot be hosted out of process either).
 #import <AudioToolbox/AudioToolbox.h>
 #import <Foundation/Foundation.h>
+#include <alloca.h>
+#include <dispatch/dispatch.h>
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -43,19 +47,22 @@ OSStatus toneInput(void*, AudioUnitRenderActionFlags*, const AudioTimeStamp*, UI
   return noErr;
 }
 
-// Instantiates out of process; spins the main run loop while waiting (10 s timeout).
+// Instantiates out of process; spins the main run loop while waiting (10 s timeout). Apple does not
+// say which queue the completion handler runs on, so it hands its result over with a semaphore: the
+// signal orders its writes before the main thread's reads.
 OSStatus instantiateOutOfProcess(AudioComponent comp, AudioUnit* out) {
   __block AudioUnit made = nullptr;
   __block OSStatus status = kAudioUnitErr_FailedInitialization;
-  __block bool finished = false;
+  dispatch_semaphore_t done = dispatch_semaphore_create(0);
   AudioComponentInstantiate(comp, kAudioComponentInstantiation_LoadOutOfProcess,
                             ^(AudioComponentInstance inst, OSStatus err) {
                               made = inst;
                               status = err;
-                              finished = true;
+                              dispatch_semaphore_signal(done);
                             });
   NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:10];
-  while (!finished && [deadline timeIntervalSinceNow] > 0)
+  bool finished = false;
+  while (!(finished = dispatch_semaphore_wait(done, DISPATCH_TIME_NOW) == 0) && [deadline timeIntervalSinceNow] > 0)
     [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
   if (!finished) return kAudioUnitErr_FailedInitialization;
   *out = made;
