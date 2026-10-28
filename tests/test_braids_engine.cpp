@@ -12,9 +12,10 @@
 #include "alloc_counter.h"
 #include "engine/braids_engine.h"
 #include "engine/native_rate_wrapper.h"
+#include "params/param_ids.h"
+#include "synth/param_table.h"
+#include "synth/synth.h"
 #include "test_helpers.h"
-#include "voice/source_factory.h"
-#include "voice/voice.h"
 
 using namespace eg13;
 
@@ -69,14 +70,16 @@ TEST_CASE("Digital Oscillator stays in tune through the wrapper") {
   }
 }
 
-TEST_CASE("Digital Oscillator goes silent after note-off") {
+TEST_CASE("Digital Oscillator keeps sounding after note-off, so the Amp shapes the release") {
   BraidsEngine engine;
   engine.prepare(BraidsEngine::kNativeRate, 512);
   engine.noteOn(60.0f, 1.0f);
-  REQUIRE(test::rms(render(engine, defaults(), 9600), 0, 9600) > 0.05);
+  const double held = test::rms(render(engine, defaults(), 9600), 4800, 9600);
   engine.noteOff();
-  const auto tail = render(engine, defaults(), 9600);
-  REQUIRE(test::rms(tail, 4800, 9600) < 1e-4);
+  const double released = test::rms(render(engine, defaults(), 9600), 4800, 9600);
+  REQUIRE_THAT(released / held, Catch::Matchers::WithinRel(1.0, 0.05));
+  engine.reset();
+  REQUIRE(test::rms(render(engine, defaults(), 9600), 4800, 9600) < 1e-4);
 }
 
 TEST_CASE("Velocity scales the Digital Oscillator") {
@@ -146,25 +149,25 @@ TEST_CASE("Signature at max: a silent Digital Oscillator outputs 0") {
 }
 
 TEST_CASE("Signature at max: a released voice decays to silence and frees") {
-  ParamValues p = defaults();
-  p.p[4] = 1.0f;
-  Voice voice(makeSource(1));  // Digital Oscillator
-  voice.prepare(48000.0, 256);
-  voice.trigger(60, 1.0f);
+  // The level stays open at key-up, so the Amp (the init patch's envelope) ends the note.
+  Synth synth(PluginKind::Instrument);
+  synth.prepare(48000.0, 256);
+  synth.setActive(true);
+  synth.setParam(paramSpec(sourceEngineParamIndex(0)).id, 1);    // Digital Oscillator
+  synth.setParam(paramSpec(sourceParamIndex(0, 4)).id, 1.0);     // Signature 100 %
   std::vector<float> l(256), r(256);
   float* out[2] = {l.data(), r.data()};
-  for (int block = 0; block < 40; ++block) voice.process(out, p, 256);
-  voice.release();
+  synth.noteOn(0, 60, 1.0f);
+  for (int block = 0; block < 40; ++block) synth.process(nullptr, out, nullptr, 256);
+  REQUIRE(synth.activeVoiceCount(0) == 1);
+  synth.noteOff(0, 60);
   std::vector<float> tail;
-  for (int block = 0; block < 100 && voice.active(); ++block) {
-    std::fill(l.begin(), l.end(), 0.0f);
-    std::fill(r.begin(), r.end(), 0.0f);
-    voice.process(out, p, 256);
+  for (int block = 0; block < 400 && synth.activeVoiceCount(0) > 0; ++block) {
+    synth.process(nullptr, out, nullptr, 256);
     tail.insert(tail.end(), l.begin(), l.end());
   }
-  REQUIRE_FALSE(voice.active());
+  REQUIRE(synth.activeVoiceCount(0) == 0);
   REQUIRE(tail.size() >= 2400);  // freed after the Voice's silence window
-  REQUIRE(test::rms(tail, tail.size() - 2400, tail.size()) < 1e-4);
 }
 
 TEST_CASE("Signature drive follows the level, as in the firmware (VCA first)") {

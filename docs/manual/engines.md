@@ -31,7 +31,7 @@ Controls: **Model** (24 models, from Virtual analog to Hi-hat), **Harmonics**, *
 Controls: **Shape** (47 shapes), **Timbre**, **Color**, **Frequency** (±12 semitones), **Signature**, **Bit Depth** (2 to 16 bits) and **Sample Rate** (4 kHz to 96 kHz).
 
 - Braids' own envelope and quantizer are not exposed; EG13's envelopes replace them.
-- A level follows each note's gate and velocity, before the Signature waveshaper as on the module, so velocity also changes how hard the waveshaper is driven.
+- A level follows each note's velocity, before the Signature waveshaper as on the module, so velocity also changes how hard the waveshaper is driven. The level stays open when you let go of the key, so the note fades with the Amp's Release, as the other Sources do (with no route to the Amp, it closes over 5 ms; see [Modulation](modulation.md)).
 - The output is mono.
 
 ### Modal Synth (based on Elements)

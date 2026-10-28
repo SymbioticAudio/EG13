@@ -518,6 +518,23 @@ void runBlocks(Synth& synth, int blocks, int n = kBlock) {
 
 }  // namespace
 
+TEST_CASE("A Digital Oscillator note fades with the Amp's Release instead of cutting off") {
+  Synth synth(PluginKind::Instrument);  // init patch: Mod 1's envelope (0.5 s release) -> Amp
+  synth.prepare(kRate, kBlock);
+  synth.setActive(true);
+  synth.setParam(engineId(0), 1);  // Digital Oscillator
+  synth.noteOn(0, 60, 1.0f);
+  Stereo out(48000);
+  run(synth, out, 0, 24000);
+  synth.noteOff(0, 60);
+  run(synth, out, 24000, 48000);
+  const double held = test::rms(out.l, 19200, 24000);
+  const double released = test::rms(out.l, 26400, 31200);  // 50 to 150 ms after key-up
+  INFO("held " << held << " released " << released);
+  REQUIRE(released > 0.2 * held);
+  REQUIRE(released < held);
+}
+
 TEST_CASE("Switching engines swaps P values and reports them") {
   Synth synth(PluginKind::Instrument);
   synth.prepare(kRate, kBlock);

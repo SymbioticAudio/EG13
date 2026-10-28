@@ -104,7 +104,7 @@ void BraidsEngine::reset() {
   impl_->held = 0;
   impl_->carry = 0;
   impl_->hasCarry = false;
-  gate_ = false;
+  open_ = false;
   strike_ = false;
   gain_ = 0.0f;
   phase_ = 0;
@@ -113,11 +113,13 @@ void BraidsEngine::reset() {
 void BraidsEngine::noteOn(float note, float velocity) {
   note_ = note;
   velocity_ = clamp01(velocity);
-  gate_ = true;
+  open_ = true;
   strike_ = true;
 }
 
-void BraidsEngine::noteOff() { gate_ = false; }
+// The level stays open at key-up: the voice's Amp shapes the release, as with the
+// other Sources. reset() closes it.
+void BraidsEngine::noteOff() {}
 
 void BraidsEngine::process(const float* const*, float* const* out, const ParamValues& p, int n) {
   for (int done = 0; done < n;) {
@@ -161,7 +163,7 @@ void BraidsEngine::renderBlock(const ParamValues& p, float* const* out, int offs
   const int decimation = kDecimation[sampleRateIndex(p.p[6])];
   const float sig = clamp01(p.p[4]) * 4.0f;
   const uint16_t signature = uint16_t(std::min(65535.0f, sig * sig * 4095.0f));
-  const float target = gate_ ? velocity_ : 0.0f;
+  const float target = open_ ? velocity_ : 0.0f;
   // Firmware order (braids/braids.cc:287-291): VCA, then the signature
   // waveshaper, so the level sets how hard it is driven. The waveshaper maps 0
   // to a non-zero level; subtract it so a closed VCA is silent and the voice
